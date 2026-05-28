@@ -1,0 +1,2219 @@
+[
+  {
+    "canonical": "A/B test",
+    "kind": "technical_term",
+    "aliases": [
+      "A B test"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "acceptance criteria",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "action items",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "activation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "activation"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ARR",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a r r",
+      "arr"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "backlog",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "backlog"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "blocker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "blocker"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bug bash",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bug report",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "burn rate",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CAC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c a c",
+      "cac"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "calendar invite",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cap table",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "changelog",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "changelog"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "churn",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "churn"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cohort analysis",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Confluence page",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "conversion",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "conversion"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "copy review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cursor rule",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "customer interview",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "decision log",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "deliverable",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "deliverable"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "demo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "demo"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dependency",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dependency"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "design review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "discovery call",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "due diligence",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "editing pass",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "engagement",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "engagement"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "enterprise plan",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "feature adoption",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "feature request",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "feedback loop",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FigJam board",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Figma file",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "follow-up",
+    "kind": "technical_term",
+    "aliases": [
+      "followup",
+      "follow up"
+    ],
+    "spoken_forms": [
+      "follow-up"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "funnel",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "funnel"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GitHub discussion",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GitHub issue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gmail draft",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "go live",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Doc",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Meet link",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Sheet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Slide",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GTM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "g t m",
+      "gtm"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "guardrail metric",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "handoff",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "handoff"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ICP",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "i c p",
+      "icp"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "incident review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "investment memo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Jira ticket",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "kickoff",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "kickoff"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "KPI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "k p i",
+      "kpi"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "launch plan",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "legal review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Linear issue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "LTV",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "l t v",
+      "ltv"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "meeting notes",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "messaging",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "messaging"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "milestone",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "milestone"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Miro board",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "monthly active users",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MRR",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m r r",
+      "mrr"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MVP",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m v p",
+      "mvp"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "narrative",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "narrative"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "north star metric",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Notion doc",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NPS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "n p s",
+      "nps"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Obsidian vault",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "offboarding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "offboarding"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OKR",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "o k r",
+      "okr"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "onboarding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "onboarding"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "one-pager",
+    "kind": "technical_term",
+    "aliases": [
+      "one pager",
+      "onepager"
+    ],
+    "spoken_forms": [
+      "one-pager"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "owner",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "owner"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "persona",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "persona"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pilot",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pilot"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pitch deck",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PMF",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "p m f",
+      "pmf"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "positioning",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "positioning"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PRD",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "p r d",
+      "prd"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "procurement",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "procurement"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proof of concept",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "QA pass",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Raycast command",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "regression",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "regression"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "release notes",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "requirements",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "requirements"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "retention",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "retention"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "retro",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "retro"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "risk register",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "roadmap",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "roadmap"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rollout",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rollout"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "runway",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "runway"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sales call",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "screen recording",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "screenshot",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "screenshot"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "security review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "seed round",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Series A",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "service request",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ship room",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Slack thread",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SOM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s o m",
+      "som"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "spec",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "spec"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sprint",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sprint"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stakeholder",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "stakeholder"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "standup",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "standup"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "status update",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "strategy memo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "style guide",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "support escalation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "support ticket",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "surveys",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "surveys"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TAM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "t a m",
+      "tam"
+    ],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "term sheet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "transcript review",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "usability test",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "user research",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "voice note",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "weekly active users",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Zoom link",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "product",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  }
+]

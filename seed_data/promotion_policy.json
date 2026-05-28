@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "manual_seed_entries_trusted_immediately": true,
+  "manual_user_added_entries_trusted_immediately": true,
+  "correction_promote_after": 1,
+  "context_observation_min_count": 3,
+  "context_acceptance_min_count": 1,
+  "screen_derived_candidates_runtime_only_until_accepted": true,
+  "never_auto_promote_from_suppressed_context": true,
+  "max_runtime_candidates_per_surface": 48,
+  "max_bias_bundle_items_before_clipping": 128,
+  "specialized_pack_requires_explicit_route": true,
+  "notes": "Use packs as broad priors only. Build final bias bundles from active surface, nearby context, accepted corrections, personal entities, and clipped pack slices. Do not pass full packs directly to engines."
+}

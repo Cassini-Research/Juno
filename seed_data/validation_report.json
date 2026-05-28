@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "duplicate_canonicals_across_packs": {},
+  "forbidden_string_scan": {
+    "core_names.json": [],
+    "domain_ai_models_terms.json": [],
+    "domain_biology_life_sciences.json": [],
+    "domain_chemistry_materials.json": [],
+    "domain_coding_engineering.json": [],
+    "domain_geography_earth_science.json": [],
+    "domain_history_civics.json": [],
+    "domain_infra_data_ops.json": [],
+    "domain_physics_space.json": [],
+    "domain_product_work.json": [],
+    "domain_voice_audio_speech.json": [],
+    "domain_colloquial_slang.json": [],
+    "specialized_distributed_protocols.json": []
+  }
+}

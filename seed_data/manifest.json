@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "default_enabled_packs": [
+    "core_names",
+    "domain_ai_models_terms",
+    "domain_coding_engineering",
+    "domain_voice_audio_speech"
+  ],
+  "optional_packs": [
+    "domain_biology_life_sciences",
+    "domain_chemistry_materials",
+    "domain_geography_earth_science",
+    "domain_history_civics",
+    "domain_infra_data_ops",
+    "domain_physics_space",
+    "domain_product_work",
+    "domain_colloquial_slang",
+    "specialized_distributed_protocols"
+  ],
+  "promotion_policy": {
+    "correction_promote_after": 1,
+    "context_observation_min_count": 3,
+    "context_acceptance_min_count": 1,
+    "never_auto_promote_from_suppressed_context": true,
+    "screen_derived_candidates_runtime_only_until_accepted": true,
+    "manual_seed_entries_trusted_immediately": true,
+    "specialized_pack_requires_explicit_route": true
+  },
+  "generated_bundle": "seed_data"
+}

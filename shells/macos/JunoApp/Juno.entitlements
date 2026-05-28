@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	    Required under hardened runtime: without this entitlement
+	    AVCaptureDevice.requestAccess(for: .audio) is blocked before TCC is
+	    consulted, so Juno never appears in System Settings → Privacy →
+	    Microphone and no prompt is ever shown.
+	-->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+
+	<!--
+	    Required under hardened runtime: EventKit calendar prompts are denied
+	    before UI is shown unless the signed app carries Calendar personal
+	    information access. Without this, alarms cannot request Calendar access.
+	-->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+
+	<!--
+	    Required under hardened runtime: this is what lets Juno prompt for
+	    Automation permission when it sends Apple Events to Notes. Without
+	    it, Notes may launch but macOS never creates the Privacy →
+	    Automation row for Juno.
+	-->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+
+	<!--
+	    Helper binaries (juno-paste, juno-hotkey, juno-textmon, juno-capability,
+	    juno-host) sign under separate identifiers (com.juno.shell.helper.*) and
+	    SwiftPM ships a resource bundle (JunoShell_JunoShell.bundle) loaded at
+	    runtime. Library validation must be relaxed for these to load under
+	    hardened runtime + adhoc signing.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!--
+	    The bundled local engine imports numba/llvmlite through ML/audio
+	    dependencies. Under hardened runtime, llvmlite's executable-memory
+	    allocation is killed by macOS unless the process has JIT/unsigned
+	    executable-memory allowances.
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

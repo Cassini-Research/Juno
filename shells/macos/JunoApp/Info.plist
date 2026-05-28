@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>Juno</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.juno.shell</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Juno</string>
+	<key>CFBundleDisplayName</key>
+	<string>Juno</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © Juno contributors.</string>
+	<key>NSAppSleepDisabled</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Juno uses the microphone to transcribe your voice when you use the dictation shortcut or optional “Listen for Juno” wake mode, and for live on-device captions while dictating. Wake mode keeps a lightweight on-device detector running only while enabled in Settings.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Juno uses on-device speech recognition to show a live transcript while you dictate, so you can see what is being captured before it is inserted.</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Juno needs Accessibility access to read the focused text field and insert dictated text into any app.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Juno may need access when your app copy or project folder lives under Documents so the local voice engine can start from that location. Your recordings and history stay in Library/Application Support/Juno.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Juno creates reminders you ask for by voice (e.g. "Juno, remind me to call Sam tomorrow at 9am"). You can revoke this anytime in System Settings.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Juno creates reminders you ask for by voice (e.g. "Juno, remind me to call Sam tomorrow at 9am"). You can revoke this anytime in System Settings.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Juno creates one-shot calendar alerts you ask for by voice (e.g. "Juno, wake me up in 25 minutes"). You can revoke this anytime in System Settings.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Juno creates one-shot calendar alerts you ask for by voice (e.g. "Juno, wake me up in 25 minutes"). You can revoke this anytime in System Settings.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Juno creates one-shot calendar alerts you ask for by voice (e.g. "Juno, wake me up in 25 minutes"). You can revoke this anytime in System Settings.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Juno needs to control the Notes app so it can save notes you dictate (e.g. "Juno, take a note about the Q3 plan"). Grant access for Notes only — Juno does not script other apps.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

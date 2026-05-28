@@ -1,0 +1,2129 @@
+[
+  {
+    "canonical": "AAC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a a c",
+      "aac"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "accent adaptation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "acoustic echo cancellation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AEC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a e c",
+      "aec"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AGC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a g c",
+      "agc"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "audio buffer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "auto-paste",
+    "kind": "technical_term",
+    "aliases": [
+      "auto paste",
+      "autopaste"
+    ],
+    "spoken_forms": [
+      "auto-paste"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "automatic gain control",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "beamforming",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "beamforming"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bit depth",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bitrate",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bitrate"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "canonical form",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "capitalization model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "channel",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "channel"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "chunking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "chunking"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "clipboard insertion",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "clipping",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "clipping"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "compression",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "compression"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "context window capture",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "correction rule",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "custom dictionary",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "custom vocabulary",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dead cat",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "decibel",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "decibel"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "decode confidence",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dereverberation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dereverberation"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "diarized transcript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dynamic range",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "echo cancellation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "endpointer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "endpointer"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "endpointing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "endpointing"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "entity canonicalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "entity linking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "far-field",
+    "kind": "technical_term",
+    "aliases": [
+      "farfield",
+      "far field"
+    ],
+    "spoken_forms": [
+      "far-field"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "final decode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "final hypothesis",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FLAC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "f l a c",
+      "flac"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "forced alignment",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "foreground selection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "gain control",
+    "kind": "technical_term",
+    "aliases": [
+      "automatic gain control",
+      "AGC"
+    ],
+    "spoken_forms": [
+      "gain control",
+      "automatic gain control",
+      "a g c"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "gain staging",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "headroom",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "headroom"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "homophone map",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hotword list",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "inverse text normalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "jitter",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "jitter"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "key event injection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "keyword spotting",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "language detection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "latency",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "latency"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "limiter",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "limiter"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "locale routing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "low-latency path",
+    "kind": "technical_term",
+    "aliases": [
+      "low latency path",
+      "lowlatency path"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "M4A",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m 4 a",
+      "m4a"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "microphone gain",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mono",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mono"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mouth-to-mic distance",
+    "kind": "technical_term",
+    "aliases": [
+      "mouth to mic distance",
+      "mouthtomic distance"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MP3",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m p 3",
+      "mp3"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "multilingual decode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "near-field",
+    "kind": "technical_term",
+    "aliases": [
+      "near field",
+      "nearfield"
+    ],
+    "spoken_forms": [
+      "near-field"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "noise floor",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "noise suppression",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "normalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "normalization"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Opus",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "opus"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "packet loss",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "partial hypothesis",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "paste path",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PCM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "p c m",
+      "pcm"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "phonetic spelling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "phrase biasing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "plosive",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "plosive"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pop filter",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "post-ASR correction",
+    "kind": "technical_term",
+    "aliases": [
+      "postASR correction",
+      "post ASR correction"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "preamp",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "preamp"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "preview decode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pronunciation dictionary",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proper noun map",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "punctuation model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "quiet speech",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "resampling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "resampling"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reverberation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "reverberation"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "review queue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ring buffer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "room tone",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sample rate",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "segment timestamp",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sibilance",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sibilance"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "signal-to-noise ratio",
+    "kind": "technical_term",
+    "aliases": [
+      "signal to noise ratio",
+      "signaltonoise ratio"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "silence timeout",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SNR",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s n r",
+      "snr"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speaker diarization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speaker embedding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speaker identification",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speaker verification",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "spectrogram",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "spectrogram"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speech timeout",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "spoken commands",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "spoken punctuation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stereo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "stereo"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "streaming transcript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "surface form",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "toggle recording",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "transcription confidence",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "typing simulation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "voice activity detection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "wake word",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "WAV",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "w a v",
+      "wav"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "waveform",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "waveform"
+    ],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "WER target",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "whispered speech",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "wind noise",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "word timestamp",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  }
+]

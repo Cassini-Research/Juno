@@ -1,0 +1,965 @@
+[
+  {
+    "canonical": "accessibility",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "accessibility"
+    ],
+    "tags": [
+      "mac",
+      "permissions"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Activity Monitor",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Apple Silicon",
+    "kind": "platform_term",
+    "aliases": [
+      "apple silicon chip"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "apple",
+      "hardware"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Arc",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "arc"
+    ],
+    "tags": [
+      "browser"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Chrome",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "chrome"
+    ],
+    "tags": [
+      "browser"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Clipboard",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "clipboard"
+    ],
+    "tags": [
+      "editing"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cursor",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "cursor"
+    ],
+    "tags": [
+      "coding",
+      "editor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dictation",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dictation"
+    ],
+    "tags": [
+      "dictation"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Discord",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "discord"
+    ],
+    "tags": [
+      "social",
+      "chat"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Dock",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dock"
+    ],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dropdown",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dropdown"
+    ],
+    "tags": [
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Figma",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "figma"
+    ],
+    "tags": [
+      "design",
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Finder",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "finder"
+    ],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "foreground app",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "context",
+      "juno"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GitHub",
+    "kind": "app_name",
+    "aliases": [
+      "github"
+    ],
+    "spoken_forms": [
+      "github"
+    ],
+    "tags": [
+      "coding",
+      "git"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gmail",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "gmail"
+    ],
+    "tags": [
+      "work",
+      "email"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Docs",
+    "kind": "app_name",
+    "aliases": [
+      "docs"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "work",
+      "writing"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Meet",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "meeting"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Sheets",
+    "kind": "app_name",
+    "aliases": [
+      "sheets"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "work",
+      "spreadsheet"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Slides",
+    "kind": "app_name",
+    "aliases": [
+      "slides"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "work",
+      "presentation"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Juno",
+    "kind": "product_name",
+    "aliases": [
+      "juno app"
+    ],
+    "spoken_forms": [
+      "juno"
+    ],
+    "tags": [
+      "juno",
+      "product"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hold-to-talk",
+    "kind": "platform_term",
+    "aliases": [
+      "hold to talk",
+      "holdtotalk"
+    ],
+    "spoken_forms": [
+      "hold-to-talk"
+    ],
+    "tags": [
+      "dictation",
+      "audio"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hotkey",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "hotkey"
+    ],
+    "tags": [
+      "editing",
+      "dictation"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iTerm",
+    "kind": "app_name",
+    "aliases": [
+      "i term"
+    ],
+    "spoken_forms": [
+      "iterm"
+    ],
+    "tags": [
+      "coding",
+      "mac"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Linear",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "linear"
+    ],
+    "tags": [
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MacBook",
+    "kind": "platform_term",
+    "aliases": [
+      "mac book"
+    ],
+    "spoken_forms": [
+      "macbook"
+    ],
+    "tags": [
+      "apple",
+      "hardware"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "macOS",
+    "kind": "platform_term",
+    "aliases": [
+      "mac os"
+    ],
+    "spoken_forms": [
+      "macos"
+    ],
+    "tags": [
+      "apple",
+      "platform"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Menu bar",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Messages",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "messages"
+    ],
+    "tags": [
+      "social",
+      "chat"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "microphone",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "microphone"
+    ],
+    "tags": [
+      "audio"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Notion",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "notion"
+    ],
+    "tags": [
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "overlay",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "overlay"
+    ],
+    "tags": [
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "permissions",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "permissions"
+    ],
+    "tags": [
+      "security",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "popover",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "popover"
+    ],
+    "tags": [
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "push-to-talk",
+    "kind": "platform_term",
+    "aliases": [
+      "push to talk",
+      "pushtotalk"
+    ],
+    "spoken_forms": [
+      "push-to-talk"
+    ],
+    "tags": [
+      "dictation",
+      "audio"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Raycast",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "raycast"
+    ],
+    "tags": [
+      "productivity"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Safari",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "safari"
+    ],
+    "tags": [
+      "browser",
+      "mac"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "screen context",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "context",
+      "juno"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "selection context",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "context",
+      "juno"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "shortcut",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "shortcut"
+    ],
+    "tags": [
+      "editing"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Slack",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "slack"
+    ],
+    "tags": [
+      "work"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speaker",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "speaker"
+    ],
+    "tags": [
+      "audio"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Spotlight",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "spotlight"
+    ],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "System Settings",
+    "kind": "platform_term",
+    "aliases": [
+      "settings"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "mac",
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Terminal",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "terminal"
+    ],
+    "tags": [
+      "coding",
+      "mac"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "toggle",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "toggle"
+    ],
+    "tags": [
+      "ui"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "transcript",
+    "kind": "platform_term",
+    "aliases": [],
+    "spoken_forms": [
+      "transcript"
+    ],
+    "tags": [
+      "dictation"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Visual Studio Code",
+    "kind": "app_name",
+    "aliases": [
+      "VS Code",
+      "vscode"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "coding",
+      "editor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Xcode",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "xcode"
+    ],
+    "tags": [
+      "coding",
+      "editor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Zoom",
+    "kind": "app_name",
+    "aliases": [],
+    "spoken_forms": [
+      "zoom"
+    ],
+    "tags": [
+      "meeting"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ContextPlane",
+    "kind": "platform_term",
+    "aliases": [
+      "context plane",
+      "Context Plane",
+      "context plan",
+      "Context Plan"
+    ],
+    "spoken_forms": [
+      "context plane",
+      "context plain"
+    ],
+    "tags": [
+      "context",
+      "juno",
+      "internals"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Juno-internal CamelCase term for the typed context bundle. Whisper splits it into 'context plane' or drops the trailing e ('context plan'); aliases canonicalise both back."
+  }
+]

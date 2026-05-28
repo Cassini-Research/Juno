@@ -1,0 +1,3411 @@
+[
+  {
+    "canonical": "abstract class",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Angular",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "angular"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "API",
+    "kind": "technical_term",
+    "aliases": [
+      "application programming interface"
+    ],
+    "spoken_forms": [
+      "a p i",
+      "api"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AppKit",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "appkit"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AST",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a s t",
+      "ast"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "async/await",
+    "kind": "technical_term",
+    "aliases": [
+      "async await"
+    ],
+    "spoken_forms": [
+      "async/await"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "asynchronous",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "asynchronous"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Babel",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "babel"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "backoff",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "backoff"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "backward compatibility",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Bash",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bash"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Black",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "black"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "branch",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "branch"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "breaking change",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "build cache",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Bun",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bun"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bytecode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bytecode"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "C",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "C#",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c#"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "C++",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c++"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CI/CD",
+    "kind": "technical_term",
+    "aliases": [
+      "c i c d",
+      "continuous integration",
+      "CI CD"
+    ],
+    "spoken_forms": [
+      "ci/cd"
+    ],
+    "tags": [
+      "devops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CLI",
+    "kind": "technical_term",
+    "aliases": [
+      "command line interface"
+    ],
+    "spoken_forms": [
+      "c l i",
+      "cli"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "codegen",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "codegen"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "compiler",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "compiler"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "coroutine",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "coroutine"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cron job",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CSS",
+    "kind": "technical_term",
+    "aliases": [
+      "css"
+    ],
+    "spoken_forms": [
+      "c s s",
+      "css"
+    ],
+    "tags": [
+      "web"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cypress",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cypress"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "daemon",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "daemon"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "deadlock",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "deadlock"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Deno",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "deno"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dependency injection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "deserialization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "deserialization"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Django",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "django"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Dockerfile",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dockerfile"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Drizzle",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "drizzle"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "end-to-end test",
+    "kind": "technical_term",
+    "aliases": [
+      "end to end test",
+      "endtoend test"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ESLint",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "eslint"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "event loop",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "event-driven",
+    "kind": "technical_term",
+    "aliases": [
+      "eventdriven",
+      "event driven"
+    ],
+    "spoken_forms": [
+      "event-driven"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "exception",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "exception"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Expo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "expo"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Express",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "express"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FastAPI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "fastapi"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "feature flag",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FFI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "f f i",
+      "ffi"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "finite state machine",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Fish shell",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Flask",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "flask"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "foreign function interface",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "forward compatibility",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "garbage collection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "generic type",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Go",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "go"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "golden test",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GraphQL",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "graphql"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "gRPC",
+    "kind": "technical_term",
+    "aliases": [
+      "g r p c"
+    ],
+    "spoken_forms": [
+      "grpc"
+    ],
+    "tags": [
+      "api"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GUI",
+    "kind": "technical_term",
+    "aliases": [
+      "graphical user interface"
+    ],
+    "spoken_forms": [
+      "g u i",
+      "gui"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hot reload",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "HTML",
+    "kind": "technical_term",
+    "aliases": [
+      "html"
+    ],
+    "spoken_forms": [
+      "h t m l",
+      "html"
+    ],
+    "tags": [
+      "web"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "i18n",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "i18n"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "IDE",
+    "kind": "technical_term",
+    "aliases": [
+      "integrated development environment"
+    ],
+    "spoken_forms": [
+      "i d e",
+      "ide"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "idempotent",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "idempotent"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "index",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "index"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "integration test",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "interface",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "interface"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "internationalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "interpreter",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "interpreter"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Java",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "java"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "JavaScript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "javascript"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Jest",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "jest"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "job runner",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "JSON",
+    "kind": "technical_term",
+    "aliases": [
+      "json"
+    ],
+    "spoken_forms": [
+      "j s o n",
+      "json"
+    ],
+    "tags": [
+      "format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "JWT",
+    "kind": "technical_term",
+    "aliases": [
+      "j w t",
+      "json web token"
+    ],
+    "spoken_forms": [
+      "j w t",
+      "jwt"
+    ],
+    "tags": [
+      "security"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Kotlin",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "kotlin"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "l10n",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "l10n"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "lexer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "lexer"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "linting",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "linting"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "localization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "localization"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Lua",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "lua"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Makefile",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "makefile"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Markdown",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "markdown"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MATLAB",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m a t l a b",
+      "matlab"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "memory leak",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "merge conflict",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "merge queue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "middleware",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "middleware"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "migration",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "migration"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MongoDB",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mongodb"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "monorepo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "monorepo"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mutex",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mutex"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mypy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mypy"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MySQL",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mysql"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NestJS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "nestjs"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Next.js",
+    "kind": "technical_term",
+    "aliases": [
+      "Next js",
+      "Next.JS",
+      "Nextjs"
+    ],
+    "spoken_forms": [
+      "next.js"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Node.js",
+    "kind": "technical_term",
+    "aliases": [
+      "Node.JS",
+      "Nodejs",
+      "Node js"
+    ],
+    "spoken_forms": [
+      "node.js"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NoSQL",
+    "kind": "technical_term",
+    "aliases": [
+      "no sql"
+    ],
+    "spoken_forms": [
+      "nosql"
+    ],
+    "tags": [
+      "database"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "npm",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "npm"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "null pointer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Nuxt",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "nuxt"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OAuth",
+    "kind": "technical_term",
+    "aliases": [
+      "o auth"
+    ],
+    "spoken_forms": [
+      "oauth"
+    ],
+    "tags": [
+      "security"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OIDC",
+    "kind": "technical_term",
+    "aliases": [
+      "open id connect"
+    ],
+    "spoken_forms": [
+      "o i d c",
+      "oidc"
+    ],
+    "tags": [
+      "security"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenAPI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "openapi"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ORM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "o r m",
+      "orm"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "package manager",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "panic",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "panic"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "parser",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "parser"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PHP",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "p h p",
+      "php"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Pipenv",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pipenv"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Playwright",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "playwright"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pnpm",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pnpm"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Poetry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "poetry"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "polling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "polling"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "polyrepo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "polyrepo"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PostgreSQL",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "postgresql"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PowerShell",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "powershell"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Prettier",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "prettier"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Prisma",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "prisma"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "protobuf",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "protobuf"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pull request",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pytest",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pytest"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Python",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "python"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "query plan",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "queue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "queue"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "R",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "r"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "race condition",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rate limit",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "React",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "react"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "React Native",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Redis",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "redis"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "refactor",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "refactor"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reference counting",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "regex",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "regex"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "release train",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "repository",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "repository"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "REST",
+    "kind": "technical_term",
+    "aliases": [
+      "rest api"
+    ],
+    "spoken_forms": [
+      "r e s t",
+      "rest"
+    ],
+    "tags": [
+      "api"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "retry logic",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rollback",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rollback"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ruby",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ruby"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ruff",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ruff"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Rust",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rust"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sandbox",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sandbox"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "schema",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "schema"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SDK",
+    "kind": "technical_term",
+    "aliases": [
+      "software development kit"
+    ],
+    "spoken_forms": [
+      "s d k",
+      "sdk"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "segmentation fault",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "semantic versioning",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "serialization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "serialization"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "shell script",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "snapshot test",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SQL",
+    "kind": "technical_term",
+    "aliases": [
+      "sequel",
+      "sql"
+    ],
+    "spoken_forms": [
+      "s q l",
+      "sql"
+    ],
+    "tags": [
+      "database"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SQLAlchemy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sqlalchemy"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SQLite",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sqlite"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SSH",
+    "kind": "technical_term",
+    "aliases": [
+      "s s h"
+    ],
+    "spoken_forms": [
+      "s s h",
+      "ssh"
+    ],
+    "tags": [
+      "security"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stack trace",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "state machine",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "static analysis",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Svelte",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "svelte"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SvelteKit",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sveltekit"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Swagger",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "swagger"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Swift",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "swift"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SwiftUI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "swiftui"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "syntax tree",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Tailwind CSS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "thread pool",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TLS",
+    "kind": "technical_term",
+    "aliases": [
+      "t l s"
+    ],
+    "spoken_forms": [
+      "t l s",
+      "tls"
+    ],
+    "tags": [
+      "security"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "token stream",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TOML",
+    "kind": "technical_term",
+    "aliases": [
+      "toml"
+    ],
+    "spoken_forms": [
+      "t o m l",
+      "toml"
+    ],
+    "tags": [
+      "format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TUI",
+    "kind": "technical_term",
+    "aliases": [
+      "text user interface"
+    ],
+    "spoken_forms": [
+      "t u i",
+      "tui"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Turbopack",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "turbopack"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "type checking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TypeScript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "typescript"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "UIKit",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "uikit"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "unit test",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "uv",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "uv"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Vite",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vite"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Vitest",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vitest"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Vue",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vue"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "webhook",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "webhook"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Webpack",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "webpack"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "WebSocket",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "websocket"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "worker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "worker"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "workspace",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "workspace"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "XML",
+    "kind": "technical_term",
+    "aliases": [
+      "xml"
+    ],
+    "spoken_forms": [
+      "x m l",
+      "xml"
+    ],
+    "tags": [
+      "format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "YAML",
+    "kind": "technical_term",
+    "aliases": [
+      "yaml"
+    ],
+    "spoken_forms": [
+      "y a m l",
+      "yaml"
+    ],
+    "tags": [
+      "format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "yarn",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "yarn"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Zsh",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "zsh"
+    ],
+    "tags": [
+      "coding"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "auth.ts",
+    "kind": "technical_term",
+    "aliases": [
+      "auth ts",
+      "auth.t s",
+      "audio.ts",
+      "audio ts",
+      "audio.t s",
+      "odd.ts",
+      "odd ts",
+      "odd.t s",
+      "ot.ts",
+      "ot ts",
+      "ot.t s"
+    ],
+    "spoken_forms": [
+      "auth dot t s",
+      "auth ts"
+    ],
+    "tags": [
+      "coding",
+      "filename",
+      "typescript"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Common TypeScript filename. Whisper drops the leading 'au' (-> 'ot.ts') or hears 'auth' as 'audio'; aliases canonicalise both back."
+  },
+  {
+    "canonical": "constants.ts",
+    "kind": "technical_term",
+    "aliases": [
+      "constants ts",
+      "constants.t s",
+      "constant.ts",
+      "constant ts",
+      "constant.t s",
+      "consonant.ts",
+      "consonant ts",
+      "consonant.t s",
+      "const.ts",
+      "const ts",
+      "const.t s"
+    ],
+    "spoken_forms": [
+      "constants dot t s",
+      "constants ts"
+    ],
+    "tags": [
+      "coding",
+      "filename",
+      "typescript"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Common TypeScript filename. Whisper truncates the trailing 's' ('constant.ts') or hears 'constants' as 'consonant' or 'const'; aliases canonicalise back."
+  }
+]

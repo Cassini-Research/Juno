@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "never_persist_from_surfaces": [
+    "password manager",
+    "banking",
+    "payments",
+    "private browsing",
+    "incognito",
+    "1password",
+    "bitwarden",
+    "system settings > passwords"
+  ],
+  "allow_runtime_only_bias_from_suppressed_surfaces": false,
+  "notes": "Suppressed surfaces may be inspected only under the broader Juno context policy. They should not write durable personalization state."
+}

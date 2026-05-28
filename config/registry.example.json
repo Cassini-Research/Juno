@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "surface": "desktop",
+  "language": "en",
+  "session_id_prefix": "demo_registry",
+  "packages": [
+    {
+      "package_id": "preview-faster-whisper-small-en",
+      "version": "0.1.0",
+      "slot": "preview_asr",
+      "backend": "faster_whisper",
+      "model_path": "models/faster-whisper-small-en",
+      "languages": ["en"]
+    },
+    {
+      "package_id": "final-faster-whisper-medium-en",
+      "version": "0.1.0",
+      "slot": "final_asr",
+      "backend": "faster_whisper",
+      "model_path": "models/faster-whisper-medium-en",
+      "languages": ["en"]
+    }
+  ]
+}

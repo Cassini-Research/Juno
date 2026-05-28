@@ -1,0 +1,10 @@
+Juno
+
+Juno is distributed under the MIT License. See LICENSE.
+
+The runtime can use third-party open-source libraries and local model
+checkpoints. Their licenses remain with their respective projects and must be
+preserved when building or distributing packaged releases.
+
+This source tree does not vendor third-party binary model or wake-word
+artifacts.

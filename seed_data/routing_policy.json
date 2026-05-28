@@ -1,0 +1,250 @@
+{
+  "version": 3,
+  "always_include": [
+    "core_names",
+    "personal_entities"
+  ],
+  "surface_routes": [
+    {
+      "surface_keywords": [
+        "code editor",
+        "ide",
+        "source editor",
+        "visual studio code",
+        "vs code",
+        "xcode",
+        "terminal",
+        "iterm",
+        "github",
+        "gitlab",
+        "sourcegraph"
+      ],
+      "enable_packs": [
+        "domain_coding_engineering",
+        "domain_ai_models_terms",
+        "domain_infra_data_ops"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "assistant",
+        "chat assistant",
+        "language model",
+        "prompt",
+        "token",
+        "embedding",
+        "hugging face",
+        "ollama",
+        "lm studio"
+      ],
+      "enable_packs": [
+        "domain_ai_models_terms",
+        "domain_product_work"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "slack",
+        "notion",
+        "linear",
+        "jira",
+        "confluence",
+        "figma",
+        "google docs",
+        "gmail",
+        "calendar",
+        "zoom",
+        "meet"
+      ],
+      "enable_packs": [
+        "domain_product_work"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "microphone",
+        "audio",
+        "waveform",
+        "transcript",
+        "dictation",
+        "subtitle",
+        "captions",
+        "sample rate"
+      ],
+      "enable_packs": [
+        "domain_voice_audio_speech",
+        "domain_ai_models_terms"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "biology",
+        "life science",
+        "genetics",
+        "genomics",
+        "cell biology",
+        "molecular biology",
+        "immunology",
+        "microbiology",
+        "biotech",
+        "bioinformatics",
+        "transcriptomics",
+        "proteomics",
+        "epidemiology"
+      ],
+      "enable_packs": [
+        "domain_biology_life_sciences"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "chemistry",
+        "organic chemistry",
+        "inorganic chemistry",
+        "biochemistry",
+        "materials science",
+        "battery",
+        "batteries",
+        "catalyst",
+        "synthesis",
+        "molecule",
+        "polymer",
+        "electrochemistry",
+        "nanomaterial",
+        "lab report"
+      ],
+      "enable_packs": [
+        "domain_chemistry_materials",
+        "domain_biology_life_sciences"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "physics",
+        "quantum",
+        "astrophysics",
+        "astronomy",
+        "cosmology",
+        "mechanics",
+        "thermodynamics",
+        "optics",
+        "photonics",
+        "semiconductor",
+        "plasma",
+        "fusion",
+        "relativity"
+      ],
+      "enable_packs": [
+        "domain_physics_space"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "history",
+        "civics",
+        "archaeology",
+        "civilization",
+        "empire",
+        "revolution",
+        "colonial",
+        "decolonization",
+        "treaty",
+        "cold war",
+        "world war",
+        "ancient history",
+        "medieval history",
+        "modern history",
+        "archival"
+      ],
+      "enable_packs": [
+        "domain_history_civics"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "geography",
+        "earth science",
+        "climate",
+        "geospatial",
+        "gis",
+        "map",
+        "maps",
+        "cartography",
+        "tectonic",
+        "geology",
+        "watershed",
+        "oceanography",
+        "demography",
+        "urbanization"
+      ],
+      "enable_packs": [
+        "domain_geography_earth_science"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "science notes",
+        "science class",
+        "science homework",
+        "stem",
+        "lab notebook",
+        "source notes"
+      ],
+      "enable_packs": [
+        "domain_biology_life_sciences",
+        "domain_chemistry_materials",
+        "domain_physics_space",
+        "domain_geography_earth_science"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "messages",
+        "discord",
+        "whatsapp",
+        "telegram",
+        "x",
+        "twitter",
+        "reddit"
+      ],
+      "enable_packs": [
+        "domain_colloquial_slang"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "ethereum",
+        "bitcoin",
+        "solana",
+        "polkadot",
+        "avail",
+        "babylon",
+        "monad",
+        "celestia",
+        "staking",
+        "rollup"
+      ],
+      "enable_packs": [
+        "specialized_distributed_protocols"
+      ]
+    },
+    {
+      "surface_keywords": [
+        "obsidian",
+        "bear",
+        "notes",
+        "apple notes",
+        "drafts"
+      ],
+      "enable_packs": [
+        "domain_product_work",
+        "domain_colloquial_slang"
+      ]
+    }
+  ],
+  "fallback_enabled_packs": [
+    "core_names",
+    "personal_entities"
+  ],
+  "notes": "Distributed protocols pack is secondary and should only activate on explicit surface or context keywords. Do not surface it in the default narrative."
+}

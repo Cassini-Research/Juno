@@ -1,0 +1,256 @@
+[
+  {
+    "canonical": "Example User",
+    "kind": "person",
+    "aliases": [],
+    "spoken_forms": [
+      "example user"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Sample Contact",
+    "kind": "person",
+    "aliases": [],
+    "spoken_forms": [
+      "sample contact"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Demo Teammate",
+    "kind": "person",
+    "aliases": [],
+    "spoken_forms": [
+      "demo teammate"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Test Reviewer",
+    "kind": "person",
+    "aliases": [],
+    "spoken_forms": [
+      "test reviewer"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Sample Collaborator",
+    "kind": "person",
+    "aliases": [],
+    "spoken_forms": [
+      "sample collaborator"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Juno",
+    "kind": "product_name",
+    "aliases": [],
+    "spoken_forms": [
+      "juno"
+    ],
+    "tags": [
+      "juno",
+      "product"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ExampleProject",
+    "kind": "project_name",
+    "aliases": [
+      "Example Project"
+    ],
+    "spoken_forms": [
+      "example project",
+      "example"
+    ],
+    "tags": [
+      "juno",
+      "project"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ExampleFlow",
+    "kind": "project_name",
+    "aliases": [
+      "Example Flow",
+      "Example Flow"
+    ],
+    "spoken_forms": [
+      "exampleflow"
+    ],
+    "tags": [
+      "juno",
+      "project"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EXAMPLEPROJECT",
+    "kind": "project_name",
+    "aliases": [
+      "ExampleProject",
+      "example project"
+    ],
+    "spoken_forms": [
+      "e x a m p l e",
+      "exampleproject"
+    ],
+    "tags": [
+      "project"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ExampleAssembly",
+    "kind": "project_name",
+    "aliases": [],
+    "spoken_forms": [
+      "exampleassembly"
+    ],
+    "tags": [
+      "project"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ExampleSafe",
+    "kind": "project_name",
+    "aliases": [
+      "ExampleSafe"
+    ],
+    "spoken_forms": [
+      "examplesafe"
+    ],
+    "tags": [
+      "project"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Demo Companion",
+    "kind": "person_or_pet_name",
+    "aliases": [],
+    "spoken_forms": [
+      "demo companion"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Demo Contact",
+    "kind": "person",
+    "aliases": [
+      "Demo",
+      "Contact"
+    ],
+    "spoken_forms": [
+      "demo contact",
+      "demo",
+      "contact"
+    ],
+    "tags": [
+      "user"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Generic placeholder contact used to exercise ASR canonicalisation without embedding a real personal name."
+  }
+]

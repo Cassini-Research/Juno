@@ -1,0 +1,37 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.DS_Store
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime state and generated artifacts
+.juno_v2_runtime/
+.juno_v2_logs/
+.juno_v2_demo/
+.juno_v2_memory/
+.juno_v2_eval/
+.juno_v2_golden/
+.juno_tmp_workbench/
+.hf_cache/
+logs_v2/
+logs/
+memory/
+runtime/
+
+# IDE noise
+.idea/
+.vscode/
+
+# Swift and app build outputs
+shells/macos/.build/
+shells/**/.build/
+shells/macos/JunoApp/build/
+.juno_xcode_derived/
+dist/
+
+build/
+*.log

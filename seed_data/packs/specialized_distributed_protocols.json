@@ -1,0 +1,2022 @@
+[
+  {
+    "canonical": "AA wallet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Aave",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "aave"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "account abstraction",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "airdrops",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "airdrops"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AMM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a m m",
+      "amm"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Arbitrum",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "arbitrum"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Avail",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "avail"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Babylon",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "babylon"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Base",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "base"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Bitcoin",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bitcoin"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "blockchain",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "blockchain"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bridge",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bridge"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bridge risk",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Celestia",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "celestia"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cold wallet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "collateral",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "collateral"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "consensus",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "consensus"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cosmos",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cosmos"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cross-chain bridge",
+    "kind": "technical_term",
+    "aliases": [
+      "cross chain bridge",
+      "crosschain bridge"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "custody",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "custody"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DA layer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "data availability",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "delegation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "delegation"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "distributed ledger",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EigenLayer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "eigenlayer"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "epoch",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "epoch"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ethereum",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ethereum"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EVM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e v m",
+      "evm"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "execution layer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "finality",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "finality"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Foundry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "foundry"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "fraud proof",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "gas fee",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "governance proposal",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Hardhat",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "hardhat"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hot wallet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "IBC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "i b c",
+      "ibc"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "impermanent loss",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "indexer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "indexer"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "intent",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "intent"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Lido",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "lido"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "liquidation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "liquidation"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "liquidity",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "liquidity"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "liquidity provider",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "loan-to-value",
+    "kind": "technical_term",
+    "aliases": [
+      "loan to value",
+      "loantovalue"
+    ],
+    "spoken_forms": [
+      "loan-to-value"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Maker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "maker"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "market maker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mempool",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mempool"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Merkle tree",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MEV",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m e v",
+      "mev"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MEV relay",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Monad",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "monad"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "multisig",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "multisig"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "nonce",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "nonce"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "off-chain voting",
+    "kind": "technical_term",
+    "aliases": [
+      "off chain voting",
+      "offchain voting"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "on-chain governance",
+    "kind": "technical_term",
+    "aliases": [
+      "onchain governance",
+      "on chain governance"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OP Stack",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Optimism",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "optimism"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "optimistic rollup",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "oracle",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "oracle"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "order book",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pallet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pallet"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "parachain",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "parachain"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PBS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "p b s",
+      "pbs"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "perpetuals",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "perpetuals"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Polkadot",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "polkadot"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "private key",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proof system",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proposer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "proposer"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proposer-builder separation",
+    "kind": "technical_term",
+    "aliases": [
+      "proposerbuilder separation",
+      "proposer builder separation"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "prover",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "prover"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "public key",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "referendum",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "referendum"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "restaking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "restaking"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rollup",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rollup"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rollup-as-a-service",
+    "kind": "technical_term",
+    "aliases": [
+      "rollup as a service",
+      "rollupasaservice"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RPC endpoint",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "runtime upgrade",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "safe",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "safe"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "seed phrase",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sequencer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sequencer"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "settlement layer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "slashing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "slashing"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "slippage",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "slippage"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "slot",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "slot"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "smart contract",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Solana",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "solana"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Solidity",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "solidity"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stablecoin",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "stablecoin"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "staking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "staking"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Starknet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "starknet"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "state root",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "subgraph",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "subgraph"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Substrate",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "substrate"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tokenomics",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tokenomics"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "treasury proposal",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TVL",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "t v l",
+      "tvl"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Uniswap",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "uniswap"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "validator",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "validator"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "validator set",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "validity proof",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vault",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vault"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "wallet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "wallet"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "yield",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "yield"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "zero knowledge proof",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "zk proof",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "zk-rollup",
+    "kind": "technical_term",
+    "aliases": [
+      "zkrollup",
+      "zk rollup"
+    ],
+    "spoken_forms": [
+      "zk-rollup"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "zkSync",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "zksync"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "zkVM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "zkvm"
+    ],
+    "tags": [
+      "specialized",
+      "distributed_protocols"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  }
+]

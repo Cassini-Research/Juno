@@ -1,0 +1,1555 @@
+[
+  {
+    "canonical": "ate",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ate"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ate and left no crumbs",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "aura",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "aura"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "based",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "based"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bet",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bet"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "big yikes",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "brainrot",
+    "kind": "slang_term",
+    "aliases": [
+      "brain rot"
+    ],
+    "spoken_forms": [
+      "brainrot"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "bussin",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bussin"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "canon event",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cap",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cap"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "chaotic",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "chaotic"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cheugy",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cheugy"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "chopped",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "chopped"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "clown",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "clown"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cooked",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cooked"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "copium",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "copium"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "core memory",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "crash out",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cringe",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cringe"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "deadass",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "deadass"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "delivered",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "delivered"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "delulu",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "delulu"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "down bad",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "drip",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "drip"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "finna",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "finna"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "fit check",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "for real",
+    "kind": "slang_term",
+    "aliases": [
+      "fr"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "frfr",
+    "kind": "slang_term",
+    "aliases": [
+      "for real for real"
+    ],
+    "spoken_forms": [
+      "frfr"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ghosted",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ghosted"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "glow up",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GOAT",
+    "kind": "slang_term",
+    "aliases": [
+      "greatest of all time"
+    ],
+    "spoken_forms": [
+      "g o a t",
+      "goat"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hard launch",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "highkey",
+    "kind": "slang_term",
+    "aliases": [
+      "high key"
+    ],
+    "spoken_forms": [
+      "highkey"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hopium",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "hopium"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "I am dead",
+    "kind": "slang_term",
+    "aliases": [
+      "I'm dead"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ick",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ick"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iconic",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "iconic"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "irl",
+    "kind": "slang_term",
+    "aliases": [
+      "in real life"
+    ],
+    "spoken_forms": [
+      "irl"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "it is giving",
+    "kind": "slang_term",
+    "aliases": [
+      "it's giving"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iykyk",
+    "kind": "slang_term",
+    "aliases": [
+      "I Y K Y K",
+      "if you know you know"
+    ],
+    "spoken_forms": [
+      "iykyk"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "L",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "l"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "L take",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "let him cook",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "locked in",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "lore drop",
+    "kind": "slang_term",
+    "aliases": [
+      "lore"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "lowkey",
+    "kind": "slang_term",
+    "aliases": [
+      "low key"
+    ],
+    "spoken_forms": [
+      "lowkey"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "main character energy",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "messy",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "messy"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mid",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mid"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mood",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "mood"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mood board",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ngl",
+    "kind": "slang_term",
+    "aliases": [
+      "not gonna lie"
+    ],
+    "spoken_forms": [
+      "ngl"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "no cap",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NPC",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "n p c",
+      "npc"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pookie",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pookie"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ratio",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ratio"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "receipts",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "receipts"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rent-free",
+    "kind": "slang_term",
+    "aliases": [
+      "rent free",
+      "rentfree"
+    ],
+    "spoken_forms": [
+      "rent-free"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rizz",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rizz"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rizzy",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rizzy"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "say less",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sending me",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "situationship",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "situationship"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "slaps",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "slaps"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "soft girl",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "soft launch",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "spill the tea",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stan",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "stan"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sus",
+    "kind": "slang_term",
+    "aliases": [
+      "suss"
+    ],
+    "spoken_forms": [
+      "sus"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tbh",
+    "kind": "slang_term",
+    "aliases": [
+      "to be honest"
+    ],
+    "spoken_forms": [
+      "tbh"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tea",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tea"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "that tracks",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "touch grass",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "touchy",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "touchy"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "understood the assignment",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "unhinged",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "unhinged"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "valid",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "valid"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vibe",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vibe"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vibe check",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vibey",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "vibey"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "W",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "w"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "W take",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "wild",
+    "kind": "slang_term",
+    "aliases": [],
+    "spoken_forms": [
+      "wild"
+    ],
+    "tags": [
+      "slang",
+      "colloquial"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  }
+]

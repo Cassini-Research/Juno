@@ -1,0 +1,15 @@
+{
+  "core_names": 51,
+  "domain_ai_models_terms": 241,
+  "domain_biology_life_sciences": 37,
+  "domain_chemistry_materials": 39,
+  "domain_coding_engineering": 188,
+  "domain_infra_data_ops": 127,
+  "domain_geography_earth_science": 41,
+  "domain_history_civics": 39,
+  "domain_physics_space": 41,
+  "domain_product_work": 123,
+  "domain_voice_audio_speech": 112,
+  "domain_colloquial_slang": 83,
+  "specialized_distributed_protocols": 109
+}

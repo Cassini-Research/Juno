@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-label="Juno architecture flow">
+  <rect width="1280" height="460" fill="#fbfaf7"/>
+  <text x="92" y="82" fill="#15181d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="34" font-weight="760">One local voice-writing path</text>
+  <text x="92" y="116" fill="#667080" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="19">Juno keeps preview, final transcript, writing, actions, and insertion in one coherent runtime.</text>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="680">
+    <g transform="translate(92 190)">
+      <rect width="132" height="88" rx="16" fill="#15181d"/>
+      <text x="66" y="52" text-anchor="middle" fill="#ffffff">Audio</text>
+    </g>
+    <g transform="translate(250 190)">
+      <rect width="132" height="88" rx="16" fill="#eef4ff" stroke="#cfdcf2"/>
+      <text x="66" y="42" text-anchor="middle" fill="#24314a">Speech</text>
+      <text x="66" y="66" text-anchor="middle" fill="#24314a">state</text>
+    </g>
+    <g transform="translate(408 190)">
+      <rect width="132" height="88" rx="16" fill="#effaf5" stroke="#cfe9dc"/>
+      <text x="66" y="42" text-anchor="middle" fill="#163f32">Live</text>
+      <text x="66" y="66" text-anchor="middle" fill="#163f32">preview</text>
+    </g>
+    <g transform="translate(566 190)">
+      <rect width="132" height="88" rx="16" fill="#fff5e9" stroke="#ead6bf"/>
+      <text x="66" y="42" text-anchor="middle" fill="#573819">Final</text>
+      <text x="66" y="66" text-anchor="middle" fill="#573819">transcript</text>
+    </g>
+    <g transform="translate(724 190)">
+      <rect width="132" height="88" rx="16" fill="#f3f0ff" stroke="#dcd5f4"/>
+      <text x="66" y="52" text-anchor="middle" fill="#33255f">Writer</text>
+    </g>
+    <g transform="translate(882 190)">
+      <rect width="132" height="88" rx="16" fill="#fff1f2" stroke="#ebd1d4"/>
+      <text x="66" y="52" text-anchor="middle" fill="#612b32">Actions</text>
+    </g>
+    <g transform="translate(1040 190)">
+      <rect width="132" height="88" rx="16" fill="#15181d"/>
+      <text x="66" y="42" text-anchor="middle" fill="#ffffff">Native</text>
+      <text x="66" y="66" text-anchor="middle" fill="#ffffff">insertion</text>
+    </g>
+  </g>
+  <g stroke="#aeb6c2" stroke-width="3" stroke-linecap="round">
+    <path d="M226 234h22"/>
+    <path d="M384 234h22"/>
+    <path d="M542 234h22"/>
+    <path d="M700 234h22"/>
+    <path d="M858 234h22"/>
+    <path d="M1016 234h22"/>
+  </g>
+  <g transform="translate(92 334)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect width="1080" height="48" rx="14" fill="#ffffff" stroke="#ded8ce"/>
+    <text x="28" y="31" fill="#454c57" font-size="17" font-weight="560">Cross-cutting layers: dictionary, memory, app context, language policy, privacy gates, history, and runtime health.</text>
+  </g>
+</svg>

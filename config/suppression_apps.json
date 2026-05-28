@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "blocklist_bundle_ids": [
+    "com.1password.1password7",
+    "com.bitwarden.desktop"
+  ],
+  "warnlist_bundle_ids": [
+    "com.slack.Slack"
+  ],
+  "blocklist_window_title_patterns": [
+    "(?i)sign in",
+    "(?i)one[- ]time code"
+  ]
+}

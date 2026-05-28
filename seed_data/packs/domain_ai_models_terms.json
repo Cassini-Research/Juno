@@ -1,0 +1,4376 @@
+[
+  {
+    "canonical": "ablation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ablation"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Accelerate",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "accelerate"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "acoustic model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "agent",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "agent"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "agent loop",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "agentic workflow",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AI",
+    "kind": "technical_term",
+    "aliases": [
+      "artificial intelligence"
+    ],
+    "spoken_forms": [
+      "a i",
+      "ai"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Alibaba Qwen",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "alignment",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "alignment"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AllenAI",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [
+      "allenai"
+    ],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Anthropic",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [
+      "anthropic"
+    ],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Apache TVM",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ASR",
+    "kind": "technical_term",
+    "aliases": [
+      "automatic speech recognition"
+    ],
+    "spoken_forms": [
+      "a s r",
+      "asr"
+    ],
+    "tags": [
+      "speech",
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "attention",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "attention"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "automatic punctuation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Bark",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "bark"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "batching",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "batching"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "beam search",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "benchmark",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "benchmark"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "BitsAndBytes",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "bitsandbytes"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "BPE",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "b p e",
+      "bpe"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Byte Pair Encoding",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Canary",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "canary"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "canonicalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "canonicalization"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CER",
+    "kind": "metric",
+    "aliases": [
+      "character error rate"
+    ],
+    "spoken_forms": [
+      "c e r",
+      "cer"
+    ],
+    "tags": [
+      "speech",
+      "metric"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "checkpoint",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "checkpoint"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "claude"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Haiku",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Haiku 4.5",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "claude haiku four point five",
+      "Claude Haiku 45",
+      "Claude Haiku 4 5"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Opus",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Opus 4.7",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "claude opus four point seven",
+      "Claude Opus 4 7",
+      "Claude Opus 47"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Sonnet",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Claude Sonnet 4.6",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "claude sonnet four point six",
+      "Claude Sonnet 4 6",
+      "Claude Sonnet 46"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Codestral",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "codestral"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cold start",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "context window",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Core ML",
+    "kind": "technical_term",
+    "aliases": [
+      "coreml"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "apple",
+      "inference"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Core ML Tools",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CTC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c t c",
+      "ctc"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CUDA",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c u d a",
+      "cuda"
+    ],
+    "tags": [
+      "gpu"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cuDNN",
+    "kind": "technical_term",
+    "aliases": [
+      "cudnn"
+    ],
+    "spoken_forms": [
+      "cudnn"
+    ],
+    "tags": [
+      "gpu"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "datasets",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "datasets"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "decoder",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "decoder"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "decoder-only model",
+    "kind": "technical_term",
+    "aliases": [
+      "decoderonly model",
+      "decoder only model"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DeepSeek",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "deepseek"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DeepSeek R1",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "deep seek r one"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DeepSeek V3",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "deep seek v three"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "denoising",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "denoising"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "deterministic decode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Devstral",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "devstral"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "diffusion model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "distillation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "distillation"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "distilled model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DPO",
+    "kind": "technical_term",
+    "aliases": [
+      "direct preference optimization"
+    ],
+    "spoken_forms": [
+      "d p o",
+      "dpo"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "E2E",
+    "kind": "technical_term",
+    "aliases": [
+      "end to end",
+      "end-to-end"
+    ],
+    "spoken_forms": [
+      "e 2 e",
+      "e2e"
+    ],
+    "tags": [
+      "system"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "embedding model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "embeddings",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "embeddings"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "encoder-decoder model",
+    "kind": "technical_term",
+    "aliases": [
+      "encoderdecoder model",
+      "encoder decoder model"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "evals",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "evals"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "final transcript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "fine-tuning",
+    "kind": "technical_term",
+    "aliases": [
+      "fine tuning",
+      "finetuning"
+    ],
+    "spoken_forms": [
+      "fine-tuning"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FlashAttention",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "flashattention"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "FLUX",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "f l u x",
+      "flux"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "function calling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gemini",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "gemini"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gemini 3.1 Pro",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gemini three point one pro",
+      "Gemini 31 Pro",
+      "Gemini 3 1 Pro"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gemma",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "gemma"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Gemma 4",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gemma four"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GGUF",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "g g u f",
+      "gguf"
+    ],
+    "tags": [
+      "model_format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google DeepMind",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "g p t",
+      "gpt"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT-5.4",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gpt five point four",
+      "GPT-5 4",
+      "GPT-54",
+      "GPT5.4",
+      "GPT 5.4"
+    ],
+    "spoken_forms": [
+      "gpt-5.4"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT-5.4-mini",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gpt five point four mini",
+      "GPT5.4mini",
+      "GPT 5.4 mini",
+      "GPT-5 4-mini",
+      "GPT-54-mini"
+    ],
+    "spoken_forms": [
+      "gpt-5.4-mini"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT-5.4-nano",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gpt five point four nano",
+      "GPT-54-nano",
+      "GPT 5.4 nano",
+      "GPT-5 4-nano",
+      "GPT5.4nano"
+    ],
+    "spoken_forms": [
+      "gpt-5.4-nano"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT-realtime-1.5",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "gpt realtime one point five",
+      "GPT-realtime-15",
+      "GPT-realtime-1 5",
+      "GPTrealtime1.5",
+      "GPT realtime 1.5"
+    ],
+    "spoken_forms": [
+      "gpt-realtime-1.5"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPU",
+    "kind": "technical_term",
+    "aliases": [
+      "graphics processing unit"
+    ],
+    "spoken_forms": [
+      "g p u",
+      "gpu"
+    ],
+    "tags": [
+      "hardware"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "grapheme",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "grapheme"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "greedy decoding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "grounding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "grounding"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hallucination",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "hallucination"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "homophone",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "homophone"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hotword",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "hotword"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Hugging Face",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "hybrid search",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "inference",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "inference"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "inference server",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "JAX",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "j a x",
+      "jax"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "knowledge base",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "KV cache",
+    "kind": "technical_term",
+    "aliases": [
+      "key value cache",
+      "k v cache"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "inference"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "language model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Llama",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "llama"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Llama 4",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "llama four"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "llama.cpp",
+    "kind": "framework_or_tool",
+    "aliases": [
+      "llama cpp",
+      "llamacpp"
+    ],
+    "spoken_forms": [
+      "llama.cpp"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "LLM",
+    "kind": "technical_term",
+    "aliases": [
+      "large language model"
+    ],
+    "spoken_forms": [
+      "l l m",
+      "llm"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "LM Studio",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "local-first inference",
+    "kind": "technical_term",
+    "aliases": [
+      "local first inference",
+      "localfirst inference"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "LoRA",
+    "kind": "technical_term",
+    "aliases": [
+      "low rank adaptation",
+      "low-rank adaptation"
+    ],
+    "spoken_forms": [
+      "lora"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Marian",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "marian"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MCP",
+    "kind": "technical_term",
+    "aliases": [
+      "model context protocol"
+    ],
+    "spoken_forms": [
+      "m c p",
+      "mcp"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Meta AI",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Microsoft Phi",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mistral",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "mistral"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mistral AI",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mistral Large",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ML",
+    "kind": "technical_term",
+    "aliases": [
+      "machine learning"
+    ],
+    "spoken_forms": [
+      "m l",
+      "ml"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MLX",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "m l x",
+      "mlx"
+    ],
+    "tags": [
+      "apple",
+      "inference"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "mlx-lm",
+    "kind": "framework_or_tool",
+    "aliases": [
+      "mlxlm",
+      "mlx lm"
+    ],
+    "spoken_forms": [
+      "mlx-lm"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "model card",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "model router",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "multi-agent system",
+    "kind": "technical_term",
+    "aliases": [
+      "multiagent system",
+      "multi agent system"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "multimodal model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NPU",
+    "kind": "technical_term",
+    "aliases": [
+      "neural processing unit"
+    ],
+    "spoken_forms": [
+      "n p u",
+      "npu"
+    ],
+    "tags": [
+      "hardware"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ollama",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "ollama"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OLMo",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "olmo"
+    ],
+    "spoken_forms": [
+      "olmo"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "on-device inference",
+    "kind": "technical_term",
+    "aliases": [
+      "on device inference",
+      "ondevice inference"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ONNX",
+    "kind": "technical_term",
+    "aliases": [
+      "open neural network exchange"
+    ],
+    "spoken_forms": [
+      "o n n x",
+      "onnx"
+    ],
+    "tags": [
+      "model_format"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ONNX Runtime",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenAI",
+    "kind": "organization",
+    "aliases": [],
+    "spoken_forms": [
+      "openai"
+    ],
+    "tags": [
+      "ai",
+      "vendor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenRouter",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "openrouter"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenVINO",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "openvino"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "partial transcript",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PEFT",
+    "kind": "technical_term",
+    "aliases": [
+      "parameter efficient fine tuning"
+    ],
+    "spoken_forms": [
+      "p e f t",
+      "peft"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Phi",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "phi"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "phoneme",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "phoneme"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "phrase hint",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Piper",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "piper"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "planner",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "planner"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "post-processor",
+    "kind": "technical_term",
+    "aliases": [
+      "postprocessor",
+      "post processor"
+    ],
+    "spoken_forms": [
+      "post-processor"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "post-training",
+    "kind": "technical_term",
+    "aliases": [
+      "posttraining",
+      "post training"
+    ],
+    "spoken_forms": [
+      "post-training"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "prefix caching",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pretraining",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pretraining"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "prompt cache",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "prompt engineering",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pronunciation lexicon",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "proper noun biasing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "pruning",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pruning"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PyTorch",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "pytorch"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "QLoRA",
+    "kind": "technical_term",
+    "aliases": [
+      "quantized low rank adaptation"
+    ],
+    "spoken_forms": [
+      "qlora"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "quantization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "quantization"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Qwen",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "qwen"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Qwen 3",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "qwen three"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RAG",
+    "kind": "technical_term",
+    "aliases": [
+      "retrieval augmented generation",
+      "retrieval-augmented generation"
+    ],
+    "spoken_forms": [
+      "r a g",
+      "rag"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "realtime model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reasoning model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reasoning tokens",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "reasoning tokens"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reflection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "reflection"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reranker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "reranker"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reranking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "reranking"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "retriever",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "retriever"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RLHF",
+    "kind": "technical_term",
+    "aliases": [
+      "reinforcement learning from human feedback"
+    ],
+    "spoken_forms": [
+      "r l h f",
+      "rlhf"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RNN-T",
+    "kind": "technical_term",
+    "aliases": [
+      "RNNT",
+      "RNN T"
+    ],
+    "spoken_forms": [
+      "rnn-t"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ROCm",
+    "kind": "technical_term",
+    "aliases": [
+      "rockm"
+    ],
+    "spoken_forms": [
+      "rocm"
+    ],
+    "tags": [
+      "gpu"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "safetensors",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "safetensors"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SAM",
+    "kind": "model_family_or_model",
+    "aliases": [
+      "segment anything model"
+    ],
+    "spoken_forms": [
+      "s a m",
+      "sam"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sampling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sampling"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "self-consistency",
+    "kind": "technical_term",
+    "aliases": [
+      "selfconsistency",
+      "self consistency"
+    ],
+    "spoken_forms": [
+      "self-consistency"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "semantic search",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SentencePiece",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "sentencepiece"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "server-side inference",
+    "kind": "technical_term",
+    "aliases": [
+      "server side inference",
+      "serverside inference"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SFT",
+    "kind": "technical_term",
+    "aliases": [
+      "supervised fine tuning",
+      "supervised fine-tuning"
+    ],
+    "spoken_forms": [
+      "s f t",
+      "sft"
+    ],
+    "tags": [
+      "training"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SGLang",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "sglang"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sherpa-onnx",
+    "kind": "framework_or_tool",
+    "aliases": [
+      "sherpa onnx",
+      "sherpaonnx"
+    ],
+    "spoken_forms": [
+      "sherpa-onnx"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Silero",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "silero"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SLM",
+    "kind": "technical_term",
+    "aliases": [
+      "small language model"
+    ],
+    "spoken_forms": [
+      "s l m",
+      "slm"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "speculative decoding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "streaming ASR",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "streaming decode",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "streaming response",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "structured output",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "STT",
+    "kind": "technical_term",
+    "aliases": [
+      "speech to text",
+      "speech-to-text"
+    ],
+    "spoken_forms": [
+      "s t t",
+      "stt"
+    ],
+    "tags": [
+      "speech",
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "student model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "synthetic data",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "system prompt",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "teacher model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "temperature",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "temperature"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TensorFlow",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "tensorflow"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TensorRT",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "tensorrt"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Text Generation Inference",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "text normalization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "throughput",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "throughput"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tokenization",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tokenization"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tokenizer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tokenizer"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tool calling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tool router",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "top-p",
+    "kind": "technical_term",
+    "aliases": [
+      "topp",
+      "top p"
+    ],
+    "spoken_forms": [
+      "top-p"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TPU",
+    "kind": "technical_term",
+    "aliases": [
+      "tensor processing unit"
+    ],
+    "spoken_forms": [
+      "t p u",
+      "tpu"
+    ],
+    "tags": [
+      "hardware"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "transducer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "transducer"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "transformer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "transformer"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Transformers",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "transformers"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Triton",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "triton"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TTS",
+    "kind": "technical_term",
+    "aliases": [
+      "text to speech",
+      "text-to-speech"
+    ],
+    "spoken_forms": [
+      "t t s",
+      "tts"
+    ],
+    "tags": [
+      "speech",
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "TVM",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "t v m",
+      "tvm"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "VAD",
+    "kind": "technical_term",
+    "aliases": [
+      "voice activity detection"
+    ],
+    "spoken_forms": [
+      "v a d",
+      "vad"
+    ],
+    "tags": [
+      "speech",
+      "audio"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vector database",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "vLLM",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "vllm"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "VLM",
+    "kind": "technical_term",
+    "aliases": [
+      "vision language model"
+    ],
+    "spoken_forms": [
+      "v l m",
+      "vlm"
+    ],
+    "tags": [
+      "ai",
+      "vision"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "voice clone",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "weights",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "weights"
+    ],
+    "tags": [
+      "ai"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "WER",
+    "kind": "metric",
+    "aliases": [
+      "word error rate"
+    ],
+    "spoken_forms": [
+      "w e r",
+      "wer"
+    ],
+    "tags": [
+      "speech",
+      "metric"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Whisper",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "whisper"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "WordPiece",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "wordpiece"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "XLA",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "x l a",
+      "xla"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "XTTS",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "x t t s",
+      "xtts"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GPT-4.1",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "g p t four point one",
+      "gpt 4 1"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for post-2025 model vocabulary."
+  },
+  {
+    "canonical": "GPT-4.1 mini",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "g p t four point one mini",
+      "gpt 4 1 mini"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for post-2025 model vocabulary."
+  },
+  {
+    "canonical": "GPT-4.1 nano",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "g p t four point one nano",
+      "gpt 4 1 nano"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for post-2025 model vocabulary."
+  },
+  {
+    "canonical": "o3",
+    "kind": "model_family_or_model",
+    "aliases": ["OpenAI o3"],
+    "spoken_forms": [
+      "o three"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "o3-pro",
+    "kind": "model_family_or_model",
+    "aliases": ["OpenAI o3-pro"],
+    "spoken_forms": [
+      "o three pro"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "o4-mini",
+    "kind": "model_family_or_model",
+    "aliases": ["OpenAI o4-mini"],
+    "spoken_forms": [
+      "o four mini"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "o4-mini-high",
+    "kind": "model_family_or_model",
+    "aliases": ["OpenAI o4-mini-high"],
+    "spoken_forms": [
+      "o four mini high"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "A2A",
+    "kind": "technical_term",
+    "aliases": ["Agent2Agent", "Agent-to-Agent protocol"],
+    "spoken_forms": [
+      "a two a",
+      "agent to agent"
+    ],
+    "tags": [
+      "ai",
+      "agents"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for agent interoperability vocabulary."
+  },
+  {
+    "canonical": "Gemini 2.5",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "gemini two point five"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for post-2025 model vocabulary."
+  },
+  {
+    "canonical": "Gemini 2.5 Pro",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "gemini two point five pro"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for post-2025 model vocabulary."
+  },
+  {
+    "canonical": "Gemma 3",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "gemma three"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for open-model vocabulary."
+  },
+  {
+    "canonical": "Llama 4 Scout",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "llama four scout"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for open-model vocabulary."
+  },
+  {
+    "canonical": "Llama 4 Maverick",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "llama four maverick"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for open-model vocabulary."
+  },
+  {
+    "canonical": "Llama 4 Behemoth",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "llama four behemoth"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for open-model vocabulary."
+  },
+  {
+    "canonical": "Claude Opus 4",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "claude opus four"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for model vocabulary."
+  },
+  {
+    "canonical": "Claude Sonnet 4",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": [
+      "claude sonnet four"
+    ],
+    "tags": [
+      "ai",
+      "models"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for model vocabulary."
+  },
+  {
+    "canonical": "computer use",
+    "kind": "technical_term",
+    "aliases": ["computer-use"],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "agents"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for agent tooling vocabulary."
+  },
+  {
+    "canonical": "Responses API",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "responses a p i"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for OpenAI platform vocabulary."
+  },
+  {
+    "canonical": "Code Interpreter",
+    "kind": "framework_or_tool",
+    "aliases": [],
+    "spoken_forms": [
+      "code interpreter"
+    ],
+    "tags": [
+      "ai",
+      "tooling"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for tool vocabulary."
+  },
+  {
+    "canonical": "extended thinking",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "reasoning"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "parallel tool use",
+    "kind": "technical_term",
+    "aliases": ["parallel tool calling"],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "agents"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for agent tooling vocabulary."
+  },
+  {
+    "canonical": "thinking model",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "ai",
+      "reasoning"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for reasoning-model vocabulary."
+  },
+  {
+    "canonical": "GPT-5.1",
+    "kind": "model_family_or_model",
+    "aliases": ["gpt-5.1"],
+    "spoken_forms": ["g p t five point one", "gpt five point one"],
+    "tags": ["ai", "model", "openai"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current OpenAI model vocabulary."
+  },
+  {
+    "canonical": "GPT-5",
+    "kind": "model_family_or_model",
+    "aliases": ["gpt-5"],
+    "spoken_forms": ["g p t five", "gpt five"],
+    "tags": ["ai", "model", "openai"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current OpenAI model vocabulary."
+  },
+  {
+    "canonical": "GPT-5 mini",
+    "kind": "model_family_or_model",
+    "aliases": ["gpt-5-mini"],
+    "spoken_forms": ["g p t five mini", "gpt five mini"],
+    "tags": ["ai", "model", "openai"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current OpenAI model vocabulary."
+  },
+  {
+    "canonical": "GPT-5 nano",
+    "kind": "model_family_or_model",
+    "aliases": ["gpt-5-nano"],
+    "spoken_forms": ["g p t five nano", "gpt five nano"],
+    "tags": ["ai", "model", "openai"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current OpenAI model vocabulary."
+  },
+  {
+    "canonical": "GPT-5 pro",
+    "kind": "model_family_or_model",
+    "aliases": ["gpt-5-pro"],
+    "spoken_forms": ["g p t five pro", "gpt five pro"],
+    "tags": ["ai", "model", "openai"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current OpenAI model vocabulary."
+  },
+  {
+    "canonical": "gpt-oss-120b",
+    "kind": "model_family_or_model",
+    "aliases": ["GPT-OSS 120B", "gpt oss 120b"],
+    "spoken_forms": ["g p t oss one twenty b", "gpt oss one twenty b"],
+    "tags": ["ai", "model", "openai", "open_weight"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for OpenAI open-weight model vocabulary."
+  },
+  {
+    "canonical": "gpt-oss-20b",
+    "kind": "model_family_or_model",
+    "aliases": ["GPT-OSS 20B", "gpt oss 20b"],
+    "spoken_forms": ["g p t oss twenty b", "gpt oss twenty b"],
+    "tags": ["ai", "model", "openai", "open_weight"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for OpenAI open-weight model vocabulary."
+  },
+  {
+    "canonical": "Gemini 3",
+    "kind": "model_family_or_model",
+    "aliases": [],
+    "spoken_forms": ["gemini three"],
+    "tags": ["ai", "model", "google"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Google model vocabulary."
+  },
+  {
+    "canonical": "Gemini 3 Pro",
+    "kind": "model_family_or_model",
+    "aliases": ["gemini-3-pro-preview"],
+    "spoken_forms": ["gemini three pro"],
+    "tags": ["ai", "model", "google"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Google model vocabulary."
+  },
+  {
+    "canonical": "Gemini 3 Flash",
+    "kind": "model_family_or_model",
+    "aliases": ["gemini-3-flash-preview"],
+    "spoken_forms": ["gemini three flash"],
+    "tags": ["ai", "model", "google"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Google model vocabulary."
+  },
+  {
+    "canonical": "Gemini 3 Pro Image",
+    "kind": "model_family_or_model",
+    "aliases": ["gemini-3-pro-image-preview", "Nano Banana Pro"],
+    "spoken_forms": ["gemini three pro image", "nano banana pro"],
+    "tags": ["ai", "model", "google", "image"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Google image-model vocabulary."
+  },
+  {
+    "canonical": "Claude Opus 4.5",
+    "kind": "model_family_or_model",
+    "aliases": ["claude-opus-4-5"],
+    "spoken_forms": ["claude opus four point five"],
+    "tags": ["ai", "model", "anthropic"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Anthropic model vocabulary."
+  },
+  {
+    "canonical": "Claude Sonnet 4.5",
+    "kind": "model_family_or_model",
+    "aliases": ["claude-sonnet-4-5"],
+    "spoken_forms": ["claude sonnet four point five"],
+    "tags": ["ai", "model", "anthropic"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Anthropic model vocabulary."
+  },
+  {
+    "canonical": "Claude Haiku 4.5",
+    "kind": "model_family_or_model",
+    "aliases": ["claude-haiku-4-5"],
+    "spoken_forms": ["claude haiku four point five"],
+    "tags": ["ai", "model", "anthropic"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Anthropic model vocabulary."
+  },
+  {
+    "canonical": "Claude Opus 4.1",
+    "kind": "model_family_or_model",
+    "aliases": ["claude-opus-4-1"],
+    "spoken_forms": ["claude opus four point one"],
+    "tags": ["ai", "model", "anthropic"],
+    "locale": "en",
+    "scope_defaults": ["global"],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": "Added for current Anthropic model vocabulary."
+  }
+]

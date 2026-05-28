@@ -1,0 +1,2367 @@
+[
+  {
+    "canonical": "Airflow",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "airflow"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ansible",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ansible"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Argo CD",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "artifact store",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Athena",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "athena"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "audit log",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "autoscaling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "autoscaling"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AWS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "a w s",
+      "aws"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Azure",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "azure"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "backpressure",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "backpressure"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "backup restore",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "batch processing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "BigQuery",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "bigquery"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "blue green deployment",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "cache invalidation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "canary deployment",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cassandra",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cassandra"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CDN",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "c d n",
+      "cdn"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "chaos engineering",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "circuit breaker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ClickHouse",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "clickhouse"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cloud Run",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Cloud SQL",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "CloudFormation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "cloudformation"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Consul",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "consul"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "data pipeline",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Databricks",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "databricks"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Datadog",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "datadog"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "dbt",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dbt"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "disaster recovery",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DNS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "d n s",
+      "dns"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Docker",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "docker"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "DynamoDB",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "dynamodb"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EBS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e b s",
+      "ebs"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EC2",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e c 2",
+      "ec2"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ECS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e c s",
+      "ecs"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EFS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e f s",
+      "efs"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "EKS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "e k s",
+      "eks"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Elasticsearch",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "elasticsearch"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Envoy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "envoy"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "error budget",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "fault injection",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "feature store",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Flink",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "flink"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GitOps",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "gitops"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "GKE",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "g k e",
+      "gke"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Google Cloud",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Grafana",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "grafana"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "HAProxy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "haproxy"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Helm",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "helm"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "horizontal pod autoscaler",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "IAM",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "i a m",
+      "iam"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "incident",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "incident"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "ingestion pipeline",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Istio",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "istio"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Jaeger",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "jaeger"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Kafka",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "kafka"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "KMS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "k m s",
+      "kms"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Kubernetes",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "kubernetes"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Kustomize",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "kustomize"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "lakehouse",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "lakehouse"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Lambda",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "lambda"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "latency budget",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "leader election",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "load balancer",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "logging",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "logging"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Loki",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "loki"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "metrics",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "metrics"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "model registry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "multi-tenant",
+    "kind": "technical_term",
+    "aliases": [
+      "multitenant",
+      "multi tenant"
+    ],
+    "spoken_forms": [
+      "multi-tenant"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NAT gateway",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "NATS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "n a t s",
+      "nats"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Nginx",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "nginx"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Nomad",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "nomad"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "observability",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "observability"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OLAP",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "o l a p",
+      "olap"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OLTP",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "o l t p",
+      "oltp"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenSearch",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "opensearch"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "OpenTelemetry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "opentelemetry"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "orchestration",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "orchestration"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "PagerDuty",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pagerduty"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "partitioning",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "partitioning"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "playbook",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "playbook"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "point-in-time recovery",
+    "kind": "technical_term",
+    "aliases": [
+      "point in time recovery",
+      "pointintime recovery"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "postmortem",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "postmortem"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "private link",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Prometheus",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "prometheus"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Pulumi",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "pulumi"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "queue depth",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "quorum",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "quorum"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RabbitMQ",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "rabbitmq"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rate limiting",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Ray",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "ray"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "RDS",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "r d s",
+      "rds"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "read replica",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Redis Streams",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Redshift",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "redshift"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "replication",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "replication"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "retention policy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "reverse proxy",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "rolling deployment",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "runbook",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "runbook"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "S3",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s 3",
+      "s3"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sandboxing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sandboxing"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "secret manager",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Sentry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sentry"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "service mesh",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "sharding",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "sharding"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "single-tenant",
+    "kind": "technical_term",
+    "aliases": [
+      "singletenant",
+      "single tenant"
+    ],
+    "spoken_forms": [
+      "single-tenant"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SLA",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s l a",
+      "sla"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SLI",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s l i",
+      "sli"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "SLO",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "s l o",
+      "slo"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Snowflake",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "snowflake"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Spark",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "spark"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "stream processing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "subnet",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "subnet"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "telemetry",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "telemetry"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Tempo",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tempo"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Terraform",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "terraform"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "throttling",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "throttling"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "throughput limit",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "tracing",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "tracing"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "uptime",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "uptime"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "VPC",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "v p c",
+      "vpc"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "warehouse",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [
+      "warehouse"
+    ],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "workload isolation",
+    "kind": "technical_term",
+    "aliases": [],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "write-ahead log",
+    "kind": "technical_term",
+    "aliases": [
+      "writeahead log",
+      "write ahead log"
+    ],
+    "spoken_forms": [],
+    "tags": [
+      "infra",
+      "ops"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  }
+]
