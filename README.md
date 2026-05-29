@@ -52,17 +52,22 @@ Linux can run selected runtime checks and portable Python paths, but the shippin
 
 ## Run From Source
 
-Bootstrap the Python environment:
+Bootstrap the Python environment. The script picks the newest `python3.X >= 3.10`
+on your PATH; override with `PYTHON_BIN` if you want a specific one:
 
 ```bash
-./scripts/bootstrap.sh
+./scripts/bootstrap.sh                       # auto-detects python3.10+
+PYTHON_BIN=python3.11 ./scripts/bootstrap.sh # explicit pin
 source .venv/bin/activate
 ```
 
-Check the environment:
+Check the environment. The `--ci --json` form prints a machine-readable
+report whose top-level `ok` field is `true` when everything required is in
+place — handy for agents and CI:
 
 ```bash
 ./scripts/doctor.sh --ci
+./scripts/doctor.sh --ci --json | python -c 'import json,sys; print(json.load(sys.stdin)["ok"])'
 ```
 
 Install the default local model assets:
@@ -133,6 +138,16 @@ Core folders:
 - `shells/macos/` contains the native Mac shell.
 - `seed_data/` contains local vocabulary and personalization seed data.
 - `config/` contains example local configuration.
+
+Where to start reading:
+
+- `juno_v2/workbench/server.py` — workbench HTTP entry point and the easiest place to see end-to-end behavior.
+- `juno_v2/preview/streaming_core.py` — incremental preview / live agreement.
+- `juno_v2/final/session.py` — final transcription session runner.
+- `juno_v2/writer/service.py` — speech-to-writing transformation.
+- `juno_v2/commit/controller.py` — final-commit and insertion gating.
+- `juno_core_v3/broker/` — broker contracts that connect the runtime to the Mac shell.
+- `shells/macos/Sources/` — Swift sources for the native shell (hotkeys, permissions, insertion).
 
 ## License
 
