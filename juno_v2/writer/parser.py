@@ -433,6 +433,41 @@ def _selection_transform_intent(
             instruction='Fix grammar, spelling, and punctuation. Preserve meaning exactly.',
             metadata={'reason': 'selection_transform_command'},
         )
+    if any(token in lowered for token in ('concise', 'shorter', 'brief')):
+        return WriterIntent(
+            kind=WriterIntentKind.MODEL_TRANSFORM,
+            raw_text=text,
+            instruction='Make the text more concise. Preserve meaning.',
+            metadata={'reason': 'selection_transform_command'},
+        )
+    if any(token in lowered for token in ('clearer', 'clarity')):
+        return WriterIntent(
+            kind=WriterIntentKind.MODEL_TRANSFORM,
+            raw_text=text,
+            instruction='Improve clarity. Preserve meaning.',
+            metadata={'reason': 'selection_transform_command'},
+        )
+    if any(token in lowered for token in ('summarize', 'summarise', 'summary')):
+        return WriterIntent(
+            kind=WriterIntentKind.MODEL_TRANSFORM,
+            raw_text=text,
+            instruction='Summarize into concise key points. Preserve core meaning.',
+            metadata={'reason': 'selection_transform_command'},
+        )
+    if any(token in lowered for token in ('expand', 'longer', 'detailed', 'elaborate')):
+        return WriterIntent(
+            kind=WriterIntentKind.MODEL_TRANSFORM,
+            raw_text=text,
+            instruction='Expand with useful detail while preserving meaning.',
+            metadata={'reason': 'selection_transform_command'},
+        )
+    if any(token in lowered for token in ('simplify', 'simpler', 'easier to read')):
+        return WriterIntent(
+            kind=WriterIntentKind.MODEL_TRANSFORM,
+            raw_text=text,
+            instruction='Simplify the text. Preserve meaning.',
+            metadata={'reason': 'selection_transform_command'},
+        )
     return None
 
 

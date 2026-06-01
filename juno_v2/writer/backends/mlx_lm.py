@@ -436,9 +436,10 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
         )
     if task == "transcript_adjudication_v1":
         return (
-            "You are Juno's local transcript adjudicator. "
-            "Your job is to recover the exact text the user meant to say from ASR evidence and local context. "
-            "You are not a chatbot. You are not a formatter. You are not an action executor. "
+            "You are Juno's local final speech resolver. "
+            "Your job is to recover the exact text the user meant to say from complete ASR evidence, local context, "
+            "memory, screen terms, app context, and explicit spoken correction cues. "
+            "You are not a chatbot. You are not a deterministic parser. You are the semantic speech-resolution layer. "
             "Return exactly one JSON object matching schema_version=transcript_adjudication_v1. "
             "For final-stage adjudication, corrected_text must reflect the complete SPOKEN transcript in "
             "memory_candidate/whisper_raw/raw_text, not the live HUD snapshot. base_visible is only the live HUD "
@@ -449,8 +450,21 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "words and the correction cue. For example, "
             "'set up a meeting at 4 pm, actually make that 5 pm' -> 'Set up a meeting at 5 pm.'; "
             "'send it to John, no, to Sarah' -> 'Send it to Sarah.'; "
+            "'Japan, no actually Korea, is the customer meeting location' -> "
+            "'Korea is the customer meeting location.'; "
             "'let's meet Tuesday, I mean Wednesday' -> \"Let's meet Wednesday.\" "
+            "'no actually write LumaRay as one product word' means the user is correcting the instruction; "
+            "do not invert it into 'do not write LumaRay'. "
+            "'do not include the words scratch that in the final note' is an instruction for the current note; "
+            "exclude that instruction and the phrase unless the user explicitly quotes it as literal content. "
+            "Do not treat literal mentions as commands: if the user says phrases such as 'the words blank space', "
+            "'text should stay as text', or describes a correction rule, preserve the literal content unless the "
+            "surrounding speech clearly asks to apply it to the current utterance. "
+            "Phrases such as 'at the end say the final word is complete' are dictated content, not evaluator metadata; "
+            "preserve the requested final-word text in corrected_text. "
             "For final-stage adjudication, set ops to [] so the caller computes the diff; do not spend output tokens listing per-character operations. "
+            "You may include optional intent, formatting_plan, self_corrections, terms_used, and uncertainty fields as evidence for downstream code. "
+            "Use formatting_plan for spoken requests like bullets, numbered points, sections, email, or no formatting; do not apply that structure inside corrected_text. "
             "Allowed changes: fix ASR recognition errors using Whisper, memory, screen terms, and code/file context; "
             "resolve explicit self-corrections and false starts; preserve exact casing/spelling for protected terms; "
             "add punctuation/capitalization needed for readable transcript; normalize spoken punctuation and obvious numbers/times. "
@@ -473,6 +487,7 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "The transcript has already been corrected. Do not fix ASR. "
             "Do not change facts, names, numbers, dates, or identifiers. "
             "Do not summarize, analyze, or add headings unless the source explicitly asks for that structure. "
+            "Preserve every required term and high-value screen/memory term exactly when present in the corrected transcript. "
             "Only apply the requested formatting policy for the target app. "
             "Return only final text."
         )
@@ -599,6 +614,13 @@ def _build_writer_prompt(req: WriterTransformRequest) -> str:
                 "selected_text_excerpt": context.get("selected_text_excerpt"),
                 "style_card": context.get("style_card"),
                 "writer_tone_addon": context.get("writer_tone_addon"),
+                "required_preserved_terms": context.get("required_preserved_terms") or [],
+                "candidate_entities": context.get("candidate_entities") or [],
+                "recent_screen_terms": context.get("recent_screen_terms") or [],
+                "formatting_contract": (
+                    "Apply structure only. Preserve content units, names, dates, numbers, identifiers, "
+                    "and required_preserved_terms exactly unless punctuation-only changes are needed."
+                ),
             },
             "corrected_transcript": req.source_text,
         }

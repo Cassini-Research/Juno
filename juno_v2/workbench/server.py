@@ -58,6 +58,71 @@ from juno_core_v3.dictation import (
 )
 from juno_core_v3.broker.runners import InsertRequest, InsertRunner
 from juno_core_v3.contracts.session import SessionKind, UserIntentSignals
+
+
+def _preview_candidates_from_session_context_tape(tape: Any, *, limit: int = 24) -> list[str]:
+    """Extract screen terms for HUD repair from the macOS context tape."""
+    if tape is None:
+        return []
+    if isinstance(tape, dict):
+        maybe = tape.get("snapshots")
+        raw_items = maybe if isinstance(maybe, list) else [tape]
+    elif isinstance(tape, list):
+        raw_items = tape
+    else:
+        raw_items = []
+
+    chunks: list[str] = []
+    phrase_candidates: list[str] = []
+    explicit: list[str] = []
+    seen_snapshots: set[tuple[str, str, str]] = set()
+    for item in raw_items[:12]:
+        if not isinstance(item, dict):
+            continue
+        app = str(item.get("app_name") or item.get("frontmost_app_name") or "").strip()
+        title = str(item.get("window_title") or "").strip()
+        selected = str(item.get("selected_text") or "").strip()
+        before = str(item.get("focused_text_before") or item.get("focused_text") or "").strip()
+        after = str(item.get("focused_text_after") or "").strip()
+        doc = str(item.get("focused_document_path") or item.get("focused_file_path") or "").strip()
+        key = (app.casefold(), title.casefold(), (selected or before or after).casefold())
+        if key in seen_snapshots:
+            continue
+        seen_snapshots.add(key)
+        chunks.extend([app, title, selected, before, after, doc])
+        for chunk in (title, selected, before, after, doc):
+            phrase_candidates.extend(
+                match.group(0).strip()
+                for match in re.finditer(
+                    r"\b[A-Z][A-Za-z0-9'_-]*(?:\s+[A-Z][A-Za-z0-9'_-]*){1,3}\b",
+                    chunk,
+                )
+            )
+        raw_candidates = item.get("candidate_entities") or item.get("candidate_terms")
+        if isinstance(raw_candidates, list):
+            explicit.extend(str(raw or "").strip() for raw in raw_candidates[:limit])
+
+    try:
+        from juno_v2.context.provider import _extract_candidates
+    except ImportError:
+        extracted: list[str] = []
+    else:
+        extracted = _extract_candidates([chunk[:240] for chunk in chunks if chunk])
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for candidate in [*explicit, *phrase_candidates, *extracted]:
+        value = str(candidate or "").strip()
+        if not value or len(value) > 80:
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+        if len(out) >= limit:
+            break
+    return out
 from juno_core_v3.policy.surface_gate import SurfaceId
 from juno_core_v3.actions.timeparse import parse_when
 from juno_core_v3.workbench.broker_facade import BrokerFacade
@@ -4157,8 +4222,14 @@ class WorkbenchApp:
             if is_final and not root_final:
                 preview_context_payload["retain_state_after_final"] = True
                 preview_context_payload["preview_segment_final"] = True
-        raw_payload_candidates = payload.get("candidate_entities") or payload.get("candidate_terms")
-        if isinstance(raw_payload_candidates, list):
+        raw_payload_candidates: list[Any] = []
+        explicit_payload_candidates = payload.get("candidate_entities") or payload.get("candidate_terms")
+        if isinstance(explicit_payload_candidates, list):
+            raw_payload_candidates.extend(explicit_payload_candidates[:24])
+        raw_payload_candidates.extend(
+            _preview_candidates_from_session_context_tape(payload.get("session_context_tape"))[:24]
+        )
+        if raw_payload_candidates:
             existing_candidates = preview_context_payload.get("candidate_entities")
             merged_candidates = list(existing_candidates) if isinstance(existing_candidates, list) else []
             seen_candidates = {str(item).casefold() for item in merged_candidates if str(item).strip()}

@@ -608,6 +608,31 @@ def _classify_spoken_punct(token: str) -> tuple[str, str]:
     return token, "punct"
 
 
+def _spoken_punct_is_literal_mention(source: str, start: int, end: int) -> bool:
+    before = (source or "")[max(0, start - 96):start].casefold()
+    after = (source or "")[end:end + 64].casefold()
+    if re.search(
+        r"\b(?:word|words|phrase|literal|text)\s+(?:called\s+|named\s+|as\s+)?$",
+        before,
+    ):
+        return True
+    if re.search(
+        r"\b(?:say|says|said|mean|means|called|named|type|typed|write|written)\s+"
+        r"(?:the\s+)?(?:word|words\s+)?$",
+        before,
+    ):
+        return True
+    if re.search(r"\b(?:is|are|was|were|means|mean|called|named)\s+(?:a|an|the)?\s*$", before):
+        return True
+    if re.search(r"\b(?:not|never|don't|dont|do\s+not)\b.{0,56}$", before) and re.match(
+        r"\s+(?:as|in|inside|here|there|for|when|should|would|could|$)", after
+    ):
+        return True
+    if re.match(r"\s+(?:as|in|inside)\s+(?:text|words?|this note)\b", after):
+        return True
+    return False
+
+
 def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
     """Convert in-line spoken-punctuation tokens into glyphs.
 
@@ -624,6 +649,8 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
     OPEN, CLOSE = "\x00", "\x01"
 
     def _sub(m: re.Match) -> str:
+        if _spoken_punct_is_literal_mention(text, m.start(), m.end()):
+            return m.group(0)
         glyph, kind = _classify_spoken_punct(m.group(0))
         return f"{OPEN}{kind}:{glyph}{CLOSE}"
 

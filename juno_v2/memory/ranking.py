@@ -1,0 +1,209 @@
+from __future__ import annotations
+
+import re
+
+from juno_v2.contracts.context import TypedContextBundle
+from juno_v2.contracts.memory import MemoryServingPacket, MemorySnapshot, ReplacementRule
+from juno_v2.contracts.modes import ModePolicy
+
+_LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "ai",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "but",
+        "by",
+        "can",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "he",
+        "here",
+        "how",
+        "i",
+        "if",
+        "in",
+        "is",
+        "it",
+        "its",
+        "me",
+        "my",
+        "no",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "she",
+        "so",
+        "that",
+        "the",
+        "then",
+        "there",
+        "they",
+        "this",
+        "to",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "while",
+        "who",
+        "why",
+        "with",
+        "yes",
+        "you",
+    }
+)
+
+
+def rank_memory_for_context(
+    snapshot: MemorySnapshot,
+    *,
+    context: TypedContextBundle,
+    mode_policy: ModePolicy | None = None,
+    effective_mode: str | None = None,
+    transcript_hint: str | None = None,
+    session_terms: list[str] | None = None,
+) -> MemoryServingPacket:
+    """Build a bounded, ranked serving packet (no raw store dumps)."""
+    app_scope = (context.app_name or "").strip().casefold()
+    mode_key = (effective_mode or (mode_policy.mode_name if mode_policy else "") or "").strip().casefold()
+    hint_tokens = _token_set(
+        " ".join(
+            part
+            for part in [
+                transcript_hint or "",
+                context.selected_text or "",
+                context.focused_text_before or "",
+                context.focused_text_after or "",
+                context.window_title or "",
+                " ".join(session_terms or []),
+            ]
+            if part
+        )
+    )
+
+    def _rep_score(rule: ReplacementRule) -> tuple[float, int]:
+        sc = (rule.scope or "global").casefold()
+        bonus = 0.0
+        if sc in {"global", ""}:
+            bonus += 1.0
+        if sc == app_scope and app_scope:
+            bonus += 8.0
+        if sc.startswith("app:") and app_scope and sc[4:] == app_scope:
+            bonus += 10.0
+        if mode_key and mode_key in sc:
+            bonus += 6.0
+        if hint_tokens and (_token_set(rule.trigger) & hint_tokens):
+            bonus += 12.0
+        return (-bonus, -len(rule.trigger))
+
+    def _term_score(value: str, base: float = 0.0) -> tuple[float, str]:
+        bonus = float(base)
+        toks = _token_set(value)
+        if hint_tokens and toks & hint_tokens:
+            bonus += 20.0
+        return (-bonus, value.casefold())
+
+    lexicon = sorted(
+        (item for item in snapshot.lexicon if not _low_signal_lexicon_pair(item.term, item.canonical_form)),
+        key=lambda item: _term_score(item.canonical_form, float(item.boost)),
+    )
+    corrections = sorted(
+        snapshot.corrections,
+        key=lambda item: _term_score(f"{item.observed} {item.corrected}", float(item.count)),
+    )
+    entities = sorted(
+        (item for item in snapshot.session_entities if _session_entity_allowed(item.value)),
+        key=lambda item: _term_score(item.value, float(item.count)),
+    )
+    replacements = sorted(snapshot.replacements, key=lambda r: _rep_score(r))
+
+    served_lexicon = lexicon[:12]
+    lexicon_aliases: dict[str, list[str]] = {}
+    for item in served_lexicon:
+        aliases: list[str] = []
+        seen_aliases: set[str] = {item.canonical_form.casefold()}
+        for value in [item.term, *item.aliases]:
+            alias = (value or "").strip()
+            key = alias.casefold()
+            if not alias or key in seen_aliases:
+                continue
+            seen_aliases.add(key)
+            aliases.append(alias)
+        if aliases:
+            lexicon_aliases[item.canonical_form] = aliases[:8]
+
+    return MemoryServingPacket(
+        lexicon_terms=[item.canonical_form for item in served_lexicon],
+        replacements=[
+            {'trigger': item.trigger, 'replacement': item.replacement, 'scope': item.scope}
+            for item in replacements[:8]
+        ],
+        corrections=[
+            {'observed': item.observed, 'corrected': item.corrected, 'count': item.count}
+            for item in corrections[:8]
+        ],
+        session_entities=[item.value for item in entities[:10]],
+        metadata={
+            'lexicon_total': len(snapshot.lexicon),
+            'replacement_total': len(snapshot.replacements),
+            'correction_total': len(snapshot.corrections),
+            'session_entity_total': len(snapshot.session_entities),
+            'ranking': {
+                'app_scope': app_scope or None,
+                'mode': mode_key or None,
+                'hint_token_count': len(hint_tokens),
+                'session_term_count': len(session_terms or []),
+            },
+            'lexicon_aliases': lexicon_aliases,
+        },
+    )
+
+
+def _session_entity_allowed(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    tokens = v.split()
+    if len(tokens) == 1 and tokens[0].casefold() in _LOW_SIGNAL_SESSION_ENTITY_WORDS:
+        return False
+    return True
+
+
+def _low_signal_phrase(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return True
+    alpha_tokens = re.findall(r"[A-Za-z]+", v)
+    if len(alpha_tokens) != 1:
+        return False
+    return alpha_tokens[0].casefold() in _LOW_SIGNAL_SESSION_ENTITY_WORDS
+
+
+def _low_signal_lexicon_pair(term: str, canonical: str) -> bool:
+    t = (term or "").strip()
+    c = (canonical or "").strip()
+    if not t or not c:
+        return True
+    return _low_signal_phrase(t) and _low_signal_phrase(c) and t.casefold() == c.casefold()
+
+
+def _token_set(text: str | None) -> set[str]:
+    out: set[str] = set()
+    for raw in (text or "").replace("_", " ").replace("-", " ").split():
+        token = raw.strip(".,!?;:()[]{}<>\"'`").casefold()
+        if len(token) >= 2:
+            out.add(token)
+    return out

@@ -96,6 +96,8 @@ class WriterService:
             return True
         if target_class == CommandTargetClass.SELECTED_TEXT:
             return bool(pol.allow_selection_commands)
+        if target_class == CommandTargetClass.RECENT_COMMIT:
+            return bool(pol.allow_recent_target_commands)
         return bool(pol.allow_model_insert_rewrite)
 
     def _model_rewrite_blocked_noop(
@@ -763,6 +765,11 @@ class WriterService:
                     else 'missing_recent_target'
                 )
                 return self._noop(utterance_id, missing_reason, intent.kind.value)
+            target_class_for_policy = (
+                CommandTargetClass.SELECTED_TEXT
+                if target.get('target') == 'selection'
+                else CommandTargetClass.RECENT_COMMIT
+            )
             if payload.get('transform') == 'bullets':
                 transformed = self._deterministic_transform('bullets', target['text'])
                 return self._annotate_outcome(WriterOutcome(
@@ -804,8 +811,8 @@ class WriterService:
                     metadata={'command': 'delete_last_paragraph', 'target': target['target']},
                 ))
             instr = str(payload.get('instruction') or '')
-            if instr and not self._model_rewrite_allowed_for_target(pol, tgt_class):
-                return self._model_rewrite_blocked_noop(utterance_id, intent, tgt_class)
+            if instr and not self._model_rewrite_allowed_for_target(pol, target_class_for_policy):
+                return self._model_rewrite_blocked_noop(utterance_id, intent, target_class_for_policy)
             if instr and (pol is None or pol.allow_recent_target_commands):
                 fake = WriterIntent(kind=WriterIntentKind.RECENT_MODEL_TRANSFORM, raw_text=intent.raw_text, instruction=instr)
                 return self._annotate_outcome(self._run_model_transform(
@@ -1060,9 +1067,26 @@ class WriterService:
         text = str(context.metadata.get('last_committed_text') or '').strip()
         start = context.metadata.get('last_committed_start')
         end = context.metadata.get('last_committed_end')
-        if not text or start is None or end is None:
-            return None
-        return {'text': text, 'selection': ClientSelection(start=int(start), end=int(end)), 'target': 'recent_commit'}
+        if text and start is not None and end is not None:
+            return {'text': text, 'selection': ClientSelection(start=int(start), end=int(end)), 'target': 'recent_commit'}
+
+        recent_clipboard = list(context.recent_clipboard) or list(
+            context.metadata.get('recent_clipboard') or []
+        )
+        for entry in recent_clipboard:
+            clip_text = ""
+            if isinstance(entry, dict):
+                clip_text = str(entry.get('text') or '').strip()
+            else:
+                clip_text = str(getattr(entry, 'text', '') or '').strip()
+            if not clip_text:
+                continue
+            return {
+                'text': clip_text,
+                'selection': ClientSelection(start=0, end=len(clip_text)),
+                'target': 'recent_clipboard',
+            }
+        return None
 
     def _run_model_transform(
         self,
@@ -1169,6 +1193,7 @@ class WriterService:
                 'writer_backend': result.backend_name,
                 'writer_decode_ms': result.decode_ms,
                 'target': target['target'],
+                'target_text_chars': len(target.get('text') or ''),
                 'style_card': style_card.name if style_card is not None else None,
                 **result.metadata,
             },

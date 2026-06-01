@@ -61,7 +61,7 @@ import difflib
 import os
 from datetime import datetime, timezone
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
@@ -1118,6 +1118,42 @@ class OneShotDictationPipeline:
                     frozen_context_merged=frozen_context_merged,
                     transcript_stage=stage,
                 )
+        # 6c. Post-ASR context enrichment ----------------------------------
+        #
+        # The ASR prompt must be built before Whisper runs, but Qwen's final
+        # speech-resolution pass should see terms ranked against what Whisper
+        # actually heard. Recompile the serving packet/term list after final ASR
+        # without changing the already-used ASR bias plan.
+        if not live_adjudication and raw_text:
+            prior_term_count = len(compiled_context.terms)
+            prior_memory_packet = memory_packet.to_dict()
+            compiled_context = compile_context(
+                utterance_id=uid,
+                context=context,
+                memory_snapshot=memory_snapshot,
+                mode_selection=mode_sel,
+                mode_policy=mode_pol,
+                transcript_hint=transcript_hint,
+                final_transcript_text=raw_text,
+                session_terms=tape_meta.get("candidate_terms") if isinstance(tape_meta, dict) else None,
+                language=requested_language,
+                stage=stage,
+                seed_attachment=seed_attachment,
+            )
+            memory_packet = compiled_context.memory_packet
+            plan.metadata["post_asr_memory_serving_packet"] = memory_packet.to_dict()
+            self.recorder.record(
+                TraceKind.CONTEXT,
+                "context_compiler_post_asr_enriched",
+                {
+                    "utterance_id": uid,
+                    "prior_term_count": prior_term_count,
+                    "term_count": len(compiled_context.terms),
+                    "memory_packet_changed": prior_memory_packet != memory_packet.to_dict(),
+                    "raw_text_chars": len(raw_text),
+                },
+            )
+
         # 7. Memory-aware normalization -------------------------------------
         memory_norm: TranscriptNormalization = self.bias_engine.normalize_transcript(
             raw_text, snapshot=memory_snapshot, plan=plan, scope="oneshot"
@@ -1188,6 +1224,13 @@ class OneShotDictationPipeline:
         protected_term_values = tuple(
             t.canonical or t.text for t in compiled_context.terms if getattr(t, "protected", False)
         )
+        context_term_values = tuple(t.canonical or t.text for t in compiled_context.terms)
+        context_proper_term_values = _context_proper_repair_terms(context)
+        repair_term_values = _dedupe_term_values((
+            *protected_term_values,
+            *context_term_values,
+            *context_proper_term_values,
+        ))
         explicit_candidate_terms = _explicit_candidate_terms(context)
         reconciled_text, proper_noun_replacements = _reconcile_proper_nouns_from_live_hint(
             live_hint=transcript_hint,
@@ -1234,7 +1277,7 @@ class OneShotDictationPipeline:
             )
         protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
             text=normalized_text,
-            protected_terms=protected_term_values,
+            protected_terms=repair_term_values,
         )
         if protected_near_miss_replacements:
             normalized_text = protected_text
@@ -1275,24 +1318,16 @@ class OneShotDictationPipeline:
                     "replacements": terminal_command_replacements[:8],
                 },
             )
-        transcript_edits = _apply_mid_utterance_edits(normalized_text)
-        if transcript_edits.changed:
-            before_edit = normalized_text
-            normalized_text = transcript_edits.text
-            all_applied.append({
-                "rule": "mid_utterance_edit",
-                "scope": "oneshot",
-                "edits": list(transcript_edits.edits),
-            })
+        self_correction_cues = _collect_self_correction_cues(normalized_text)
+        if self_correction_cues:
+            compiled_context.metadata["self_correction_cues"] = list(self_correction_cues)
             self.recorder.record(
                 TraceKind.SYSTEM,
-                "oneshot_mid_utterance_edits_applied",
+                "oneshot_self_correction_cues_detected",
                 {
                     "utterance_id": uid,
-                    "original_chars": len(before_edit),
-                    "output_chars": len(normalized_text),
-                    "edit_count": len(transcript_edits.edits),
-                    "edits": list(transcript_edits.edits[:8]),
+                    "cue_count": len(self_correction_cues),
+                    "cues": list(self_correction_cues[:8]),
                 },
             )
         self.recorder.record(
@@ -1376,15 +1411,30 @@ class OneShotDictationPipeline:
             if adjudication_result.rejected:
                 salvaged = False
                 if not live_adjudication and str(adjudication_result.corrected_text or "").strip():
+                    original_reason = adjudication_result.rejected_reason
+                    original_text = adjudication_result.corrected_text
+                    repaired_text = original_text
+                    validation_repair_replacements: list[dict[str, str]] = []
+
                     protected_text, protected_term_replacements = _reconcile_explicit_candidate_term_confusions(
-                        text=adjudication_result.corrected_text,
+                        text=repaired_text,
                         explicit_candidate_terms=explicit_candidate_terms,
                         protected_terms=protected_term_values,
                     )
-                    if protected_term_replacements and protected_text != adjudication_result.corrected_text:
-                        original_reason = adjudication_result.rejected_reason
-                        original_text = adjudication_result.corrected_text
-                        adjudication_result.corrected_text = protected_text
+                    if protected_term_replacements:
+                        repaired_text = protected_text
+                        validation_repair_replacements.extend(protected_term_replacements)
+
+                    protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
+                        text=repaired_text,
+                        protected_terms=repair_term_values,
+                    )
+                    if protected_near_miss_replacements:
+                        repaired_text = protected_text
+                        validation_repair_replacements.extend(protected_near_miss_replacements)
+
+                    if validation_repair_replacements and repaired_text != original_text:
+                        adjudication_result.corrected_text = repaired_text
                         ok, validation_reason = validate_adjudication_result(packet, adjudication_result)
                         if ok:
                             adjudication_result.rejected = False
@@ -1392,13 +1442,13 @@ class OneShotDictationPipeline:
                             adjudication_result.metadata = dict(adjudication_result.metadata or {})
                             adjudication_result.metadata["salvaged_after_validation_repair"] = {
                                 "original_rejected_reason": original_reason,
-                                "replacement_count": len(protected_term_replacements),
+                                "replacement_count": len(validation_repair_replacements),
                             }
-                            adjudicated_text = protected_text
+                            adjudicated_text = repaired_text
                             all_applied.append({
-                                "rule": "explicit_candidate_term_reconciliation",
+                                "rule": "adjudication_validation_repair",
                                 "scope": "oneshot_adjudication_salvage",
-                                "replacements": protected_term_replacements,
+                                "replacements": validation_repair_replacements,
                             })
                             self.recorder.record(
                                 TraceKind.SYSTEM,
@@ -1407,8 +1457,8 @@ class OneShotDictationPipeline:
                                     "utterance_id": uid,
                                     "stage": packet.stage,
                                     "original_reason": original_reason,
-                                    "replacement_count": len(protected_term_replacements),
-                                    "replacements": protected_term_replacements[:8],
+                                    "replacement_count": len(validation_repair_replacements),
+                                    "replacements": validation_repair_replacements[:8],
                                 },
                             )
                             salvaged = True
@@ -1467,7 +1517,7 @@ class OneShotDictationPipeline:
             )
             protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
                 text=protected_text,
-                protected_terms=protected_term_values,
+                protected_terms=repair_term_values,
             )
             all_protected_replacements = protected_term_replacements + protected_near_miss_replacements
             if all_protected_replacements:
@@ -1508,28 +1558,11 @@ class OneShotDictationPipeline:
                         "edits": list(duplicate_result.edits[:8]),
                     },
                 )
-            post_adjudication_edits = _apply_mid_utterance_edits(adjudicated_text)
-            if post_adjudication_edits.changed:
-                before_edit = adjudicated_text
-                adjudicated_text = post_adjudication_edits.text
-                if adjudication_result is not None and not adjudication_result.rejected:
-                    adjudication_result.corrected_text = post_adjudication_edits.text
-                all_applied.append({
-                    "rule": "post_adjudication_mid_utterance_edit",
-                    "scope": "oneshot_final",
-                    "edits": list(post_adjudication_edits.edits),
-                })
-                self.recorder.record(
-                    TraceKind.SYSTEM,
-                    "oneshot_post_adjudication_mid_utterance_edits_applied",
-                    {
-                        "utterance_id": uid,
-                        "original_chars": len(before_edit),
-                        "output_chars": len(adjudicated_text),
-                        "edit_count": len(post_adjudication_edits.edits),
-                        "edits": list(post_adjudication_edits.edits[:8]),
-                    },
-                )
+            # Self-correction resolution belongs to Qwen's final speech
+            # resolver. Do not run the old deterministic edit pass after Qwen:
+            # it can delete literal spoken content such as "the words blank
+            # space" and creates traces where Qwen's decision no longer matches
+            # the final paste text.
 
         if live_adjudication:
             resolved_model_path = str(getattr(result, "model_path", "") or "")
@@ -1635,16 +1668,19 @@ class OneShotDictationPipeline:
         action_source_text = _post_wake_from_adjudicated(adjudicated_text) if wake_status.verified else adjudicated_text
         action_attempt_rejected = False
         if wake_status.verified and action_source_text:
+            action_now = datetime.now().astimezone()
             parsed_actions = detect_actions_for_pipeline(
                 utterance_id=uid,
                 normalized_text=action_source_text,
                 recorder=self.recorder,
                 trace_kind=TraceKind.SYSTEM,
+                now=action_now,
                 wake_verified=True,
                 raw_wake_text=wake_status.raw_wake_text,
                 context_packet=compiled_context.action_packet(
                     corrected_text=action_source_text,
                     raw_or_normalized_text_for_wake_gate=wake_status.raw_wake_text or normalized_text,
+                    now_iso=action_now.isoformat(),
                 ),
             )
             if parsed_actions:
@@ -1652,33 +1688,30 @@ class OneShotDictationPipeline:
             elif _looks_like_action_attempt(action_source_text):
                 action_attempt_rejected = True
 
-        # Seed context-entity observations are durable memory signals. Delay
-        # them until after action detection so wake/action wrappers never
-        # increment learned context counts.
+        # Seed context-entity observations are durable memory signals. They are
+        # recorded only after the final text is actually committed by the user
+        # (see record_insertion). Pre-paste ASR observations polluted memory with
+        # HUD/ASR noise such as generic starts and one-off mishears.
         if self.juno_seed_runtime is not None:
-            sup_val = suppression if isinstance(suppression, str) else None
-            suppressed = self.juno_seed_runtime.durable_memory_suppressed(
-                context,
-                context_plane_suppression=sup_val,
+            self.recorder.record(
+                TraceKind.MEMORY,
+                "oneshot_seed_observation_deferred",
+                {
+                    "utterance_id": uid,
+                    "reason": "awaiting_successful_commit",
+                    "action_utterance": bool(parsed_actions_payload or action_attempt_rejected),
+                },
             )
-            if parsed_actions_payload or action_attempt_rejected:
-                self.recorder.record(
-                    TraceKind.MEMORY,
-                    "oneshot_seed_observation_suppressed",
-                    {
-                        "utterance_id": uid,
-                        "reason": "action_utterance",
-                    },
-                )
-            else:
-                self.juno_seed_runtime.observe_transcript_for_context_entities(
-                    action_source_text if wake_status.verified else raw_text,
-                    context,
-                    durable_memory_suppressed=suppressed,
-                )
 
         # 9. Writer service --------------------------------------------------
         writer_outcome: WriterOutcome | None = None
+        writer_mode_policy = _mode_policy_for_final_delivery(
+            mode_pol,
+            context=context,
+            raw_text=raw_text,
+            adjudicated_text=adjudicated_text,
+            adjudication_result=adjudication_result,
+        )
         if (
             not parsed_actions_payload
             and not action_attempt_rejected
@@ -1699,9 +1732,9 @@ class OneShotDictationPipeline:
                     memory_snapshot=memory_snapshot,
                     memory_packet=memory_packet.to_dict(),
                     language_hint=requested_language,
-                    mode_policy=mode_pol,
+                    mode_policy=writer_mode_policy,
                     mode_selection=mode_sel,
-                    partial_text="",
+                    partial_text=transcript_hint or "",
                     writer_tone_addon=writer_tone,
                 )
             except Exception as exc:  # noqa: BLE001 — never fail the whole turn on writer errors
@@ -1795,7 +1828,7 @@ class OneShotDictationPipeline:
             memory_packet=memory_packet,
             plan=plan,
             mode_selection=mode_sel,
-            mode_policy=mode_pol,
+            mode_policy=writer_mode_policy,
             language_policy=language_policy,
             requested_language=requested_language,
             backend_name=result.backend_name,
@@ -1944,6 +1977,16 @@ class OneShotDictationPipeline:
             meta_out["writer_safety_fallback"] = {
                 "reason": writer_safety_reason,
                 "writer_action": writer_action,
+            }
+        if writer_outcome is not None:
+            outcome_meta = dict(writer_outcome.metadata or {})
+            meta_out["writer_outcome"] = {
+                "action": writer_outcome.action.value,
+                "commit_mode": writer_outcome.commit_mode.value if writer_outcome.commit_mode else None,
+                "target": outcome_meta.get("target"),
+                "target_text_chars": outcome_meta.get("target_text_chars"),
+                "deterministic_used": bool(writer_outcome.deterministic_used),
+                "model_used": bool(writer_outcome.model_used),
             }
 
         return OneShotDictationResult(
@@ -2114,6 +2157,10 @@ class OneShotDictationPipeline:
                 t = (token or "").strip()
                 if not learned_term_allowed(t) or t.casefold() not in committed_lower:
                     continue
+                self.juno_seed_runtime.learned_store.increment_observation(
+                    t,
+                    from_suppressed_context=False,
+                )
                 self.juno_seed_runtime.learned_store.increment_acceptance(
                     t,
                     from_suppressed_context=False,
@@ -2650,6 +2697,169 @@ def _should_run_transcript_adjudication(
     return True
 
 
+def _mode_policy_for_final_delivery(
+    mode_policy: "ModePolicy",
+    *,
+    context: TypedContextBundle,
+    raw_text: str,
+    adjudicated_text: str,
+    adjudication_result: "TranscriptAdjudicationResult | None",
+) -> "ModePolicy":
+    current_policy = str(getattr(mode_policy, "final_formatting_policy", "") or "minimal")
+    if current_policy not in {"", "minimal"}:
+        return mode_policy
+    cat = (context.app_category or "").strip().lower()
+    if cat in {"code", "terminal"}:
+        return mode_policy
+
+    requested_policy = _formatting_policy_from_qwen_plan(adjudication_result)
+    if requested_policy is None:
+        requested_policy = _spoken_structure_formatting_policy(raw_text, adjudicated_text)
+    if requested_policy is None:
+        return mode_policy
+
+    prefix = (getattr(mode_policy, "prompt_prefix", "") or "").strip()
+    if requested_policy == "explicit_rewrite":
+        nudge = (
+            "Explicit rewrite request detected: preserve every content unit and apply "
+            "only the requested rewrite style."
+        )
+    else:
+        nudge = (
+            "Spoken structure detected: preserve every content unit and apply only the "
+            "requested list, section, or email structure."
+        )
+    prompt_prefix = f"{prefix} {nudge}".strip() if prefix else nudge
+    return replace(
+        mode_policy,
+        final_formatting_policy=requested_policy,
+        prompt_prefix=prompt_prefix,
+    )
+
+
+def _formatting_policy_from_qwen_plan(
+    adjudication_result: "TranscriptAdjudicationResult | None",
+) -> str | None:
+    if adjudication_result is None or adjudication_result.rejected:
+        return None
+    metadata = getattr(adjudication_result, "metadata", {}) or {}
+    plan = metadata.get("formatting_plan") if isinstance(metadata, dict) else None
+    if isinstance(plan, dict):
+        values = " ".join(str(v) for v in plan.values() if isinstance(v, (str, int, float, bool))).casefold()
+    else:
+        values = str(plan or "").casefold()
+    if not values:
+        return None
+    if (
+        "no_format" in values
+        or "no formatting" in values
+        or "verbatim" in values
+        or re.search(r"\b(?:no|without|avoid)\s+(?:bullet|bullets|list|numbered|formatting|structure)\b", values)
+        or re.search(r"\bdo\s+not\b.{0,48}\b(?:bullet|bullets|list|numbered|format|structure)\b", values)
+    ):
+        return None
+    if "email" in values:
+        return "email"
+    if any(token in values for token in ("bullet", "number", "section", "list", "heading", "structured")):
+        return "structured_notes"
+    if any(
+        token in values
+        for token in (
+            "checklist",
+            "concise",
+            "formal",
+            "polish",
+            "rewrite",
+            "status update",
+            "summary",
+        )
+    ):
+        return "explicit_rewrite"
+    return None
+
+
+_STRUCTURE_NEGATION_RE = re.compile(
+    r"\b(?:do\s+not|don't|dont|should\s+not)\s+"
+    r"(?:turn|convert|make|format|structure)\b.{0,48}\b"
+    r"(?:bullet|bullets|numbered|list|format|structure|sections?)\b",
+    re.IGNORECASE,
+)
+_STRUCTURE_EXPLICIT_RE = re.compile(
+    r"\b(?:bullet(?:s| points?)?|numbered(?: list)?|make (?:this|it) (?:a )?list|"
+    r"turn (?:this|it) into (?:a )?(?:list|bullets)|"
+    r"(?:two|three|four|five|\d+)\s+(?:points|sections|bullets|risks|decisions|steps)|"
+    r"we need (?:two|three|four|five|\d+)\s+(?:points|sections|bullets|risks|decisions|steps))\b",
+    re.IGNORECASE,
+)
+_STRUCTURE_SEQUENCE_RE = re.compile(
+    r"\bfirst\b.{0,280}\bsecond\b.{0,280}\bthird\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_EMAIL_STRUCTURE_RE = re.compile(
+    r"\b(?:write|draft|compose)\s+(?:an?\s+)?email\b|\bsubject\s+line\b|\bemail\s+to\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_REWRITE_RE = re.compile(
+    r"\b(?:write|draft|compose)\s+(?:this|it)?\s*(?:as|into|like)?\s*(?:a\s+)?"
+    r"(?:concise\s+)?(?:status\s+update|summary|checklist)\b|"
+    r"\b(?:turn|convert|format)\s+(?:this|it)\s+into\s+(?:a\s+)?"
+    r"(?:status\s+update|summary|checklist|concise\s+note)\b",
+    re.IGNORECASE,
+)
+
+
+def _spoken_structure_formatting_policy(raw_text: str, adjudicated_text: str) -> str | None:
+    text = " ".join(part for part in (raw_text or "", adjudicated_text or "") if part).strip()
+    if not text or _STRUCTURE_NEGATION_RE.search(text):
+        return None
+    if _EMAIL_STRUCTURE_RE.search(text):
+        return "email"
+    if _STRUCTURE_EXPLICIT_RE.search(text) or _STRUCTURE_SEQUENCE_RE.search(text):
+        return "structured_notes"
+    if _EXPLICIT_REWRITE_RE.search(text):
+        return "explicit_rewrite"
+    return None
+
+
+def _collect_self_correction_cues(text: str) -> tuple[dict[str, Any], ...]:
+    current = re.sub(r"\s+", " ", (text or "").strip())
+    if not current:
+        return ()
+    cues: list[dict[str, Any]] = []
+    for match in _MID_UTTERANCE_EDIT_MARKER_RE.finditer(current):
+        start, end = match.span()
+        cues.append({
+            "marker": match.group(0).strip(),
+            "before_excerpt": current[max(0, start - 96):start].strip(),
+            "after_excerpt": current[end:end + 160].strip(" ,.;:!?-"),
+            "char_start": start,
+            "char_end": end,
+        })
+        if len(cues) >= 12:
+            break
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9])(?P<correct>[A-Za-z][A-Za-z'-]{2,31})\s+not\s+(?P<wrong>[A-Za-z][A-Za-z'-]{2,31})(?![A-Za-z0-9])",
+        current,
+        flags=re.IGNORECASE,
+    ):
+        correct = match.group("correct")
+        wrong = match.group("wrong")
+        if not _inline_not_correction_allowed(correct, wrong):
+            continue
+        cues.append({
+            "marker": "not",
+            "kept_candidate": correct,
+            "removed_candidate": wrong,
+            "before_excerpt": current[max(0, match.start() - 80):match.start()].strip(),
+            "after_excerpt": current[match.end():match.end() + 120].strip(" ,.;:!?-"),
+            "char_start": match.start(),
+            "char_end": match.end(),
+        })
+        if len(cues) >= 16:
+            break
+    return tuple(cues)
+
+
 def _final_adjudication_fast_skip_reason(
     *,
     live_adjudication: bool,
@@ -2713,6 +2923,34 @@ def _explicit_candidate_terms(context: TypedContextBundle) -> tuple[str, ...]:
         seen.add(key)
         out.append(term)
     return tuple(out)
+
+
+def _dedupe_term_values(values: tuple[str, ...]) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        term = str(item or "").strip()
+        key = term.casefold()
+        if not term or key in seen:
+            continue
+        seen.add(key)
+        out.append(term)
+    return tuple(out)
+
+
+def _context_proper_repair_terms(context: TypedContextBundle) -> tuple[str, ...]:
+    chunks: list[str] = [
+        context.window_title or "",
+        context.selected_text or "",
+        context.focused_text_before or "",
+        context.focused_text_after or "",
+        context.field_text_excerpt or "",
+    ]
+    chunks.extend(str(item or "") for item in (context.candidate_entities or ())[:40])
+    terms: list[str] = []
+    for chunk in chunks:
+        terms.extend(_proper_noun_terms(chunk))
+    return _dedupe_term_values(tuple(terms))
 
 
 def _reconcile_explicit_candidate_term_confusions(
@@ -2798,15 +3036,20 @@ def _reconcile_split_candidate_term(
     for width in (3, 2):
         for idx in range(0, len(spans) - width + 1):
             observed_tokens = [item[0] for item in spans[idx : idx + width]]
+            if not _split_candidate_tokens_safe_for_term(observed_tokens, target):
+                continue
             joined = re.sub(r"[^A-Za-z0-9]+", "", "".join(observed_tokens))
             folded = joined.casefold()
-            if not folded or folded == target_folded or folded[:1] != target_folded[:1]:
+            if not folded or folded[:1] != target_folded[:1]:
                 continue
-            if abs(len(folded) - len(target_folded)) > 2:
-                continue
-            ratio = difflib.SequenceMatcher(a=folded, b=target_folded, autojunk=False).ratio()
-            if ratio < 0.78:
-                continue
+            if folded == target_folded:
+                ratio = 1.0
+            else:
+                if abs(len(folded) - len(target_folded)) > 2:
+                    continue
+                ratio = difflib.SequenceMatcher(a=folded, b=target_folded, autojunk=False).ratio()
+                if ratio < 0.78:
+                    continue
             start = spans[idx][1]
             end = spans[idx + width - 1][2]
             observed = " ".join(observed_tokens)
@@ -2829,6 +3072,54 @@ def _reconcile_split_candidate_term(
         out = out[:start] + replacement + out[end:]
         replacements.append(meta)
     return out, list(reversed(replacements))
+
+
+_SPLIT_CANDIDATE_FUNCTION_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "but",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "then",
+    "this",
+    "to",
+    "was",
+    "were",
+    "with",
+}
+
+
+def _split_candidate_tokens_safe_for_term(observed_tokens: list[str], target: str) -> bool:
+    token_norms = [
+        re.sub(r"[^A-Za-z0-9]+", "", token or "").casefold()
+        for token in observed_tokens
+    ]
+    token_norms = [token for token in token_norms if token]
+    if len(token_norms) != len(observed_tokens):
+        return False
+    target_folded = (target or "").casefold()
+    if not target_folded:
+        return False
+    if any(token in _SPLIT_CANDIDATE_FUNCTION_WORDS for token in token_norms):
+        return False
+    if any(token == target_folded for token in token_norms) and "".join(token_norms) != target_folded:
+        return False
+    return True
 
 
 def _repair_terminal_protected_command_terms(
@@ -2956,6 +3247,8 @@ def _reconcile_protected_term_near_misses(
 
     for term in protected_terms[:32]:
         _add(term)
+        for token in _protected_phrase_repair_tokens(term):
+            _add(token)
     for term in ai_glossary:
         _add(term)
 
@@ -3007,6 +3300,33 @@ def _reconcile_protected_term_near_misses(
             out = split_text
             replacements.extend(split_replacements)
     return out, replacements
+
+
+def _protected_phrase_repair_tokens(term: str) -> tuple[str, ...]:
+    """Rare-looking tokens inside protected phrases can repair ASR spelling.
+
+    A screen/memory phrase like "Silvia Gamache" should help Qwen/final ASR
+    repair "Sylvia Gamache" without making the whole utterance deterministic.
+    Short phrase fragments are intentionally ignored: "Luma Ray" should not
+    teach the system to rewrite ordinary words like "say" into "Ray".
+    """
+
+    raw = str(term or "").strip()
+    if not raw or " " not in raw:
+        return ()
+    out: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,31}", raw):
+        if len(token) < 5:
+            continue
+        if token.casefold() in _COMMON_PHONETIC_REPAIR_WORDS:
+            continue
+        key = token.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(token)
+    return tuple(out)
 
 
 def _protected_near_miss_term_allowed(term: str) -> bool:
@@ -3126,12 +3446,15 @@ _COMMON_PHONETIC_REPAIR_WORDS = {
     "come", "could", "did", "different", "do", "does", "done", "end", "every",
     "final", "find", "fix", "for", "format", "formatting", "from", "get",
     "give", "go", "going", "good", "got", "had", "has", "have", "here", "how",
-    "into", "issue", "issues", "just", "know", "last", "later", "like", "line",
-    "live", "long", "look", "lot", "love", "make", "many", "may", "memory",
-    "miss", "missed", "missing", "more", "move", "moves", "moving", "not", "now", "one", "only", "open",
-    "our", "out", "over", "pause", "plan", "preview", "problem", "prompt",
-    "pull", "put", "read", "really", "review", "right", "say", "see", "send",
-    "should", "show", "slow", "speak", "start", "stay", "take", "tech", "tell",
+    "into", "issue", "issues", "just", "know", "last", "later", "launch",
+    "like", "line", "live", "location", "long", "look", "lot", "love",
+    "make", "many", "may", "meeting", "memory", "metric", "miss", "missed",
+    "missing", "more", "move", "moves", "moving", "not", "notes", "now",
+    "one", "only", "open", "our", "out", "over", "owner", "pause", "plan",
+    "point", "points", "preview", "problem", "project", "prompt", "pull",
+    "put", "read", "really", "review", "right", "risk", "rollout", "say",
+    "see", "send", "section", "sections", "should", "show", "slow", "speak",
+    "start", "stay", "take", "tech", "tell",
     "text", "than", "that", "the", "then", "there", "thing", "things", "this",
     "time", "to", "use", "utterance", "very", "want", "was", "we", "word",
     "words", "work", "what", "when", "where", "which", "while", "will", "with",

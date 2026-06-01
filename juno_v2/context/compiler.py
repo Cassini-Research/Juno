@@ -124,6 +124,31 @@ class TranscriptAdjudicationPacket:
                     "that only appear in live_preview_visible or base_visible."
                 ),
             },
+            "speech_resolution_contract": {
+                "role": (
+                    "Resolve what the user meant to say from the complete ASR evidence, "
+                    "local terms, app context, and explicit spoken correction cues."
+                ),
+                "corrected_text": (
+                    "Content-preserving final transcript. Resolve self-corrections, "
+                    "ASR mistakes, spoken punctuation, protected terms, dates, and casing. "
+                    "Do not apply note/email/list formatting here."
+                ),
+                "intent": (
+                    "Optional object describing dictation, structured_dictation, transform, "
+                    "action, or mixed intent. This is evidence for downstream routing; "
+                    "corrected_text remains a transcript."
+                ),
+                "formatting_plan": (
+                    "Optional object describing requested structure such as bullets, numbered "
+                    "lists, sections, email, or no_formatting. Do not directly format corrected_text."
+                ),
+                "self_corrections": (
+                    "Optional array of resolved spoken corrections with evidence spans. "
+                    "Literal mentions such as 'the words blank space' must be preserved."
+                ),
+                "uncertainty": "Optional array for low-confidence spans or needed confirmation.",
+            },
             "context": {
                 "app_name": self.app_name,
                 "app_category": self.app_category,
@@ -149,6 +174,16 @@ class TranscriptAdjudicationPacket:
                 "ops": "[] for final stage; array only for live target-window patches",
                 "confidence": "number",
                 "protected_terms_used": "array",
+                "intent": "optional object",
+                "formatting_plan": "optional object",
+                "self_corrections": "optional array",
+                "terms_used": "optional array",
+                "uncertainty": "optional array",
+            },
+            "diagnostics": {
+                "self_correction_cues": list(self.metadata.get("self_correction_cues") or []),
+                "post_asr_context_enriched": bool(self.metadata.get("post_asr_context_enriched")),
+                "post_asr_context_terms": list(self.metadata.get("post_asr_context_terms") or []),
             },
         }
 
@@ -350,20 +385,22 @@ def compile_context(
     language: str | None,
     stage: str,
     seed_attachment: SeedBiasAttachment | None = None,
+    final_transcript_text: str | None = None,
 ) -> CompiledContext:
+    ranking_hint = _join_context_hints(transcript_hint, final_transcript_text)
     memory_packet = rank_memory_for_context(
         memory_snapshot,
         context=context,
         mode_policy=mode_policy,
         effective_mode=mode_selection.effective_mode,
-        transcript_hint=transcript_hint,
+        transcript_hint=ranking_hint,
         session_terms=session_terms,
     )
     terms = _compile_terms(
         context=context,
         snapshot=memory_snapshot,
         memory_packet=memory_packet,
-        transcript_hint=transcript_hint,
+        transcript_hint=ranking_hint,
         session_terms=session_terms,
         seed_attachment=seed_attachment,
     )
@@ -385,6 +422,8 @@ def compile_context(
             "session_term_count": len(session_terms or []),
             "memory_packet_counts": _memory_counts(memory_snapshot),
             "seed_attached": seed_attachment is not None,
+            "post_asr_context_enriched": bool(final_transcript_text and final_transcript_text.strip()),
+            "post_asr_context_terms": [t.text for t in terms[:16]],
         },
     )
 
@@ -541,6 +580,21 @@ def _term_allowed(text: str) -> bool:
     return True
 
 
+def _join_context_hints(*values: str | None) -> str:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        v = re.sub(r"\s+", " ", (value or "").strip())
+        if not v:
+            continue
+        key = v.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(v)
+    return " ".join(out)
+
+
 def _looks_identifier(text: str) -> bool:
     if not text:
         return False
@@ -645,6 +699,8 @@ def _hint_matches_memory_subterm(hint: str, term: str) -> bool:
         return False
     if h == t:
         return True
+    if not _rare_memory_subterm_allowed(h):
+        return False
     if h[:1] != t[:1] or abs(len(h) - len(t)) > 2:
         return False
     if not _rare_memory_subterm_allowed(term):

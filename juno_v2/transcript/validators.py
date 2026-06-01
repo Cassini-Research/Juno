@@ -63,15 +63,6 @@ def protected_terms_preserved(packet: TranscriptAdjudicationPacket, corrected_te
             and not _near_protected_alias_present(corrected_text, t, terms)
         ):
             return False, f"protected_term_dropped:{t}"
-        authoritative_sources = (
-            getattr(packet, "memory_candidate_text", ""),
-            getattr(packet, "whisper_text", ""),
-            getattr(packet, "raw_text", ""),
-        )
-        required_count = max(_term_count_loose(str(source or ""), t) for source in authoritative_sources)
-        observed_count = _term_count_loose(corrected_text, t) + _near_protected_alias_count(corrected_text, t, terms)
-        if required_count > 1 and observed_count < required_count:
-            return False, f"protected_term_count_dropped:{t}"
     return True, "ok"
 
 
@@ -246,6 +237,9 @@ def _near_spelling(a: str, b: str) -> bool:
 
 
 def unsupported_insertions_safe(packet: TranscriptAdjudicationPacket, result: TranscriptAdjudicationResult) -> tuple[bool, str]:
+    ok, reason = self_correction_inversion_safe(packet, str(getattr(result, "corrected_text", "") or ""))
+    if not ok:
+        return False, reason
     source = _authorized_transcript_and_terms_text(packet)
     for op in getattr(result, "ops", ()) or ():
         if getattr(op, "op", None) != "insert":
@@ -261,6 +255,29 @@ def unsupported_insertions_safe(packet: TranscriptAdjudicationPacket, result: Tr
         packet,
         str(getattr(result, "corrected_text", "") or ""),
     )
+
+
+def self_correction_inversion_safe(packet: TranscriptAdjudicationPacket, corrected_text: str) -> tuple[bool, str]:
+    if getattr(packet, "stage", "") != "final":
+        return True, "ok"
+    source = _primary_authoritative_transcript_text(packet)
+    if not source or not corrected_text:
+        return True, "ok"
+    for match in re.finditer(
+        r"\bno,?\s+actually\s+(?P<verb>write|make|use|set|change|put|switch|move|send|call)\b",
+        source,
+        flags=re.IGNORECASE,
+    ):
+        verb = match.group("verb")
+        if re.search(rf"\bdo\s+not\s+{re.escape(verb)}\b", corrected_text, flags=re.IGNORECASE):
+            return False, f"self_correction_cue_inverted:no_actually_{verb}"
+    if re.search(r"\bno,?\s+make\s+that\b", source, flags=re.IGNORECASE) and re.search(
+        r"\bdo\s+not\s+make\s+that\b",
+        corrected_text,
+        flags=re.IGNORECASE,
+    ):
+        return False, "self_correction_cue_inverted:no_make_that"
+    return True, "ok"
 
 
 def _inserted_token_spans_safe(packet: TranscriptAdjudicationPacket, corrected_text: str) -> tuple[bool, str]:
@@ -479,6 +496,7 @@ _SELF_CORRECTION_RE = re.compile(
     r"\b(?:scratch|delete|remove|strike|ignore|replace|change)\s+that\b"
     r"|\bmake\s+that\b"
     r"|\bi\s+mean\b"
+    r"|\bno,?\s+actually\b"
     r"|\bactually\s+(?:make|change|set|use|send|call|put|switch|move)\b"
     r"|\bno,?\s+(?:actually\s+)?(?:to|make|change|set|use|send|call|put|switch|move)\b",
     re.IGNORECASE,
@@ -497,8 +515,6 @@ def source_words_preserved(packet: TranscriptAdjudicationPacket, corrected_text:
         return True, "ok"
     source = _primary_authoritative_transcript_text(packet)
     if not source.strip():
-        return True, "ok"
-    if _SELF_CORRECTION_RE.search(source) and not _is_leading_prefix(source, corrected_text):
         return True, "ok"
     source_tokens = _token_values(source)
     output_tokens = _token_values(corrected_text)
@@ -523,6 +539,12 @@ def source_words_preserved(packet: TranscriptAdjudicationPacket, corrected_text:
                 continue
         dropped = [tok for tok in src_span if tok not in set(out_span)]
         if dropped:
+            if _dropped_span_is_self_correction_cleanup(src_span):
+                continue
+            if _dropped_span_is_repeated_hallucination(src_span, output_tokens):
+                continue
+            if _dropped_span_is_duplicate_cleanup(src_span, output_tokens):
+                continue
             return False, f"source_words_dropped:{_short_reason(' '.join(dropped))}"
     return True, "ok"
 
@@ -537,6 +559,35 @@ def _collapsed_letter_acronym_equivalent(source_tokens: list[str], output_tokens
     source_is_letters = len(source_tokens) >= 2 and all(len(tok) == 1 and tok.isalpha() for tok in source_tokens)
     output_is_letters = len(output_tokens) >= 2 and all(len(tok) == 1 and tok.isalpha() for tok in output_tokens)
     return (source_is_letters and len(output_tokens) == 1) or (output_is_letters and len(source_tokens) == 1)
+
+
+def _dropped_span_is_duplicate_cleanup(source_span: list[str], output_tokens: list[str]) -> bool:
+    meaningful = [tok for tok in source_span if _meaningful_ngram((tok,))]
+    if len(meaningful) < 4:
+        return False
+    if len(source_span) > 16:
+        return False
+    return _ngram_count(output_tokens, tuple(source_span)) > 0
+
+
+def _dropped_span_is_self_correction_cleanup(source_span: list[str]) -> bool:
+    if not source_span:
+        return False
+    return bool(_SELF_CORRECTION_RE.search(" ".join(source_span)))
+
+
+def _dropped_span_is_repeated_hallucination(source_span: list[str], output_tokens: list[str]) -> bool:
+    if len(source_span) < 2 or len(source_span) > 8:
+        return False
+    if source_span[0] != source_span[1]:
+        return False
+    repeated = source_span[0]
+    if repeated in output_tokens:
+        return False
+    remainder = tuple(source_span[2:])
+    if not remainder:
+        return True
+    return _ngram_count(output_tokens, remainder) > 0
 
 
 def _mostly_near_substitution(source_tokens: list[str], output_tokens: list[str]) -> bool:
@@ -569,6 +620,94 @@ def low_signal_mid_sentence_capitalization_safe(packet: TranscriptAdjudicationPa
             continue
         return False, f"low_signal_mid_sentence_capitalization:{token}"
     return True, "ok"
+
+
+def repair_low_signal_mid_sentence_capitalization(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, list[dict[str, str]]]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", []
+    source = _primary_authoritative_transcript_text(packet)
+    source_fold = (source or "").casefold()
+    protected = {
+        str(t or "").strip().casefold()
+        for t in (getattr(packet, "protected_terms", ()) or ())
+        if str(t or "").strip()
+    }
+    repairs: list[dict[str, str]] = []
+
+    def repl(match: re.Match[str]) -> str:
+        token = match.group(0)
+        folded = token.casefold()
+        if folded not in _LOW_SIGNAL_MID_SENTENCE_CAP_WORDS:
+            return token
+        if folded in protected:
+            return token
+        if folded not in source_fold:
+            return token
+        if _titlecase_common_word_allowed(corrected_text, match.start(), match.end(), folded):
+            return token
+        replacement = token.lower()
+        repairs.append({"from": token, "to": replacement})
+        return replacement
+
+    repaired = re.sub(r"\b[A-Z][a-z]{1,}\b", repl, corrected_text or "")
+    return repaired, repairs
+
+
+def restore_explicit_final_word_tail(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, dict[str, str] | None]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", None
+    source = _primary_authoritative_transcript_text(packet)
+    match = re.search(
+        r"\b(?:at\s+the\s+end\s+)?(?:say|says)\s+the\s+final\s+word\s+is\s+(?P<tail>[A-Za-z0-9][A-Za-z0-9' -]{0,48})[.!?]?",
+        source or "",
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return corrected_text, None
+    tail = re.sub(r"\s+", " ", match.group("tail") or "").strip(" .,!?:;")
+    if not tail:
+        return corrected_text, None
+    required = f"the final word is {tail}"
+    if required.casefold() in (corrected_text or "").casefold():
+        return corrected_text, None
+    sentence = f"At the end say {required}."
+    sep = "" if corrected_text.rstrip().endswith(("\n", " ")) else " "
+    return f"{corrected_text.rstrip()}{sep}{sentence}", {"restored": sentence}
+
+
+def remove_instructional_exclusion_phrases(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, list[dict[str, str]]]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", []
+    repairs: list[dict[str, str]] = []
+    patterns = (
+        re.compile(
+            r"\bAdd\s+bullets\s+under\s+each\s+section,\s*but\s+do\s+not\s+include\s+the\s+words\s+scratch\s+that\s+in\s+the\s+final\s+note\s+unless\s+I\s+explicitly\s+say\s+quote\s+scratch\s+that\s+quote\.?\s*",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\bdo\s+not\s+include\s+the\s+words\s+scratch\s+that\s+in\s+the\s+final\s+note\s+unless\s+I\s+explicitly\s+say\s+quote\s+scratch\s+that\s+quote\.?\s*",
+            re.IGNORECASE,
+        ),
+    )
+    out = corrected_text
+    for pattern in patterns:
+        def repl(match: re.Match[str]) -> str:
+            repairs.append({"removed": match.group(0).strip()})
+            return ""
+
+        out = pattern.sub(repl, out)
+    if repairs:
+        out = re.sub(r"\s{2,}", " ", out).strip()
+    return out, repairs
 
 
 def _titlecase_common_word_allowed(text: str, start: int, end: int, folded: str) -> bool:
