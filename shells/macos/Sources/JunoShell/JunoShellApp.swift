@@ -3038,6 +3038,9 @@ final class DictationController: ObservableObject {
     private var liveAudioCheckpointBackpressureUntil: TimeInterval = 0
     private var sessionContextTape = JunoSessionContextTape()
     private var lastPastedFromBroker: String = ""
+    private var pendingFinalBrokerPasteKind: String?
+    private var pendingFinalReplaceTarget: String?
+    private var pendingFinalReplaceTargetChars: Int = 0
     private var recorderStopped: Bool = false
     private var brokerSnapshotFailedThisSession: Bool = false
     private var brokerSnapshotLowSignalThisSession: Bool = false
@@ -3191,6 +3194,9 @@ final class DictationController: ObservableObject {
             self.dictationStartedAt = nil
             self.refiningStartedAt = nil
             self.utteranceFrozenContext = nil
+            self.pendingFinalBrokerPasteKind = nil
+            self.pendingFinalReplaceTarget = nil
+            self.pendingFinalReplaceTargetChars = 0
             self.suppressPartialPasteForSelectionEditing = false
             self.editingSelectionCharCount = 0
             self.textMonExpectsReplacePaste = false
@@ -3686,6 +3692,9 @@ final class DictationController: ObservableObject {
         liveAdjudicationRevision = 0
         liveAdjudicationBackpressureUntil = 0
         lastPastedFromBroker = ""
+        pendingFinalBrokerPasteKind = nil
+        pendingFinalReplaceTarget = nil
+        pendingFinalReplaceTargetChars = 0
         recorderStopped = false
         writerWarmRequestedThisSession = false
         brokerSnapshotFailedThisSession = false
@@ -4124,6 +4133,14 @@ final class DictationController: ObservableObject {
                 self.liveDisplayTranscript.isEmpty ? self.livePartialText : self.liveDisplayTranscript
             )
         }
+        previewStreamer.candidateEntities = { [weak self] in
+            guard let self else { return [] }
+            return self.surfaceRecognitionHints
+        }
+        previewStreamer.sessionContextTape = { [weak self] in
+            guard let self else { return [:] }
+            return self.sessionContextTape.payload(liveTranscript: nil)
+        }
         previewStreamer.onPartial = { [weak self] reportedUid, committed, tail, isFinal in
             guard let self else { return }
             guard reportedUid == self.pendingUtteranceId else { return }
@@ -4316,10 +4333,14 @@ final class DictationController: ObservableObject {
                 if hudState == .waitingSpeech || hudState == .checkingMic {
                     state = "listening"
                 }
-                if !JunoUserDefaults.hudLiveTranscriptionsEnabled {
-                    requestWriterWarmForActiveDictation(
-                        generation: dictationSessionGeneration,
-                        reason: "speech_detected_no_live_caption"
+                let warmGeneration = dictationSessionGeneration
+                let warmDelay: TimeInterval = JunoUserDefaults.hudLiveTranscriptionsEnabled ? 0.75 : 0.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + warmDelay) { [weak self] in
+                    self?.requestWriterWarmForActiveDictation(
+                        generation: warmGeneration,
+                        reason: JunoUserDefaults.hudLiveTranscriptionsEnabled
+                            ? "speech_detected_live_caption"
+                            : "speech_detected_no_live_caption"
                     )
                 }
                 armEngineFirstWordTimerIfNeeded()
@@ -5069,6 +5090,22 @@ final class DictationController: ObservableObject {
         }
 
         if isFinal || suppressPartialPasteForSelectionEditing {
+            if isFinal {
+                pendingFinalBrokerPasteKind = response.pasteKind
+                if let writerOutcome = response.metadata?["writer_outcome"] as? [String: Any] {
+                    pendingFinalReplaceTarget = writerOutcome["target"] as? String
+                    if let n = writerOutcome["target_text_chars"] as? Int {
+                        pendingFinalReplaceTargetChars = max(0, n)
+                    } else if let n = writerOutcome["target_text_chars"] as? NSNumber {
+                        pendingFinalReplaceTargetChars = max(0, n.intValue)
+                    } else {
+                        pendingFinalReplaceTargetChars = 0
+                    }
+                } else {
+                    pendingFinalReplaceTarget = nil
+                    pendingFinalReplaceTargetChars = 0
+                }
+            }
             lastPastedFromBroker = transcript
             accumulatedText = transcript
             pendingRevisionFullTranscript = nil
@@ -5293,6 +5330,9 @@ final class DictationController: ObservableObject {
         let newSpeechAlreadyCaptured = lastSpeechEnergyAt > snapshotSpeechAt
         pendingRevisionFullTranscript = nil
         lastPastedFromBroker = ""
+        pendingFinalBrokerPasteKind = nil
+        pendingFinalReplaceTarget = nil
+        pendingFinalReplaceTargetChars = 0
         accumulatedText = ""
         engineSessionPartialText = ""
         engineSessionFinalCandidateText = ""
@@ -5422,13 +5462,28 @@ final class DictationController: ObservableObject {
             ?? pastedText
         var committedFinalText = finalText
         var finalPasteSucceeded = false
-        var finalPasteKind = suppressPartialPasteForSelectionEditing ? "replace" : "insert"
+        var finalPasteKind = pendingFinalBrokerPasteKind
+            ?? (suppressPartialPasteForSelectionEditing ? "replace" : "insert")
         var finalPasteAttempted = false
         var finalPasteFailureReason: String? = nil
         let finalPasteAllowed = SecureFieldPolicy.allowPaste(secure: lastSecureFlag)
+        var deletedRecentReplaceTarget = false
 
         func blockedPasteReason() -> String {
             finalPasteAllowed ? "no_active_text_field" : "secure_field"
+        }
+
+        func deleteRecentReplaceTargetIfNeeded() {
+            guard finalPasteKind == "replace",
+                  !suppressPartialPasteForSelectionEditing,
+                  !deletedRecentReplaceTarget,
+                  pendingFinalReplaceTarget == "recent_clipboard"
+                    || pendingFinalReplaceTarget == "recent_commit",
+                  pendingFinalReplaceTargetChars > 0 else {
+                return
+            }
+            Clipboard.deleteLastNCharacters(pendingFinalReplaceTargetChars)
+            deletedRecentReplaceTarget = true
         }
 
         if finalText.isEmpty && brokerSnapshotLowSignalThisSession {
@@ -5506,6 +5561,8 @@ final class DictationController: ObservableObject {
                 if replacingPartial {
                     Clipboard.deleteLastNCharacters(pastedText.count)
                     finalPasteKind = "replace"
+                } else {
+                    deleteRecentReplaceTargetIfNeeded()
                 }
                 finalPasteAttempted = true
                 finalPasteSucceeded = observedUndoSafePaste(finalText)
@@ -5535,6 +5592,7 @@ final class DictationController: ObservableObject {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
                 activateTargetForPasteIfNeeded()
+                deleteRecentReplaceTargetIfNeeded()
                 finalPasteAttempted = true
                 finalPasteSucceeded = observedUndoSafePaste(textToPaste)
                 if finalPasteSucceeded {
@@ -5565,6 +5623,7 @@ final class DictationController: ObservableObject {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
                 activateTargetForPasteIfNeeded()
+                deleteRecentReplaceTargetIfNeeded()
                 finalPasteAttempted = true
                 finalPasteSucceeded = observedUndoSafePaste(textToPaste)
                 if finalPasteSucceeded {

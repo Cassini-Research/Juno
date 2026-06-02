@@ -43,6 +43,7 @@ _COMMON_SINGLE_WORD_REPAIR_BLOCKLIST = {
 class PreviewPersonalizationTerm:
     text: str
     source: str = "unknown"
+    aliases: tuple[str, ...] = ()
 
     @property
     def tokens(self) -> tuple[str, ...]:
@@ -52,8 +53,11 @@ class PreviewPersonalizationTerm:
     def norm(self) -> str:
         return "".join(self.tokens)
 
-    def to_dict(self) -> dict[str, str]:
-        return {"text": self.text, "source": self.source}
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"text": self.text, "source": self.source}
+        if self.aliases:
+            data["aliases"] = list(self.aliases)
+        return data
 
 
 def collect_preview_personalization_terms(
@@ -64,11 +68,11 @@ def collect_preview_personalization_terms(
     out: list[PreviewPersonalizationTerm] = []
     seen: set[str] = set()
 
-    def add(value: Any, source: str) -> None:
+    def add(value: Any, source: str, aliases: Any = ()) -> None:
         term = _clean_term(str(value or ""))
         if not term:
             return
-        item = PreviewPersonalizationTerm(term, source=source)
+        item = PreviewPersonalizationTerm(term, source=source, aliases=_clean_aliases(aliases, canonical=term))
         if not _term_allowed_for_preview_repair(item):
             return
         key = item.norm.casefold()
@@ -81,7 +85,11 @@ def collect_preview_personalization_terms(
     if isinstance(structured, list):
         for row in structured[:64]:
             if isinstance(row, dict):
-                add(row.get("text"), str(row.get("source") or "preview_context"))
+                add(
+                    row.get("text"),
+                    str(row.get("source") or "preview_context"),
+                    aliases=row.get("aliases") or row.get("spoken_forms") or (),
+                )
             else:
                 add(row, "preview_context")
 
@@ -89,25 +97,59 @@ def collect_preview_personalization_terms(
         add(value, "candidate_entity")
     for value in payload.get("recent_screen_terms") or []:
         add(value, "recent_screen_term")
+    packet = payload.get("memory_serving_packet")
+    if isinstance(packet, dict):
+        lexicon_aliases = packet.get("metadata", {}).get("lexicon_aliases", {})
+        for value in packet.get("lexicon_terms") or []:
+            aliases = lexicon_aliases.get(value) if isinstance(lexicon_aliases, dict) else ()
+            add(value, "memory_lexicon", aliases=aliases or ())
 
     return out[:48]
 
 
-def preview_personalization_terms_from_plan(plan: Any) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    seen: set[str] = set()
+def preview_personalization_terms_from_plan(plan: Any) -> list[dict[str, Any]]:
+    out: list[PreviewPersonalizationTerm] = []
+    seen: dict[str, int] = {}
 
-    def add(value: Any, source: str) -> None:
-        term = PreviewPersonalizationTerm(_clean_term(str(value or "")), source=source)
+    def add(value: Any, source: str, aliases: Any = ()) -> None:
+        term = PreviewPersonalizationTerm(
+            _clean_term(str(value or "")),
+            source=source,
+            aliases=_clean_aliases(aliases, canonical=str(value or "")),
+        )
         if not _term_allowed_for_preview_repair(term):
             return
         key = term.norm.casefold()
-        if not key or key in seen:
+        if not key:
             return
-        seen.add(key)
-        out.append(term.to_dict())
+        existing_index = seen.get(key)
+        if existing_index is not None:
+            existing = out[existing_index]
+            merged_aliases = tuple(dict.fromkeys([*existing.aliases, *term.aliases]))
+            if merged_aliases != existing.aliases:
+                out[existing_index] = PreviewPersonalizationTerm(
+                    existing.text,
+                    source=existing.source,
+                    aliases=merged_aliases,
+                )
+            return
+        seen[key] = len(out)
+        out.append(term)
 
     context = getattr(plan, "context", None)
+    metadata = getattr(plan, "metadata", {}) or {}
+    structured_seed = metadata.get("juno_seed_structured_bias") if isinstance(metadata, dict) else None
+    if isinstance(structured_seed, dict):
+        for row in structured_seed.get("terms") or []:
+            if not isinstance(row, dict):
+                continue
+            pack_name = str(row.get("pack_name") or "")
+            if pack_name not in {"memory_lexicon", "memory_correction", "personal_entities"}:
+                continue
+            canonical = row.get("canonical")
+            bias_strings = row.get("bias_strings") or ()
+            add(canonical, f"seed_{pack_name}", aliases=bias_strings)
+
     for value in getattr(context, "candidate_entities", []) or []:
         add(value, "candidate_entity")
     for value in (getattr(context, "metadata", {}) or {}).get("recent_screen_terms", []) or []:
@@ -116,11 +158,12 @@ def preview_personalization_terms_from_plan(plan: Any) -> list[dict[str, str]]:
         for token in re.findall(r"[A-Za-z][A-Za-z0-9'_-]{2,}", str(context.selected_text))[:12]:
             add(token, "selection")
 
-    metadata = getattr(plan, "metadata", {}) or {}
     packet = metadata.get("memory_serving_packet") if isinstance(metadata, dict) else None
     if isinstance(packet, dict):
+        lexicon_aliases = packet.get("metadata", {}).get("lexicon_aliases", {})
         for value in packet.get("lexicon_terms") or []:
-            add(value, "memory_lexicon")
+            aliases = lexicon_aliases.get(value) if isinstance(lexicon_aliases, dict) else ()
+            add(value, "memory_lexicon", aliases=aliases or ())
         for row in packet.get("corrections") or []:
             if isinstance(row, dict):
                 add(row.get("corrected"), "memory_correction")
@@ -128,7 +171,7 @@ def preview_personalization_terms_from_plan(plan: Any) -> list[dict[str, str]]:
             if isinstance(row, dict):
                 add(row.get("replacement"), "memory_replacement")
 
-    return out[:48]
+    return [term.to_dict() for term in out[:48]]
 
 
 def repair_preview_word_dicts(
@@ -249,6 +292,13 @@ def _span_can_repair(span_text: str, term: PreviewPersonalizationTerm) -> bool:
         return False
     if _span_matches_explicit_alias(span_norm, term):
         return True
+    # Live HUD text is trust-sensitive: once a word reaches the committed lane,
+    # the user reads it as "what Juno heard." Keep rich memory/screen reasoning
+    # for final Qwen resolution, and only do exact/explicit-alias preview repair
+    # here. Broad edit-distance or soundex repair was responsible for committed
+    # HUD substitutions such as normal words becoming unrelated app/screen terms.
+    if not _preview_fuzzy_repair_enabled(term):
+        return False
     ratio = _similarity(span_norm.casefold(), term_norm.casefold())
     if len(term.tokens) == 1 and len(span_tokens) > 1:
         if term.source == "session_entity":
@@ -285,6 +335,10 @@ def _span_can_repair(span_text: str, term: PreviewPersonalizationTerm) -> bool:
     if len(term.tokens) > 1:
         threshold = 0.84
     return ratio >= threshold
+
+
+def _preview_fuzzy_repair_enabled(term: PreviewPersonalizationTerm) -> bool:
+    return term.source in {"preview_debug_fuzzy"}
 
 
 def _embedded_term_replacement(span_text: str, term: PreviewPersonalizationTerm) -> str | None:
@@ -367,6 +421,14 @@ def _span_matches_explicit_alias(span_norm: str, term: PreviewPersonalizationTer
     key = span_norm.casefold()
     if key in aliases:
         return True
+    for alias in aliases:
+        if len(alias) < 6 or key[:1] != alias[:1]:
+            continue
+        if abs(len(key) - len(alias)) > 1:
+            continue
+        max_edits = 2 if len(alias) >= 7 else 1
+        if _edit_distance_at_most(key, alias, max_edits):
+            return True
     if term.norm.casefold() == "pytest" and key.startswith("pythonm"):
         command_tail = key.removeprefix("pythonm")
         return any(
@@ -378,9 +440,32 @@ def _span_matches_explicit_alias(span_norm: str, term: PreviewPersonalizationTer
 
 
 def _explicit_preview_phrase_aliases(term: PreviewPersonalizationTerm) -> set[str]:
+    aliases = {
+        norm.casefold()
+        for alias in term.aliases
+        if (norm := _norm(alias)) and norm.casefold() != term.norm.casefold()
+    }
     if term.norm.casefold() == "pytest":
-        return {"mpitest", "mpidest", "pidest", "pydest", "pitest", "pytests"}
-    return set()
+        aliases |= {"mpitest", "mpidest", "pidest", "pydest", "pitest", "pytests"}
+    return aliases
+
+
+def _clean_aliases(values: Any, *, canonical: str) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple, set)):
+        return ()
+    out: list[str] = []
+    seen: set[str] = set()
+    canonical_key = _norm(canonical).casefold()
+    for value in values:
+        alias = _clean_term(str(value or ""))
+        key = _norm(alias).casefold()
+        if not alias or not key or key == canonical_key or key in seen:
+            continue
+        seen.add(key)
+        out.append(alias)
+        if len(out) >= 8:
+            break
+    return tuple(out)
 
 
 def _blocked_single_word_span(span_tokens: list[str]) -> bool:

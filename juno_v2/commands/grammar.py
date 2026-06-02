@@ -23,9 +23,13 @@ _ACTIVE_PATTERNS: list[_CommandPattern] = [
     (re.compile(r"^close\s+quote[.,!?]?$", re.I), "close_quote", "quote", {"text": "\u201d"}),
 ]
 
+_RECENT_TARGET = r"(?:that(?:\s+text)?|the\s+last\s+(?:sentence|line|paragraph|answer|thing))"
+
 _RECENT_PATTERNS: list[_CommandPattern] = [
     (re.compile(r"^fix\s+that[.,!?]?$", re.I), "fix_that", "recent_edit", {"instruction": "Fix grammar and clarity. Preserve meaning."}),
     (re.compile(r"^make\s+that\s+shorter[.,!?]?$", re.I), "make_shorter", "recent_edit", {"instruction": "Make the text more concise. Preserve meaning."}),
+    (re.compile(rf"^make\s+{_RECENT_TARGET}\s+(?:more\s+)?(?:clear|clearer)[.,!?]?$", re.I), "make_clearer", "recent_edit", {"instruction": "Improve clarity. Preserve meaning."}),
+    (re.compile(rf"^make\s+{_RECENT_TARGET}\s+(?:(?:more\s+)?(?:concise|direct|brief)|shorter)(?:\s+and\s+(?:more\s+)?(?:direct|concise|clear|clearer))?[.,!?]?$", re.I), "make_shorter_direct", "recent_edit", {"instruction": "Make the text more concise and direct. Preserve meaning."}),
     (re.compile(r"^make\s+that\s+longer[.,!?]?$", re.I), "make_longer", "recent_edit", {"instruction": "Expand with useful detail. Preserve meaning."}),
     (re.compile(r"^make\s+that\s+clearer[.,!?]?$", re.I), "make_clearer", "recent_edit", {"instruction": "Improve clarity. Preserve meaning."}),
     (re.compile(r"^make\s+that\s+more\s+formal[.,!?]?$", re.I), "make_formal", "recent_edit", {"instruction": "Rewrite in a formal tone. Preserve meaning."}),

@@ -1,4 +1,4 @@
-"""Whisper streaming preview core — LocalAgreement-2 over MLX Whisper.
+"""Whisper streaming preview core — LocalAgreement-2 over the local Whisper decoder.
 
 This module owns the per-utterance audio buffer, VAD gate, and HypothesisBuffer.
 On each preview chunk it:
@@ -21,7 +21,7 @@ Invariants:
     2. Tail-quarantine rollback when the last commit equals the prior
        quarantined tail with no new audio evidence.
     3. Silence-tail-quarantine rollback under the same condition during a
-       silence-confirmation decode.
+       silence-confirmation decode when the repeated tail is still unsafe.
     4. Isolated boundary-letter strip for unsupported single-letter commits
        at the start/end of a segment ("D Hey", "better D").
   These are the ONLY places that may shrink ``committed``.
@@ -307,6 +307,7 @@ class StreamingPreviewSessionManager:
                 decoded.text = " ".join(str(w.get("word") or w.get("text") or "") for w in repaired_word_dicts).strip()
             new_words = absolute_words(decoded.word_dicts, state.buffer_start_t)
             previous_quarantined_tail_norms = list(state.quarantined_tail_norms)
+            previous_quarantined_tail_reason = state.quarantined_tail_reason
             previous_silence_tail_norms = list(state.silence_tail_norms)
             state.quarantined_tail_norms = []
             state.quarantined_tail_reason = None
@@ -332,11 +333,24 @@ class StreamingPreviewSessionManager:
                     newly_committed = newly_committed[:budget_prefix_len]
                     state.committed_burst_budget_events += 1
             newly_committed_norms = [w.normalized for w in newly_committed if w.normalized]
+            quarantined_tail_commit_safe = _silence_agreement_commit_safe(
+                newly_committed,
+                decoded=decoded,
+                previous_tail_reason=previous_quarantined_tail_reason,
+                decode_on_silence=False,
+            )
+            silence_tail_commit_safe = _silence_agreement_commit_safe(
+                newly_committed,
+                decoded=decoded,
+                previous_tail_reason=None,
+                decode_on_silence=decode_on_silence,
+            )
             if (
                 newly_committed
                 and previous_quarantined_tail_norms
                 and not state.hypothesis.tail
                 and newly_committed_norms == previous_quarantined_tail_norms
+                and not quarantined_tail_commit_safe
             ):
                 del state.hypothesis.committed[-len(newly_committed):]
                 state.hypothesis.tail = list(newly_committed)
@@ -357,6 +371,7 @@ class StreamingPreviewSessionManager:
                 and not req.is_final
                 and newly_committed_norms
                 and newly_committed_norms == previous_silence_tail_norms[: len(newly_committed_norms)]
+                and not silence_tail_commit_safe
             ):
                 del state.hypothesis.committed[-len(newly_committed):]
                 state.hypothesis.tail = list(newly_committed) + list(state.hypothesis.tail)
@@ -1264,6 +1279,23 @@ _TAIL_COMMIT_QUARANTINE_REASONS = {
 }
 _MAX_LIVE_COMMIT_WORDS = 4
 _MAX_FINAL_TAIL_PROMOTION_WORDS = 12
+_SILENCE_ONLY_SINGLE_WORD_BLOCKLIST = frozenset(
+    {
+        "and",
+        "hello",
+        "next",
+        "okay",
+        "right",
+        "so",
+        "thanks",
+        "the",
+        "um",
+        "uh",
+        "yeah",
+        "yep",
+        "you",
+    }
+)
 
 
 def _display_word_count(words: list[Word]) -> int:
@@ -1278,6 +1310,52 @@ def _display_budget_prefix_len(words: list[Word], max_words: int) -> int:
             return idx
         total += count
     return len(words)
+
+
+def _silence_agreement_commit_safe(
+    words: list[Word],
+    *,
+    decoded: WhisperDecodeOutput | None,
+    previous_tail_reason: str | None,
+    decode_on_silence: bool,
+) -> bool:
+    """Allow a repeated silence tail to become committed only with bounded risk.
+
+    The HUD still never renders untrusted tail text. This only covers the case
+    where a word appeared as hidden tail, then appeared again in the next decode.
+    Without this gate the final word can remain invisible until the user keeps
+    talking; with a blanket rollback removal, silence guesses like "hello" can
+    become opaque text. The criteria below keep the LocalAgreement evidence but
+    reject known silence/corpus artifacts and risky single-token guesses.
+    """
+    if not words:
+        return False
+    reason = (previous_tail_reason or "").strip()
+    if reason != "tail_silence_decode_quarantine" and not decode_on_silence:
+        return False
+    if _display_word_count(words) > _MAX_LIVE_COMMIT_WORDS:
+        return False
+    norms = [w.normalized for w in words if w.normalized]
+    if not norms:
+        return False
+    if any(_is_unsupported_boundary_letter(norm) for norm in norms):
+        return False
+    if len(norms) == 1 and norms[0] in _SILENCE_ONLY_SINGLE_WORD_BLOCKLIST:
+        return False
+    text = " ".join(w.text for w in words).strip()
+    if not text:
+        return False
+    guarded, reason = _guard_tail_hallucination(text)
+    if reason is not None or guarded.strip() != text:
+        return False
+    try:
+        nsp_raw = decoded.metadata.get("last_segment_no_speech_prob") if decoded is not None else None
+        nsp = float(nsp_raw) if nsp_raw is not None else None
+    except (TypeError, ValueError):
+        nsp = None
+    if nsp is not None and nsp >= _TAIL_RISKY_NO_SPEECH_PROB:
+        return False
+    return True
 
 
 def _guard_tail_display(

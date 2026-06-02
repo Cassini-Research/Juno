@@ -733,9 +733,8 @@ def _format_two_bullet_points(match: re.Match[str]) -> str:
         prefix = "\n"
     items = []
     for key in ("i1", "i2"):
-        item = re.sub(r"\s+", " ", (match.group(key) or "").strip()).rstrip(".,;:")
+        item = _clean_spoken_ordinal_item(match.group(key) or "")
         if item:
-            item = item[0].upper() + item[1:]
             if not item.endswith((".", "?", "!")):
                 item = f"{item}."
             items.append(item)
@@ -791,6 +790,26 @@ _FOUR_ITEM_LIST_TRIGGER_FAMILIES = [
     ["one", "two", "three", "four"],
 ]
 
+_SPOKEN_ORDINAL_ITEM_LABEL_RE = re.compile(
+    r"^(?:(?:the\s+)?(?:point|item|bullet|section|task|step)\s+(?:is|was|:|-)\s+)",
+    flags=re.IGNORECASE,
+)
+
+
+def _clean_spoken_ordinal_item(raw: str) -> str:
+    """Normalize item text captured after an ordinal cue.
+
+    In explicit list dictation, phrases such as "first point is Passport"
+    use "point is" as spoken structure, not item content. The list renderer is
+    the only caller, so stripping that label here does not affect prose.
+    """
+    item = re.sub(r"\s+", " ", (raw or "").strip()).rstrip(".,;:")
+    if not item:
+        return ""
+    stripped = _SPOKEN_ORDINAL_ITEM_LABEL_RE.sub("", item).strip()
+    item = stripped or item
+    return item[0].upper() + item[1:] if item else ""
+
 
 def _build_list_pattern(family: list[str]) -> re.Pattern[str]:
     """Match a 3-item list introduced by ordinal triggers from one family.
@@ -822,9 +841,7 @@ def _format_list(match: re.Match[str]) -> str:
         lead = lead[:-1].rstrip()
     items = []
     for key in ("i1", "i2", "i3"):
-        item = (match.group(key) or "").strip().rstrip(".,;")
-        if item:
-            item = item[0].upper() + item[1:]
+        item = _clean_spoken_ordinal_item(match.group(key) or "")
         items.append(item)
     list_lines = [f"{idx + 1}. {item}." for idx, item in enumerate(items)]
     list_text = "\n".join(list_lines)
@@ -930,6 +947,15 @@ _FOUR_ITEM_CROSS_SENTENCE_LIST_PATTERNS = [
     _build_four_item_cross_sentence_list_pattern(f) for f in _FOUR_ITEM_LIST_TRIGGER_FAMILIES
 ]
 
+_THREE_SECTION_CONTINUOUS_RE = re.compile(
+    r"(?P<lead>[^.!?\n]*?\b(?:3|three)\s+(?:bullets?|bullet\s+points?|sections?|items?|points?|things?)\b[^.!?\n]*?)\s+"
+    r"(?:first|firstly|1st|one)(?:\s+is)?[,;:\s]+(?P<i1>.+?)\s+"
+    r"(?:second|secondly|2nd|two)(?:\s+is)?[,;:\s]+(?P<i2>.+?)\s+"
+    r"(?:third|thirdly|3rd|three)(?:\s+is)?[,;:\s]+(?P<i3>.+?)"
+    r"(?=(?:\s+(?:a+h+|u+m+|the\s+final|final|end\s+with|text\s+should|words?\s+should)\b)|$)",
+    flags=re.IGNORECASE,
+)
+
 _FOUR_SECTION_CONTINUOUS_RE = re.compile(
     r"(?P<lead>[^.!?\n]*?\b(?:4|four)\s+(?:sections?|items?|points?|things?)\b[^.!?\n]*?)\s+"
     r"(?:first|firstly|1st|one)(?:\s+is)?[,;:\s]+(?P<i1>.+?)\s+"
@@ -954,9 +980,8 @@ def _format_cross_sentence_list(match: re.Match[str]) -> str:
     for key in ("i1", "i2", "i3", "i4"):
         if key not in match.groupdict():
             continue
-        item = (match.group(key) or "").strip().rstrip(".,;:")
+        item = _clean_spoken_ordinal_item(match.group(key) or "")
         if item:
-            item = item[0].upper() + item[1:]
             if item.count('"') % 2 == 1:
                 item += '"'
         items.append(item)
@@ -965,13 +990,13 @@ def _format_cross_sentence_list(match: re.Match[str]) -> str:
     return f"{lead}\n{body}" if lead else body
 
 
-def _format_continuous_four_section_list(match: re.Match[str]) -> str:
+def _format_continuous_ordinal_section_list(match: re.Match[str]) -> str:
     lead = (match.group("lead") or "").strip().rstrip(".,;:")
     items: list[str] = []
     for key in ("i1", "i2", "i3", "i4"):
-        item = (match.group(key) or "").strip().rstrip(".,;:")
-        if item:
-            item = item[0].upper() + item[1:]
+        if key not in match.groupdict():
+            continue
+        item = _clean_spoken_ordinal_item(match.group(key) or "")
         items.append(item)
     body = "\n".join(f"{idx}. {item}." for idx, item in enumerate(items, start=1))
     return f"{lead}:\n{body}\n" if lead else f"{body}\n"
@@ -995,7 +1020,8 @@ def render_list_from_ordinal_sentences(text: str) -> str:
     """
     if not text:
         return text or ""
-    out = _FOUR_SECTION_CONTINUOUS_RE.sub(_format_continuous_four_section_list, text)
+    out = _FOUR_SECTION_CONTINUOUS_RE.sub(_format_continuous_ordinal_section_list, text)
+    out = _THREE_SECTION_CONTINUOUS_RE.sub(_format_continuous_ordinal_section_list, out)
     for pattern in _FOUR_ITEM_CROSS_SENTENCE_LIST_PATTERNS:
         out = pattern.sub(_format_cross_sentence_list, out)
     for pattern in _CROSS_SENTENCE_LIST_PATTERNS:

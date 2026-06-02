@@ -1126,22 +1126,11 @@ class DictationSessionRunner:
         finally:
             if lifecycle is not None:
                 lifecycle.release('final_asr')
-        raw_for_observe = (result.text or "").strip()
-        if self.juno_seed_runtime is not None and raw_for_observe:
-            cp_sup = None
-            if isinstance(plan.metadata, dict):
-                cp = plan.metadata.get('context_plane')
-                if isinstance(cp, dict):
-                    v = cp.get('suppression')
-                    cp_sup = str(v) if v is not None else None
-            suppressed_ob = self.juno_seed_runtime.durable_memory_suppressed(
-                plan.context,
-                context_plane_suppression=cp_sup,
-            )
-            self.juno_seed_runtime.observe_transcript_for_context_entities(
-                raw_for_observe,
-                plan.context,
-                durable_memory_suppressed=suppressed_ob,
+        if self.juno_seed_runtime is not None and (result.text or "").strip():
+            self.recorder.record(
+                TraceKind.MEMORY,
+                'seed_observation_deferred_until_commit',
+                {'utterance_id': req.utterance_id},
             )
         normalization = self._normalize_transcript(
             result.text.strip(),
@@ -1435,15 +1424,30 @@ class DictationSessionRunner:
                 corrected=committed_text,
                 durable_memory_suppressed=False,
             )
+        committed_lower = committed_text.casefold()
         entities = self.bias_engine.extract_session_entities(committed_text)
-        entities.extend(plan.context.candidate_entities[:8])
+        for candidate in plan.context.candidate_entities[:8]:
+            token = (candidate or '').strip()
+            if (
+                self.bias_engine.is_session_entity_candidate(token)
+                and token.casefold() in committed_lower
+            ):
+                entities.append(token)
+        entities = [
+            token
+            for token in dict.fromkeys(entities)
+            if self.bias_engine.is_session_entity_candidate(token)
+        ]
         self.memory_store.upsert_session_entities(entities, source='commit')
         if self.juno_seed_runtime is not None:
-            committed_lower = committed_text.casefold()
             for token in dict.fromkeys(entities):
                 t = (token or '').strip()
                 if not learned_term_allowed(t) or t.casefold() not in committed_lower:
                     continue
+                self.juno_seed_runtime.learned_store.increment_observation(
+                    t,
+                    from_suppressed_context=False,
+                )
                 self.juno_seed_runtime.learned_store.increment_acceptance(
                     t,
                     from_suppressed_context=False,

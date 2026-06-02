@@ -21,7 +21,12 @@ from juno_v2.transcript.patching import (
     stable_prefix_chars,
     visible_text_hash,
 )
-from juno_v2.transcript.validators import validate_adjudication_result
+from juno_v2.transcript.validators import (
+    remove_instructional_exclusion_phrases,
+    repair_low_signal_mid_sentence_capitalization,
+    restore_explicit_final_word_tail,
+    validate_adjudication_result,
+)
 from juno_v2.writer.backends.base import WriterBackend
 
 _PATCH_OP_TYPES: dict[str, PatchOpType] = {
@@ -223,6 +228,28 @@ class TranscriptAdjudicator:
             decode_ms=decode_ms,
             live_window=live_window,
         )
+        if packet.stage == "final":
+            repaired_text, capitalization_repairs = repair_low_signal_mid_sentence_capitalization(
+                packet,
+                parsed.corrected_text,
+            )
+            if capitalization_repairs and repaired_text != parsed.corrected_text:
+                parsed.corrected_text = repaired_text
+                parsed.metadata = dict(parsed.metadata or {})
+                parsed.metadata["low_signal_capitalization_repairs"] = capitalization_repairs[:16]
+            exclusion_text, exclusion_repairs = remove_instructional_exclusion_phrases(
+                packet,
+                parsed.corrected_text,
+            )
+            if exclusion_repairs and exclusion_text != parsed.corrected_text:
+                parsed.corrected_text = exclusion_text
+                parsed.metadata = dict(parsed.metadata or {})
+                parsed.metadata["instructional_exclusion_repairs"] = exclusion_repairs[:8]
+            tail_text, tail_restore = restore_explicit_final_word_tail(packet, parsed.corrected_text)
+            if tail_restore and tail_text != parsed.corrected_text:
+                parsed.corrected_text = tail_text
+                parsed.metadata = dict(parsed.metadata or {})
+                parsed.metadata["explicit_final_word_tail_restore"] = tail_restore
         ok, reason = validate_adjudication_result(packet, parsed)
         if not ok:
             parsed.rejected = True
@@ -512,6 +539,20 @@ class TranscriptAdjudicator:
                 )
         protected = obj.get("protected_terms_used")
         protected_terms_used = tuple(str(x).strip() for x in protected if str(x).strip()) if isinstance(protected, list) else ()
+        resolution_metadata = {
+            "notes": obj.get("notes"),
+            "schema_inferred": not bool(schema_version),
+        }
+        for key in (
+            "intent",
+            "formatting_plan",
+            "self_corrections",
+            "terms_used",
+            "uncertainty",
+        ):
+            value = obj.get(key)
+            if value is not None:
+                resolution_metadata[key] = value
         return TranscriptAdjudicationResult(
             utterance_id=packet.utterance_id,
             stage=packet.stage,
@@ -525,7 +566,7 @@ class TranscriptAdjudicator:
             protected_terms_used=protected_terms_used,
             backend_name=backend_name,
             decode_ms=decode_ms,
-            metadata={"notes": obj.get("notes"), "schema_inferred": not bool(schema_version)},
+            metadata=resolution_metadata,
         )
 
     def _parse_live_text_result(

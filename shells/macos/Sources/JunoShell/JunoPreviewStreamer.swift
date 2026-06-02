@@ -83,6 +83,12 @@ final class JunoPreviewStreamer {
     /// this only to decide whether a late preview fragment overlaps text
     /// already visible to the user.
     var visibleTextHint: (() -> String)?
+    /// Context terms captured at dictation start. The preview backend uses
+    /// them only for evidence-gated repair, not as an ASR prompt.
+    var candidateEntities: (() -> [String])?
+    /// Frozen context snapshots for the active dictation. Kept separate from
+    /// ``visibleTextHint`` so HUD misspellings do not feed back as context.
+    var sessionContextTape: (() -> [String: Any])?
     var postJSON: (String, [String: Any], @escaping ([String: Any]) -> Void) -> Void = {
         path, payload, completion in
         JunoBroker.postJSON(path: path, payload: payload, completion: completion)
@@ -369,6 +375,13 @@ final class JunoPreviewStreamer {
         let hint = (visibleTextHint?() ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !hint.isEmpty {
             payload["visible_text_hint"] = hint
+        }
+        let candidates = candidateEntities?() ?? []
+        if !candidates.isEmpty {
+            payload["candidate_entities"] = Array(candidates.prefix(24))
+        }
+        if let tape = sessionContextTape?(), !tape.isEmpty {
+            payload["session_context_tape"] = tape
         }
         postJSON("api/broker/dictation/preview/chunk", payload) { [weak self] obj in
             guard let self else { return }

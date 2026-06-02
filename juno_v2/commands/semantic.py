@@ -17,7 +17,14 @@ def interpret_semantic_command(
     t = (text or "").strip().casefold()
     if not t or target_class == CommandTargetClass.NONE:
         return None
-    allow = mode_policy is None or mode_policy.allow_model_insert_rewrite or active_mode == WriterMode.COMMAND_MODE
+    if mode_policy is None or active_mode == WriterMode.COMMAND_MODE:
+        allow = True
+    elif target_class == CommandTargetClass.SELECTED_TEXT:
+        allow = bool(mode_policy.allow_selection_commands)
+    elif target_class == CommandTargetClass.RECENT_COMMIT:
+        allow = bool(mode_policy.allow_recent_target_commands)
+    else:
+        allow = bool(mode_policy.allow_model_insert_rewrite)
     if not allow:
         return SemanticCommandIntent(
             intent_name="declined_semantic",

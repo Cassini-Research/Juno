@@ -132,6 +132,8 @@ struct JunoSessionContextTape {
             "clipboard_text",
             "focused_document_path",
             "focused_file_path",
+            "candidate_entities",
+            "candidate_terms",
             "app_category",
             "can_paste_at_focus",
             "focused_is_secure",

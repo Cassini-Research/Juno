@@ -255,6 +255,8 @@ class WorkbenchStore:
             self.state.partial_text = ""
             self.state.final_candidate_text = ""
             self.state.selection = ClientSelection(start=caret, end=caret)
+            self.state.last_committed_utterance_id = req.utterance_id
+            self.state.last_committed_text = incoming
             self.state.last_committed_start = committed_start
             self.state.last_committed_end = committed_start + len(incoming)
             self.state.revision += 1
