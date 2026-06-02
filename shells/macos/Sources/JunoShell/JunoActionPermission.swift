@@ -44,11 +44,6 @@ enum JunoEventKitGrantCache {
         }
     }
 
-    static func hasGrant(_ descriptor: JunoActionPermissionDescriptor) -> Bool {
-        guard let key = key(descriptor) else { return false }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-
     static func setGrant(_ descriptor: JunoActionPermissionDescriptor, granted: Bool) {
         guard let key = key(descriptor) else { return }
         UserDefaults.standard.set(granted, forKey: key)
@@ -341,20 +336,13 @@ final class JunoActionPermissionStore: ObservableObject {
                 return .granted
             }
             optimisticEventKitGrants[descriptor] = nil
-            // Cold-launch quirk: after a prior grant via
-            // requestWriteOnlyAccessToEvents / requestFullAccessToReminders,
-            // the static EKEventStore.authorizationStatus(...) call can come
-            // back .notDetermined for a while even though TCC still holds
-            // the grant (this is why re-clicking Allow on the Actions page
-            // succeeds without a system prompt). Trust the persisted
-            // "ever granted in this profile" flag in that case so the
-            // Home "Set up" card doesn't flap. The flag is cleared when
-            // the OS reports a real .denied / .restricted below, so a
-            // user who actually revokes in System Settings still sees the
-            // accurate state.
-            if JunoEventKitGrantCache.hasGrant(descriptor) {
-                return .granted
-            }
+            // Do not trust the persisted "ever granted" flag for startup
+            // status. TCC can be reset or tied to a different installed app
+            // identity while UserDefaults survives, which made Actions/Home
+            // show "Allowed" even though EventKit rejected the actual save.
+            // Only the short in-memory grant above bridges EventKit's
+            // immediate post-prompt lag.
+            JunoEventKitGrantCache.setGrant(descriptor, granted: false)
             return .notDetermined
         case .denied, .restricted, .notInstalled:
             optimisticEventKitGrants[descriptor] = nil

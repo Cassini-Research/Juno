@@ -23,6 +23,9 @@ final class JunoReminderSink {
     static let shared = JunoReminderSink()
 
     private let store: EKEventStore
+    private let grantLock = NSLock()
+    private var optimisticGrantUntil: Date?
+    private static let optimisticGrantTTL: TimeInterval = 30
 
     private init(store: EKEventStore = EKEventStore()) {
         self.store = store
@@ -45,15 +48,18 @@ final class JunoReminderSink {
         let live = Self.authorizationStatus()
         switch live {
         case .granted:
+            clearOptimisticGrant()
             JunoEventKitGrantCache.setGrant(.reminders, granted: true)
             return .granted
         case .notDetermined:
-            if JunoEventKitGrantCache.hasGrant(.reminders) {
+            if hasOptimisticGrant() {
                 resetEventStore()
                 return .granted
             }
+            JunoEventKitGrantCache.setGrant(.reminders, granted: false)
             return .notDetermined
         case .denied, .restricted:
+            clearOptimisticGrant()
             JunoEventKitGrantCache.setGrant(.reminders, granted: false)
             return live
         }
@@ -96,8 +102,7 @@ final class JunoReminderSink {
             requestStore.requestFullAccessToReminders { [requestStore, weak self] granted, _ in
                 _ = requestStore
                 if granted {
-                    JunoEventKitGrantCache.setGrant(.reminders, granted: true)
-                    self?.resetEventStore()
+                    self?.rememberOptimisticGrant()
                     completion(.granted)
                 } else {
                     completion(Self.authorizationStatus())
@@ -107,14 +112,54 @@ final class JunoReminderSink {
             requestStore.requestAccess(to: .reminder) { [requestStore, weak self] granted, _ in
                 _ = requestStore
                 if granted {
-                    JunoEventKitGrantCache.setGrant(.reminders, granted: true)
-                    self?.resetEventStore()
+                    self?.rememberOptimisticGrant()
                     completion(.granted)
                 } else {
                     completion(Self.authorizationStatus())
                 }
             }
         }
+    }
+
+    private func rememberOptimisticGrant() {
+        grantLock.lock()
+        optimisticGrantUntil = Date().addingTimeInterval(Self.optimisticGrantTTL)
+        grantLock.unlock()
+        JunoEventKitGrantCache.setGrant(.reminders, granted: true)
+        resetEventStore()
+    }
+
+    private func hasOptimisticGrant() -> Bool {
+        grantLock.lock()
+        defer { grantLock.unlock() }
+        guard let optimisticGrantUntil else { return false }
+        return optimisticGrantUntil > Date()
+    }
+
+    private func clearOptimisticGrant() {
+        grantLock.lock()
+        optimisticGrantUntil = nil
+        grantLock.unlock()
+    }
+
+    private func forgetGrantAfterAuthorizationFailure() {
+        clearOptimisticGrant()
+        JunoEventKitGrantCache.setGrant(.reminders, granted: false)
+        resetEventStore()
+    }
+
+    private func permissionAwareFailure(_ error: Error) -> SinkError {
+        if Self.isEventStoreNotAuthorized(error) {
+            forgetGrantAfterAuthorizationFailure()
+            return .permissionDenied
+        }
+        return .saveFailed(underlying: error)
+    }
+
+    private static func isEventStoreNotAuthorized(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == EKError.errorDomain
+            && nsError.code == EKError.Code.eventStoreNotAuthorized.rawValue
     }
 
     // MARK: - Create
@@ -209,7 +254,7 @@ final class JunoReminderSink {
             let url = URL(string: "x-apple-reminderkit://REMCDReminder/\(id)")
             completion(.success(CreatedReminder(id: id, url: url)))
         } catch {
-            completion(.failure(.saveFailed(underlying: error)))
+            completion(.failure(permissionAwareFailure(error)))
         }
     }
 
@@ -248,7 +293,7 @@ final class JunoReminderSink {
             let url = URL(string: "x-apple-reminderkit://REMCDReminder/\(reminder.calendarItemIdentifier)")
             completion(.success(CreatedReminder(id: reminder.calendarItemIdentifier, url: url)))
         } catch {
-            completion(.failure(.saveFailed(underlying: error)))
+            completion(.failure(permissionAwareFailure(error)))
         }
     }
 
@@ -268,7 +313,7 @@ final class JunoReminderSink {
             try store.remove(reminder, commit: true)
             completion(.success(()))
         } catch {
-            completion(.failure(.saveFailed(underlying: error)))
+            completion(.failure(permissionAwareFailure(error)))
         }
     }
 
@@ -290,7 +335,7 @@ final class JunoReminderSink {
             try store.save(reminder, commit: true)
             completion(.success(()))
         } catch {
-            completion(.failure(.saveFailed(underlying: error)))
+            completion(.failure(permissionAwareFailure(error)))
         }
     }
 
@@ -319,7 +364,7 @@ final class JunoReminderSink {
             let url = URL(string: "x-apple-reminderkit://REMCDReminder/\(reminder.calendarItemIdentifier)")
             completion(.success(CreatedReminder(id: reminder.calendarItemIdentifier, url: url)))
         } catch {
-            completion(.failure(.saveFailed(underlying: error)))
+            completion(.failure(permissionAwareFailure(error)))
         }
     }
 
