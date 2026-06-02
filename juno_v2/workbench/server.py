@@ -6391,6 +6391,14 @@ class WorkbenchApp:
             },
         }
 
+    def broker_memory_clear_all(self, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        err = self._memory_required()
+        if err:
+            return err
+        with self._lock:
+            counts = self.memory.clear_all()
+        return {"ok": True, **counts}
+
     def broker_memory_vocab_list(self) -> Dict[str, Any]:
         err = self._memory_required()
         if err:
@@ -6884,6 +6892,8 @@ class WorkbenchRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(HTTPStatus.OK, self.app.broker_storage_prune_all_audio())
         if path == "/api/broker/history/clear_all":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_clear_all())
+        if path == "/api/broker/memory/clear_all":
+            return self._send_json(HTTPStatus.OK, self.app.broker_memory_clear_all())
         if path == "/api/broker/history/cancel_draft":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_cancel_draft(payload))
         if path == "/api/broker/history/reprocess":

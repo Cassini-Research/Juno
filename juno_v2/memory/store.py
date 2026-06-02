@@ -227,6 +227,49 @@ class JsonMemoryStore:
             },
         )
 
+    def clear_all(self) -> dict[str, dict[str, int]]:
+        """Clear user-learned memory without touching product history/audio.
+
+        The protected built-in vocabulary seed is restored so the core wake word
+        remains available to the bias planner after a reset.
+        """
+        with self.lock:
+            before_snapshot = self.snapshot()
+            before = {
+                "lexicon": len(before_snapshot.lexicon),
+                "replacements": len(before_snapshot.replacements),
+                "corrections": len(before_snapshot.corrections),
+                "session_entities": len(before_snapshot.session_entities),
+                "snippets": len(self.snippets.raw()),
+            }
+
+            self.vocabulary._fs.write([])
+            self.replacements._fs.write([])
+            self.corrections._fs.write([])
+            self.entities._fs.write([])
+            self.snippets._fs.write([])
+            self._manifest.write({"schema_version": SCHEMA_VERSION})
+            from juno_v2.personalization.seed.learned_state import (
+                JunoPersonalizationLearnedStore,
+            )
+
+            JunoPersonalizationLearnedStore(self.memory_dir).clear()
+            self._seed_protected_vocabulary()
+
+            after_snapshot = self.snapshot()
+            after = {
+                "lexicon": len(after_snapshot.lexicon),
+                "replacements": len(after_snapshot.replacements),
+                "corrections": len(after_snapshot.corrections),
+                "session_entities": len(after_snapshot.session_entities),
+                "snippets": len(self.snippets.raw()),
+            }
+            removed = {
+                key: max(0, int(before.get(key, 0)) - int(after.get(key, 0)))
+                for key in before
+            }
+            return {"before": before, "after": after, "removed": removed}
+
     # ---------------------------------------------------------------- #
     # Legacy pass-through API (preserved for existing v2 callers)
     # ---------------------------------------------------------------- #
