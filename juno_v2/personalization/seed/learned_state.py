@@ -9,6 +9,10 @@ from juno_v2.memory.term_policy import learned_term_allowed
 from juno_v2.memory.stores._base import JsonFileStore
 
 
+def _default_payload() -> dict[str, Any]:
+    return {"schema_version": 1, "context_entities": []}
+
+
 @dataclass(slots=True)
 class ContextEntityObservation:
     token: str
@@ -28,18 +32,22 @@ class JunoPersonalizationLearnedStore:
         self.memory_dir = Path(memory_dir)
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self._fs = JsonFileStore(self.memory_dir, self.FILENAME, lock=threading.RLock())
-        self._fs.ensure_default({"schema_version": 1, "context_entities": []})
+        self._fs.ensure_default(_default_payload())
 
     def _read(self) -> dict[str, Any]:
         data = self._fs.read({})
         if not isinstance(data, dict):
-            return {"schema_version": 1, "context_entities": []}
+            return _default_payload()
         data.setdefault("schema_version", 1)
         data.setdefault("context_entities", [])
         return data
 
     def _write(self, data: dict[str, Any]) -> None:
         self._fs.write(data)
+
+    def clear(self) -> None:
+        with self._fs.lock:
+            self._write(_default_payload())
 
     def increment_observation(self, token: str, *, from_suppressed_context: bool) -> None:
         """Count a surface-context entity observed in a transcript.

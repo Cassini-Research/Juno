@@ -8,19 +8,24 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Local runtime state and generated artifacts
-.juno_v2_runtime/
-.juno_v2_logs/
-.juno_v2_demo/
-.juno_v2_memory/
-.juno_v2_eval/
-.juno_v2_golden/
-.juno_tmp_workbench/
-.hf_cache/
-logs_v2/
-logs/
-memory/
-runtime/
+# Local runtime state and generated artifacts.
+# All entries are anchored with a leading "/" so they only match top-level
+# artifact directories. Bare names like "memory/" or "runtime/" would
+# silently swallow same-named source subpackages (juno_v2/memory,
+# juno_v2/runtime) because gitignore patterns without a leading slash
+# match at any depth.
+/.juno_v2_runtime/
+/.juno_v2_logs/
+/.juno_v2_demo/
+/.juno_v2_memory/
+/.juno_v2_eval/
+/.juno_v2_golden/
+/.juno_tmp_workbench/
+/.hf_cache/
+/logs_v2/
+/logs/
+/memory/
+/runtime/
 
 # IDE noise
 .idea/
