@@ -302,7 +302,8 @@ verify_installed_permission_plumbing() {
   if [[ "$missing" != 0 ]]; then
     exit 8
   fi
-  echo "==>    Verified permission plumbing: mic, AX, speech, Notes Automation, Reminders, Calendar"
+  echo "==>    Verified permission request declarations: mic, AX, speech, Notes Automation, Reminders, Calendar"
+  echo "==>    Live user grants are checked in-app at launch; this line only verifies Info.plist keys and entitlements."
 }
 
 verify_installed_permission_plumbing
