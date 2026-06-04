@@ -4,6 +4,7 @@ import AVFoundation
 import Combine
 import CoreAudio
 import Darwin
+import JunoHotkeyCore
 import OSLog
 import Speech
 import SwiftUI
@@ -6338,15 +6339,24 @@ final class HotkeyBridge {
     private let onDown: () -> Void
     private let onUp: () -> Void
     private let onEscape: () -> Void
+    private let onCopy: () -> Void
+    private let shouldHandleCopy: () -> Bool
+    private let shouldSuppressDictationShortcut: () -> Bool
 
     init(
         onDown: @escaping () -> Void,
         onUp: @escaping () -> Void,
-        onEscape: @escaping () -> Void = {}
+        onEscape: @escaping () -> Void = {},
+        onCopy: @escaping () -> Void = {},
+        shouldHandleCopy: @escaping () -> Bool = { false },
+        shouldSuppressDictationShortcut: @escaping () -> Bool = { false }
     ) {
         self.onDown = onDown
         self.onUp = onUp
         self.onEscape = onEscape
+        self.onCopy = onCopy
+        self.shouldHandleCopy = shouldHandleCopy
+        self.shouldSuppressDictationShortcut = shouldSuppressDictationShortcut
     }
 
     func start() {
@@ -6383,14 +6393,28 @@ final class HotkeyBridge {
                 // app has focus (where a local NSEvent monitor wouldn't
                 // see the keypress). Requires Accessibility / Input
                 // Monitoring trust on the helper binary.
-                if line == "ESC" {
+                if line == JunoHotkeyEventLine.escape {
                     NSLog("Juno: hotkey ESC")
                     DispatchQueue.main.async { self.onEscape() }
                     continue
                 }
+                if JunoHotkeyEventLine.isCopyLine(line) {
+                    NSLog("Juno: hotkey COPY")
+                    DispatchQueue.main.async {
+                        guard self.shouldHandleCopy() else { return }
+                        self.onCopy()
+                    }
+                    continue
+                }
                 if self.isDownEvent(line, shortcut: shortcut) {
                     NSLog("Juno: hotkey down matched %@", shortcut.rawValue)
-                    DispatchQueue.main.async { self.onDown() }
+                    DispatchQueue.main.async {
+                        guard !self.shouldSuppressDictationShortcut() else {
+                            NSLog("Juno: hotkey down suppressed while copy-ready")
+                            return
+                        }
+                        self.onDown()
+                    }
                 } else if self.isUpEvent(line, shortcut: shortcut) {
                     NSLog("Juno: hotkey up matched %@", shortcut.rawValue)
                     DispatchQueue.main.async { self.onUp() }
@@ -6530,6 +6554,22 @@ struct JunoShellApp: App {
             // favour of this single source.
             onEscape: {
                 ctrl.cancelDictation()
+            },
+            onCopy: {
+                ctrl.copyCopyableTranscriptToClipboard()
+            },
+            shouldHandleCopy: {
+                JunoCopyReadyShortcutPolicy.shouldCopyReadyTranscript(
+                    hotkeyLine: JunoHotkeyEventLine.copy,
+                    copyableTranscript: ctrl.copyableTranscript,
+                    hudStateWire: ctrl.state
+                )
+            },
+            shouldSuppressDictationShortcut: {
+                JunoCopyReadyShortcutPolicy.shouldSuppressDictationShortcut(
+                    copyableTranscript: ctrl.copyableTranscript,
+                    hudStateWire: ctrl.state
+                )
             }
         )
         let hotkeyBridge = self.hotkey

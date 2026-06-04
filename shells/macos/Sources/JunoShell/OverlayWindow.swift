@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import JunoHotkeyCore
 import SwiftUI
 
 final class JunoOverlayPanel: NSPanel {
@@ -14,6 +15,7 @@ final class JunoOverlayPanel: NSPanel {
     static let defaultPrewarmSize = NSSize(width: 192, height: 56)
 
     var onEscape: (() -> Void)?
+    var onCopy: (() -> Bool)?
     var onDragFrameChanged: ((NSRect) -> NSRect)?
     private var dragStartMouseLocation: NSPoint?
     private var dragStartFrame: NSRect?
@@ -75,6 +77,13 @@ final class JunoOverlayPanel: NSPanel {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == Self.escapeKeyCode {
             handleEscape()
+            return true
+        }
+        if JunoHotkeyEventLine.isCommandCopy(
+            keyCode: event.keyCode,
+            modifierFlags: event.modifierFlags,
+            isRepeat: event.isARepeat
+        ), onCopy?() == true {
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -210,6 +219,18 @@ final class JunoOverlayCoordinator {
         let created = JunoOverlayPanel(rootView: root)
         created.onEscape = { [weak controller] in
             controller?.cancelDictation()
+        }
+        created.onCopy = { [weak controller] in
+            guard let controller else { return false }
+            guard JunoCopyReadyShortcutPolicy.shouldCopyReadyTranscript(
+                hotkeyLine: JunoHotkeyEventLine.copy,
+                copyableTranscript: controller.copyableTranscript,
+                hudStateWire: controller.state
+            ) else {
+                return false
+            }
+            controller.copyCopyableTranscriptToClipboard()
+            return true
         }
         created.onDragFrameChanged = { [weak self] proposedFrame in
             guard let self else { return proposedFrame }
