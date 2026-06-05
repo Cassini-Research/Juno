@@ -110,6 +110,7 @@ Build an OTA release for Sparkle:
 The OTA release script builds `dist/Juno.app`, creates a signed Sparkle archive
 under `dist/ota/`, and regenerates `dist/ota/appcast.xml`. Use
 `--allow-insecure-ota-feed` only for local `http` or `file` appcast testing.
+For the full setup checklist, see [Juno OTA Updates](docs/ota-updates.md).
 
 ## Architecture
 
