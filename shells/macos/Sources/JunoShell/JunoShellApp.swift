@@ -2473,12 +2473,15 @@ final class JunoTargetApplicationTracker {
         "com.apple.usernotificationcenter",
         "com.apple.notificationcenterui",
         "com.apple.controlcenter",
+        "com.apple.systempreferences",
+        "com.apple.systemsettings",
         "com.apple.systemuiserver",
     ]
     private static let ignoredTargetNames: Set<String> = [
         "usernotificationcenter",
         "notification center",
         "control center",
+        "system settings",
     ]
 
     private var observer: NSObjectProtocol?
@@ -2507,6 +2510,11 @@ final class JunoTargetApplicationTracker {
         if let frontmost, isExternal(frontmost) {
             rememberIfExternal(frontmost)
             return frontmost
+        }
+        if let frontmost,
+           Self.isIgnoredSystemSurface(bundleId: frontmost.bundleIdentifier, name: frontmost.localizedName),
+           lastNonJunoApplication == nil || lastNonJunoApplication?.isTerminated == true {
+            return nil
         }
         guard let remembered = lastNonJunoApplication, !remembered.isTerminated else {
             return frontmost
@@ -3062,6 +3070,10 @@ final class DictationController: ObservableObject {
     private var textMonInitialSnapshot: String?
     /// From capability probe: focused AX role looks like a text insertion target.
     private var likelyPasteDestination: Bool = true
+    /// Outcome details from the last observed paste attempt. Finalization uses
+    /// these to keep telemetry honest when a paste was skipped before Cmd+V.
+    private var lastObservedPastePosted: Bool = false
+    private var lastObservedPasteFailureReason: String?
     /// TOCTOU pin for ``JunoSecureFieldPolicy``. Captured at dictation
     /// start and refreshed when the in-process AX snapshot is
     /// authoritative (i.e. AX-trusted + ok). Read by every privacy gate
@@ -3224,6 +3236,8 @@ final class DictationController: ObservableObject {
             self.lastLiveAdjudicationVisibleText = ""
             self.lastSFSpeechPartialAt = 0
             self.lastLiveHUDTextChangeAt = 0
+            self.lastObservedPastePosted = false
+            self.lastObservedPasteFailureReason = nil
             self.lastLiveHUDTextChangePCMBytes = 0
             self.lastPreviewSegmentRollSpeechAt = 0
             self.liveAudioCheckpointInFlight = false
@@ -3498,10 +3512,39 @@ final class DictationController: ObservableObject {
         return payload
     }
 
-    private func observedUndoSafePaste(_ text: String) -> Bool {
+    private func observedUndoSafePaste(_ text: String, beforePost: (() -> Void)? = nil) -> Bool {
+        lastObservedPastePosted = false
+        lastObservedPasteFailureReason = nil
+
+        guard likelyPasteDestination else {
+            lastObservedPasteFailureReason = "no_active_text_field"
+            return false
+        }
+        guard targetPid > 0 else {
+            likelyPasteDestination = false
+            lastObservedPasteFailureReason = "no_active_text_field"
+            return false
+        }
+        guard activateTargetForPasteIfNeeded() else {
+            likelyPasteDestination = false
+            lastObservedPasteFailureReason = "paste_target_unavailable"
+            return false
+        }
+
+        beforePost?()
         markUtteranceTimeline("paste_attempt_started_ms")
+        lastObservedPastePosted = true
         let ok = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
+        if ok,
+           let pasteFrontmost = Clipboard.lastPasteFrontmostPid,
+           pasteFrontmost != targetPid {
+            lastObservedPasteFailureReason = "paste_target_drifted"
+            return false
+        }
+        if !ok {
+            lastObservedPasteFailureReason = "undo_safe_paste_failed"
+        }
         return ok
     }
 
@@ -3704,6 +3747,8 @@ final class DictationController: ObservableObject {
         resetHUDTranscriptStore()
         lastNonEmptyHUDTranscript = ""
         likelyPasteDestination = true
+        lastObservedPastePosted = false
+        lastObservedPasteFailureReason = nil
         // Reset privacy TOCTOU pin. Will be set authoritatively by the
         // capability probe / in-process AX snapshot before any paste,
         // learn, history, or audio-upload gate fires for this session.
@@ -3802,11 +3847,17 @@ final class DictationController: ObservableObject {
                 bundleId: cap.appBundleId,
                 name: nil
             )
-            if capabilityTargetIsJunoOrSystem && !self.targetAppBundleId.isEmpty {
+            let storedTargetIsJunoOrSystem = JunoTargetApplicationTracker.isIgnoredSystemSurface(
+                bundleId: self.targetAppBundleId,
+                name: self.targetApp?.name
+            )
+            if capabilityTargetIsJunoOrSystem && !self.targetAppBundleId.isEmpty && !storedTargetIsJunoOrSystem {
                 NSLog(
                     "Juno: preserving existing paste target after capability focused Juno/system surface app=%@",
                     cap.appBundleId ?? "unknown"
                 )
+            } else if capabilityTargetIsJunoOrSystem {
+                self.likelyPasteDestination = false
             } else {
                 self.likelyPasteDestination = cap.hasLikelyTextInsertionPoint
             }
@@ -3916,6 +3967,7 @@ final class DictationController: ObservableObject {
         let snapName = (snap["frontmost_app_name"] as? String)
             ?? (snap["app_name"] as? String)
         if JunoTargetApplicationTracker.isIgnoredSystemSurface(bundleId: snapBundleId, name: snapName) {
+            likelyPasteDestination = false
             return
         }
         // PID/app/window: safe to refresh from NSWorkspace data even
@@ -5264,9 +5316,8 @@ final class DictationController: ObservableObject {
         // was when the hotkey fired. See ``refreshPasteTargetFromCurrentFocus``.
         refreshPasteTargetFromCurrentFocus()
         if likelyPasteDestination {
-            activateTargetForPasteIfNeeded()
-            pasteAttempted = true
             pasteSucceeded = observedUndoSafePaste(textToPaste)
+            pasteAttempted = lastObservedPastePosted
             if pasteSucceeded {
                 partialInsertFailed = false
                 hasInsertedTextThisDictation = true
@@ -5281,7 +5332,7 @@ final class DictationController: ObservableObject {
                 pendingRevisionFullTranscript = textToPaste
                 liveSpeechHint = "Text ready — paste failed, tap again to stop and copy."
                 pasteKind = "none"
-                pasteFailureReason = "undo_safe_paste_failed"
+                pasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
             }
         } else {
             partialInsertFailed = true
@@ -5532,9 +5583,8 @@ final class DictationController: ObservableObject {
 
         if suppressPartialPasteForSelectionEditing && !finalText.isEmpty {
             if likelyPasteDestination && finalPasteAllowed {
-                activateTargetForPasteIfNeeded()
-                finalPasteAttempted = true
                 finalPasteSucceeded = observedUndoSafePaste(finalText)
+                finalPasteAttempted = lastObservedPastePosted
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
@@ -5547,7 +5597,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = finalText
                     finalPasteKind = "none"
-                    finalPasteFailureReason = "undo_safe_paste_failed"
+                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
                 }
             } else {
                 Clipboard.writeString(finalText)
@@ -5557,16 +5607,16 @@ final class DictationController: ObservableObject {
             }
         } else if pendingFinalText?.isEmpty == false && !finalText.isEmpty {
             if likelyPasteDestination && finalPasteAllowed {
-                activateTargetForPasteIfNeeded()
                 let replacingPartial = !pastedText.isEmpty && !partialInsertFailed
-                if replacingPartial {
-                    Clipboard.deleteLastNCharacters(pastedText.count)
-                    finalPasteKind = "replace"
-                } else {
-                    deleteRecentReplaceTargetIfNeeded()
+                finalPasteSucceeded = observedUndoSafePaste(finalText) {
+                    if replacingPartial {
+                        Clipboard.deleteLastNCharacters(pastedText.count)
+                        finalPasteKind = "replace"
+                    } else {
+                        deleteRecentReplaceTargetIfNeeded()
+                    }
                 }
-                finalPasteAttempted = true
-                finalPasteSucceeded = observedUndoSafePaste(finalText)
+                finalPasteAttempted = lastObservedPastePosted
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
@@ -5575,12 +5625,12 @@ final class DictationController: ObservableObject {
                     flashTransientDone(for: finalText)
                     triggerDraftFlash()
                 } else {
-                    if replacingPartial {
+                    if replacingPartial && lastObservedPastePosted {
                         _ = Clipboard.undoSafePaste(pastedText)
                     }
                     copyableTranscript = finalText
                     finalPasteKind = "none"
-                    finalPasteFailureReason = "undo_safe_paste_failed"
+                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
                 }
             } else {
                 Clipboard.writeString(finalText)
@@ -5592,10 +5642,10 @@ final class DictationController: ObservableObject {
             if likelyPasteDestination && finalPasteAllowed {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
-                activateTargetForPasteIfNeeded()
-                deleteRecentReplaceTargetIfNeeded()
-                finalPasteAttempted = true
-                finalPasteSucceeded = observedUndoSafePaste(textToPaste)
+                finalPasteSucceeded = observedUndoSafePaste(textToPaste) {
+                    deleteRecentReplaceTargetIfNeeded()
+                }
+                finalPasteAttempted = lastObservedPastePosted
                 if finalPasteSucceeded {
                     partialInsertFailed = false
                     hasInsertedTextThisDictation = true
@@ -5609,7 +5659,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = textToPaste
                     finalPasteKind = "none"
-                    finalPasteFailureReason = "undo_safe_paste_failed"
+                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
                 }
             } else {
                 let textToCopy = textWithInsertionBoundary(finalText)
@@ -5623,10 +5673,10 @@ final class DictationController: ObservableObject {
             if likelyPasteDestination && finalPasteAllowed {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
-                activateTargetForPasteIfNeeded()
-                deleteRecentReplaceTargetIfNeeded()
-                finalPasteAttempted = true
-                finalPasteSucceeded = observedUndoSafePaste(textToPaste)
+                finalPasteSucceeded = observedUndoSafePaste(textToPaste) {
+                    deleteRecentReplaceTargetIfNeeded()
+                }
+                finalPasteAttempted = lastObservedPastePosted
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = textToPaste
@@ -5639,7 +5689,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = textToPaste
                     finalPasteKind = "none"
-                    finalPasteFailureReason = "undo_safe_paste_failed"
+                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
                 }
             } else {
                 let textToCopy = textWithInsertionBoundary(finalText)
@@ -5997,11 +6047,10 @@ final class DictationController: ObservableObject {
             pasteFailureReason = "secure_field"
             NSLog("Juno: paste suppressed by SecureFieldPolicy (secure-field privacy gate)")
         } else if likelyPasteDestination {
-            activateTargetForPasteIfNeeded()
-            pasteAttempted = true
             ok = observedUndoSafePaste(text)
+            pasteAttempted = lastObservedPastePosted
             if !ok {
-                pasteFailureReason = "undo_safe_paste_failed"
+                pasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
             }
         } else {
             pasteAttempted = false
