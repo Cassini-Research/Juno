@@ -178,15 +178,44 @@ Then relaunch Juno.
 
 ## Local Appcast Testing
 
-For local testing only, you can use a `file://` or `http://localhost` appcast.
-Production feeds should use HTTPS.
+For local testing, serve the appcast over `http://127.0.0.1`. Sparkle may reject
+`file://` feed URLs during update checks even when Juno's packaging script
+allows insecure feed URLs for local builds. Production feeds should use HTTPS.
 
-Example:
+The installed app must be older than the item in `appcast.xml`. This example
+installs `0.2.0` build `1`, then serves `0.2.1` build `2` as the update:
 
 ```bash
-export JUNO_OTA_FEED_URL="file://$PWD/dist/ota/appcast.xml"
-export JUNO_OTA_DOWNLOAD_URL_PREFIX="file://$PWD/dist/ota/"
+export JUNO_OTA_FEED_URL="http://127.0.0.1:8000/appcast.xml"
+export JUNO_OTA_DOWNLOAD_URL_PREFIX="http://127.0.0.1:8000/"
+export JUNO_OTA_PUBLIC_ED_KEY="paste-public-key-here"
 
+./scripts/build_juno_engine_bundle.sh
+rm -rf dist/ota
+mkdir -p dist/ota
+```
+
+Build and install the older OTA-enabled app:
+
+```bash
+./scripts/build_juno_ota_release.sh \
+  --version 0.2.0 \
+  --build-number 1 \
+  --sign "-" \
+  --engine dist/juno_engine_bundle \
+  --ota-feed-url "$JUNO_OTA_FEED_URL" \
+  --ota-public-ed-key "$JUNO_OTA_PUBLIC_ED_KEY" \
+  --download-url-prefix "$JUNO_OTA_DOWNLOAD_URL_PREFIX" \
+  --allow-insecure-ota-feed
+
+osascript -e 'tell application "Juno" to quit' 2>/dev/null || true
+rm -rf /Applications/Juno.app
+ditto dist/Juno.app /Applications/Juno.app
+```
+
+Build the newer update, but do not manually install this build:
+
+```bash
 ./scripts/build_juno_ota_release.sh \
   --version 0.2.1 \
   --build-number 2 \
@@ -197,6 +226,38 @@ export JUNO_OTA_DOWNLOAD_URL_PREFIX="file://$PWD/dist/ota/"
   --download-url-prefix "$JUNO_OTA_DOWNLOAD_URL_PREFIX" \
   --allow-insecure-ota-feed
 ```
+
+Wait for the script to finish. `appcast.xml` is created after the archive is
+fully written and Sparkle's `generate_appcast` command has inspected it:
+
+```bash
+ls -la dist/ota
+grep -E "sparkle:version|shortVersionString|enclosure url" dist/ota/appcast.xml
+```
+
+Serve the update directory:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1 --directory dist/ota
+```
+
+In another terminal, verify both URLs before checking from Juno:
+
+```bash
+curl -I http://127.0.0.1:8000/appcast.xml
+curl -I http://127.0.0.1:8000/Juno-0.2.1-2.zip
+```
+
+Both should return `200 OK`. Then launch the older installed app and check for
+updates:
+
+```bash
+defaults delete com.juno.shell SULastCheckTime 2>/dev/null || true
+open /Applications/Juno.app
+```
+
+Use Juno's `Updates` menu bar item, Settings -> `Updates & app`, or the app menu
+command to check for updates.
 
 Use this only to verify feed wiring and UI behavior. For production-like
 testing, use Developer ID signing, notarization, and HTTPS.
@@ -237,6 +298,9 @@ beta-only update.
   both `--ota-feed-url` and `--ota-public-ed-key`, or `--disable-ota` was set.
 - Sparkle says no update is available: confirm `CFBundleVersion` increased and
   that the installed app is older than the appcast item.
+- Local update checks fail with `404`: confirm the local HTTP server is serving
+  the directory that contains `appcast.xml`, and confirm the release script has
+  finished running `generate_appcast`.
 - Download fails: confirm the archive URL in `appcast.xml` is public and
   matches the uploaded file.
 - Signature validation fails: regenerate the appcast on the Mac that has the
