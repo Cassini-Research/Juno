@@ -6495,12 +6495,9 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
-        // **Run BEFORE legacy-defaults migration.** If the install was
-        // re-run (TCC wiped) but the prefs plist still says
-        // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
-        // so the welcome flow runs again — otherwise the user lands on
-        // Home with "Permissions needed" half-states. Updates with
-        // intact TCC are a no-op. See ``JunoFreshInstallGuard``.
+        // **Run BEFORE legacy-defaults migration.** It preserves completed
+        // onboarding across normal updates, and only reruns setup when Juno
+        // explicitly bumps onboarding requirements. See ``JunoFreshInstallGuard``.
         JunoFreshInstallGuard.runOnce()
         JunoLegacyDefaultsMigration.runOnce()
         JunoUserDefaults.migrateWhisperPreviewDefaults()
