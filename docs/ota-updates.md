@@ -270,6 +270,98 @@ command to check for updates.
 Use this only to verify feed wiring and UI behavior. For production-like
 testing, use Developer ID signing, notarization, and HTTPS.
 
+## Developer ID Permission Testing
+
+Use this flow when testing whether macOS permissions persist across OTA updates.
+Ad-hoc signing (`--sign "-"`) is useful for feed wiring, but it is not a valid
+permission-persistence test because each rebuild can have a different code
+identity.
+
+First, confirm the release Mac has a Developer ID Application identity installed:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+Look for:
+
+```text
+Developer ID Application: Your Company or Name (TEAMID)
+```
+
+Then export that exact identity string:
+
+```bash
+export CODESIGN_IDENTITY="Developer ID Application: Your Company or Name (TEAMID)"
+```
+
+If the Developer Program membership is an individual account, add that Apple ID
+to Xcode on the release Mac or import the Developer ID Application certificate
+with its private key into the login Keychain. Adding another Apple ID to an
+individual membership only grants App Store Connect access; it does not make
+that Apple ID a full Developer Program team member for signing assets.
+
+Store notarization credentials once:
+
+```bash
+xcrun notarytool store-credentials "juno-notary" \
+  --apple-id "developer@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
+```
+
+Build and install a Developer ID signed baseline, then grant Juno's permissions:
+
+```bash
+./scripts/build_juno_ota_release.sh \
+  --version 0.2.0 \
+  --build-number 1 \
+  --sign "$CODESIGN_IDENTITY" \
+  --engine dist/juno_engine_bundle \
+  --ota-feed-url "$JUNO_OTA_FEED_URL" \
+  --ota-public-ed-key "$JUNO_OTA_PUBLIC_ED_KEY" \
+  --download-url-prefix "$JUNO_OTA_DOWNLOAD_URL_PREFIX" \
+  --notary-keychain-profile "juno-notary" \
+  --allow-insecure-ota-feed
+
+osascript -e 'tell application "Juno" to quit' 2>/dev/null || true
+rm -rf /Applications/Juno.app
+ditto dist/Juno.app /Applications/Juno.app
+open /Applications/Juno.app
+```
+
+Verify the installed app is not ad-hoc signed:
+
+```bash
+codesign -dv --verbose=4 /Applications/Juno.app 2>&1 \
+  | grep -E "Authority|TeamIdentifier|Signature"
+```
+
+Expected output includes `Authority=Developer ID Application` and
+`TeamIdentifier=TEAMID`. It should not include `Signature=adhoc`.
+
+After permissions are granted, build the next update with the same signing
+identity and notary profile:
+
+```bash
+./scripts/build_juno_ota_release.sh \
+  --version 0.2.1 \
+  --build-number 2 \
+  --sign "$CODESIGN_IDENTITY" \
+  --engine dist/juno_engine_bundle \
+  --ota-feed-url "$JUNO_OTA_FEED_URL" \
+  --ota-public-ed-key "$JUNO_OTA_PUBLIC_ED_KEY" \
+  --download-url-prefix "$JUNO_OTA_DOWNLOAD_URL_PREFIX" \
+  --notary-keychain-profile "juno-notary" \
+  --allow-insecure-ota-feed
+```
+
+Serve `dist/ota`, check for updates from the installed app, and install the
+update. Permissions may prompt once when moving from an ad-hoc build to
+Developer ID signing because the app identity changed. The real persistence
+test is Developer ID baseline -> Developer ID update with the same bundle ID,
+same Team ID, and same signing identity.
+
 ## Channels
 
 Stable releases do not need a channel:
