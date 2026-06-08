@@ -563,6 +563,7 @@ class DictationSessionRunner:
                             "failure_reason": None,
                             "session_class": "insert",
                             "processing_ms": int(m.speech_end_to_commit_ms or 0),
+                            "final_transcription_ms": float(transcript.decode_ms or 0.0),
                             "words": words,
                             "replay_available": False,
                         },

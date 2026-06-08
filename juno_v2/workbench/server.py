@@ -1822,13 +1822,11 @@ class WorkbenchApp:
             "writer_enabled": True,
             "itn_enabled": True,
             "audio_save_enabled": True,
-            # When True (default) the engine streams per-utterance preview
+            # When True the engine streams per-utterance preview
             # decodes for the live HUD caption. When False the engine session
-            # skips preview-lane decode invocations to save CPU/GPU; the model
-            # remains downloaded and the resident streaming-preview service
-            # stays warm so toggling back on is cheap. Read once at session
-            # start; mutating mid-session is undefined.
-            "live_caption_enabled": True,
+            # skips preview-lane decode invocations to save CPU/GPU. Default
+            # is off; the macOS shell enables it only on eligible Macs.
+            "live_caption_enabled": _env_bool('JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED', False),
             "language_mode": "auto",
             "smart_context": True,
             "use_selected_text": True,
@@ -1853,6 +1851,10 @@ class WorkbenchApp:
                     defaults.update(raw)
         except Exception:
             pass
+        if 'JUNO_V2_LIVE_CAPTION_START_ENABLED' in os.environ:
+            defaults["live_caption_enabled"] = _env_bool('JUNO_V2_LIVE_CAPTION_START_ENABLED', False)
+        if not _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True):
+            defaults["live_caption_enabled"] = False
         return defaults
 
     def _persist_settings(self) -> None:
@@ -2041,12 +2043,17 @@ class WorkbenchApp:
         streaming-preview service, and the lifecycle registration of the
         preview backend are all unchanged.
         """
-        self._settings["live_caption_enabled"] = bool(enabled)
+        allowed = _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True)
+        enabled = bool(enabled) and allowed
+        self._settings["live_caption_enabled"] = enabled
         self._persist_settings()
         runner = getattr(self, "dictation_runner", None)
         if runner is not None and hasattr(runner, "preview_decode_enabled"):
-            runner.preview_decode_enabled = bool(enabled)
-        return {"ok": True, "live_caption_enabled": bool(enabled)}
+            runner.preview_decode_enabled = enabled
+        out = {"ok": True, "live_caption_enabled": enabled}
+        if not allowed:
+            out["disabled_reason"] = "host_not_eligible"
+        return out
 
     def broker_settings_set_retention(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         def _parse_policy(key: str, *, allow_days: bool = True) -> str | None:
@@ -4056,6 +4063,13 @@ class WorkbenchApp:
         model to the wrong thread and the next chunk crashes with
         ``RuntimeError: There is no Stream(gpu, 0) in current thread``.
         """
+        if not bool(self._settings.get("live_caption_enabled", False)):
+            self.recorder.record(
+                TraceKind.ASR_PREVIEW,
+                "broker_preview_warm_skipped",
+                {"reason": "live_caption_disabled"},
+            )
+            return {"ok": True, "skipped": True, "reason": "live_caption_disabled"}
         runner = getattr(self, "dictation_runner", None)
         backend = getattr(runner, "preview_backend", None) if runner else None
         if backend is None:
@@ -4107,7 +4121,26 @@ class WorkbenchApp:
         if not uid:
             return {"ok": False, "error": "missing_utterance_id"}
         root_uid = str(payload.get("root_utterance_id") or uid).strip() or uid
-        if not bool(self._settings.get("live_caption_enabled", True)):
+        if not bool(self._settings.get("live_caption_enabled", False)):
+            self.recorder.record(
+                TraceKind.ASR_PREVIEW,
+                "broker_preview_chunk_skipped",
+                {
+                    "utterance_id": uid,
+                    "root_utterance_id": root_uid,
+                    "reason": "live_caption_disabled",
+                    "is_final": bool(payload.get("is_final") or False),
+                },
+            )
+            self._record_utterance_lifecycle(
+                uid,
+                {
+                    "event": "preview_chunk_skipped",
+                    "root_utterance_id": root_uid,
+                    "reason": "live_caption_disabled",
+                    "is_final": bool(payload.get("is_final") or False),
+                },
+            )
             return {
                 "ok": True,
                 "text": "",
@@ -5970,6 +6003,10 @@ class WorkbenchApp:
                 "scheduler_queue_wait_ms": scheduled.queue_wait_ms,
                 "scheduler_worker_service_ms": scheduled.worker_service_ms,
                 "mlx_lock_wait_ms": scheduled.mlx_lock_wait_ms,
+                "final_transcription_ms": float(
+                    out.get("final_transcription_ms") or out.get("decode_ms") or 0.0
+                ),
+                "audio_duration_ms": float(out.get("audio_duration_ms") or 0.0),
                 "prompt_chars": metadata_for_scheduler.get("prompt_chars"),
                 "output_tokens": metadata_for_scheduler.get("output_tokens")
                 or metadata_for_scheduler.get("output_tokens_estimate"),

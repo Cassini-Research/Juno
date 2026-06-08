@@ -1587,6 +1587,10 @@ enum JunoLocalBrokerBootstrap {
         env["JUNO_REQUIRE_LOCAL_BROKER_AUTH"] = env["JUNO_REQUIRE_LOCAL_BROKER_AUTH"] ?? "1"
         env["JUNO_BUNDLE_ID"] = Bundle.main.bundleIdentifier ?? JunoEngineContract.defaultBundleId
         env["JUNO_ENGINE_SOCKET"] = socketPath
+        let previewEligibility = JunoPreviewEligibility.current
+        env["JUNO_V2_LIVE_CAPTION_ALLOWED"] = previewEligibility.isEligible ? "1" : "0"
+        env["JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED"] = "0"
+        env["JUNO_V2_LIVE_CAPTION_START_ENABLED"] = JunoUserDefaults.hudLiveTranscriptionsEnabled ? "1" : "0"
 
         if let engineRoot = JunoEngineContract.bundledEngineRoot() {
             let script = engineRoot.appendingPathComponent("run_engine.sh", isDirectory: false)
@@ -1727,7 +1731,7 @@ final class JunoEngineSupervisor {
             // Qwen writer stays on-demand; normal dictation commits should
             // not pay or keep its memory unless an explicit LLM rewrite/action
             // needs it.
-            if case .online = state, !Self.didWarmPreview {
+            if case .online = state, !Self.didWarmPreview, JunoUserDefaults.hudLiveTranscriptionsEnabled {
                 Self.didWarmPreview = true
                 JunoBroker.getJSON(path: "api/broker/preview/warm") { _ in
                     NSLog("Juno: preview warm requested on engine-online")

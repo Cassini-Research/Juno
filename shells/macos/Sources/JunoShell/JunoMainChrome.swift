@@ -2727,6 +2727,10 @@ private struct HistoryDetailPane: View {
             out.append(DiagnosticsLine(label: "Processing",
                                        value: String(format: "%.0f ms", ms)))
         }
+        if let ms = entry.finalTranscriptionMs, ms > 0 {
+            out.append(DiagnosticsLine(label: "Final ASR",
+                                       value: String(format: "%.0f ms", ms)))
+        }
         if let words = entry.words, words > 0 {
             out.append(DiagnosticsLine(label: "Words", value: String(words)))
         }

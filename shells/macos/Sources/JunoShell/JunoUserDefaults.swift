@@ -192,19 +192,20 @@ enum JunoUserDefaults {
         }
     }
 
-    /// Live transcriptions in the HUD. When ON (default) the floating HUD shows
-    /// the partial transcript as you speak (full island). When OFF the HUD
-    /// collapses to a tiny waveform pill, and the engine skips per-utterance
-    /// preview-lane decoding to save CPU/GPU. The model is still installed and
-    /// the resident streaming-preview service stays warm — we only suppress the
-    /// per-utterance `decode(...)` call.
+    /// Live transcriptions in the HUD. Defaults to OFF. When ON the floating
+    /// HUD shows partial transcript text as you speak. When OFF, Juno still
+    /// shows the listening/refining HUD but sends no preview audio chunks.
     static var hudLiveTranscriptionsEnabled: Bool {
         get {
             let ud = UserDefaults.standard
-            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return true }
+            guard JunoPreviewEligibility.current.isEligible else { return false }
+            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return false }
             return ud.bool(forKey: hudLiveTranscriptionsEnabledKey)
         }
-        set { UserDefaults.standard.set(newValue, forKey: hudLiveTranscriptionsEnabledKey) }
+        set {
+            let allowed = !newValue || JunoPreviewEligibility.current.isEligible
+            UserDefaults.standard.set(allowed ? newValue : false, forKey: hudLiveTranscriptionsEnabledKey)
+        }
     }
 
     /// Run model adjudication on in-speech snapshots while the user is still
