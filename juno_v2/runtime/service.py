@@ -180,11 +180,13 @@ class ProductionServiceRunner:
         def _background_warm() -> None:
             errors: list[str] = []
 
-            # Preview comes first because this is what makes the HUD start
-            # showing words immediately on the user's first utterance. The
-            # rebuild future runs on the dedicated decode worker, preserving
-            # MLX thread affinity.
-            if hasattr(workbench_app, "_ensure_preview_decode_executor"):
+            # Preview warmup is optional and defaults off. When disabled, the
+            # HUD still opens for dictation but no preview backend work starts
+            # until the user enables live preview in Settings.
+            live_caption_enabled = bool(
+                getattr(workbench_app, "_settings", {}).get("live_caption_enabled", False)
+            )
+            if live_caption_enabled and hasattr(workbench_app, "_ensure_preview_decode_executor"):
                 try:
                     workbench_app._ensure_preview_decode_executor()
                     rebuild_future = getattr(workbench_app, "_preview_rebuild_future", None)
@@ -539,7 +541,7 @@ class ProductionServiceRunner:
                 except Exception:  # noqa: BLE001 — never break startup over a stub
                     pass
                 _live_caption_enabled = bool(
-                    getattr(workbench_app, "_settings", {}).get("live_caption_enabled", True)
+                    getattr(workbench_app, "_settings", {}).get("live_caption_enabled", False)
                 )
                 artifacts.runner.preview_decode_enabled = _live_caption_enabled
         active_workbench_url: str | None = None

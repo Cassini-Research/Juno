@@ -64,6 +64,7 @@ struct JunoSettingsView: View {
     @State private var micProcessing = JunoUserDefaults.micVoiceProcessingEnabled
     @State private var hudPosition = JunoUserDefaults.hudPosition
     @State private var hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
+    @State private var previewEligibility = JunoPreviewEligibility.current
     @State private var hudSounds = JunoUserDefaults.hudOpenSoundEnabled
     @State private var hudShowDoneRow = JunoUserDefaults.hudShowDoneRowEnabled
     @State private var pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
@@ -144,18 +145,38 @@ struct JunoSettingsView: View {
 
                             Divider().opacity(0.25)
 
-                            settingsRow(
-                                title: "Live transcriptions",
-                                subtitle: "Show what you're saying inside the HUD as you speak. When off, the HUD collapses to a tiny waveform.",
-                                trailing: {
-                                    Toggle("", isOn: $hudLiveTranscriptions)
+                            VStack(alignment: .leading, spacing: 8) {
+                                settingsRow(
+                                    title: "Live transcription preview",
+                                    subtitle: "Show preview text in the HUD while you speak. When off, Juno listens and transcribes after you finish.",
+                                    trailing: {
+                                        Toggle("", isOn: Binding(
+                                            get: { hudLiveTranscriptions },
+                                            set: { newValue in
+                                                setLiveTranscriptionPreview(newValue)
+                                            }
+                                        ))
                                         .labelsHidden()
-                                        .onChange(of: hudLiveTranscriptions) { newValue in
-                                            JunoUserDefaults.hudLiveTranscriptionsEnabled = newValue
-                                            persistLiveCaptionEnabled(newValue)
-                                        }
+                                        .disabled(!previewEligibility.isEligible)
+                                    }
+                                )
+
+                                if let message = livePreviewResourceMessage {
+                                    Label(
+                                        message,
+                                        systemImage: previewEligibility.isEligible
+                                            ? "exclamationmark.triangle.fill"
+                                            : "lock.fill"
+                                    )
+                                    .font(.caption2)
+                                    .foregroundStyle(
+                                        previewEligibility.isEligible
+                                            ? JunoDesignTokens.danger
+                                            : JunoTheme.secondaryText(scheme)
+                                    )
+                                    .fixedSize(horizontal: false, vertical: true)
                                 }
-                            )
+                            }
 
                             Divider().opacity(0.25)
 
@@ -593,6 +614,7 @@ struct JunoSettingsView: View {
             }
         }
         .onAppear {
+            refreshPreviewEligibility()
             displayNameDraft = JunoUserDefaults.preferredDisplayName ?? ""
             pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
             perms.refresh()
@@ -862,6 +884,46 @@ struct JunoSettingsView: View {
         )
     }
 
+    private var livePreviewResourceMessage: String? {
+        if !previewEligibility.isEligible {
+            return previewEligibility.unavailableMessage
+        }
+        if hudLiveTranscriptions {
+            return previewEligibility.warningMessage
+        }
+        return nil
+    }
+
+    private func refreshPreviewEligibility() {
+        previewEligibility = JunoPreviewEligibility.current
+        hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
+        if !previewEligibility.isEligible {
+            persistLiveCaptionEnabled(false, reportFailures: false)
+        }
+    }
+
+    private func setLiveTranscriptionPreview(_ enabled: Bool) {
+        if enabled && !previewEligibility.isEligible {
+            hudLiveTranscriptions = false
+            JunoUserDefaults.hudLiveTranscriptionsEnabled = false
+            persistLiveCaptionEnabled(false)
+            if let message = previewEligibility.unavailableMessage {
+                JunoSettingsToastCenter.shared.report(message)
+            }
+            return
+        }
+
+        hudLiveTranscriptions = enabled
+        JunoUserDefaults.hudLiveTranscriptionsEnabled = enabled
+        persistLiveCaptionEnabled(enabled)
+
+        if enabled {
+            if let warning = previewEligibility.warningMessage {
+                JunoSettingsToastCenter.shared.report(warning, severity: .info, autoDismissAfter: 8)
+            }
+        }
+    }
+
     private func persistLanguageEnvironment() {
         JunoBroker.postJSON(
             path: "api/broker/settings/language_environment",
@@ -879,15 +941,30 @@ struct JunoSettingsView: View {
     /// per-utterance preview-lane decoding on the next dictation session. The
     /// macOS HUD layout flips immediately off `JunoUserDefaults`; the engine
     /// gate is read at session start.
-    private func persistLiveCaptionEnabled(_ enabled: Bool) {
+    private func persistLiveCaptionEnabled(_ enabled: Bool, reportFailures: Bool = true) {
         JunoBroker.postJSON(
             path: "api/broker/settings/live_caption",
             payload: ["enabled": enabled]
         ) { obj in
             let ok = (obj["ok"] as? Bool) ?? false
             if !ok {
-                let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
-                JunoSettingsToastCenter.shared.report(msg)
+                if reportFailures {
+                    let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
+                    JunoSettingsToastCenter.shared.report(msg)
+                }
+                return
+            }
+            if let brokerEnabled = obj["live_caption_enabled"] as? Bool, brokerEnabled != enabled {
+                hudLiveTranscriptions = brokerEnabled
+                JunoUserDefaults.hudLiveTranscriptionsEnabled = brokerEnabled
+                if reportFailures {
+                    let msg = (obj["disabled_reason"] as? String) ?? "Live preview is not available on this Mac"
+                    JunoSettingsToastCenter.shared.report(msg.replacingOccurrences(of: "_", with: " ").capitalized)
+                }
+                return
+            }
+            if enabled {
+                JunoBroker.getJSON(path: "api/broker/preview/warm") { _ in }
             }
         }
     }

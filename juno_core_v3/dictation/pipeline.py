@@ -281,6 +281,7 @@ class OneShotDictationResult:
             "model_path": self.model_path,
             "audio_duration_ms": self.audio_duration_ms,
             "decode_ms": self.decode_ms,
+            "final_transcription_ms": self.decode_ms,
             "language": self.language,
             "writer_action": self.writer_action,
             "writer_deterministic": self.writer_deterministic,
@@ -1922,6 +1923,7 @@ class OneShotDictationPipeline:
                     "failure_reason": None if transcript_out or paste_kind != "none" else (noop_reason or None),
                     "session_class": "insert",
                     "processing_ms": processing_ms,
+                    "final_transcription_ms": result.decode_ms,
                     "words": words,
                     "replay_available": bool(self.replay_available(uid)),
                     "audio_path": audio_path_rel,
@@ -1945,6 +1947,7 @@ class OneShotDictationPipeline:
                 "adjudicated_chars": len(adjudicated_text),
                 "writer_chars": len(writer_text),
                 "duration_ms": result.audio_duration_ms,
+                "final_transcription_ms": result.decode_ms,
                 "backend": result.backend_name,
                 "model_path": resolved_model_path,
                 "writer_action": writer_action,
@@ -1964,6 +1967,7 @@ class OneShotDictationPipeline:
             "session_context_tape": tape_meta,
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
+            "final_transcription_ms": result.decode_ms,
         }
         if audio_diag is not None:
             meta_out["audio_diagnostics"] = audio_diag.to_dict()
