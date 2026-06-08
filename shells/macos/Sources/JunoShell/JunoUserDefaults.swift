@@ -32,6 +32,8 @@ enum JunoAppearancePreference: String, CaseIterable, Identifiable {
 /// Central Juno-specific `UserDefaults` keys. Legacy Juno → Juno suite migration lives in ``JunoLegacyDefaultsMigration``.
 enum JunoUserDefaults {
     static let onboardingCompletedKey = "JunoOnboardingCompleted"
+    static let onboardingRequirementsVersionKey = "JunoOnboardingRequirementsVersion"
+    static let currentOnboardingRequirementsVersion = 1
     static let preferredDisplayNameKey = "JunoPreferredDisplayName"
     static let onboardingBrandDelightShownKey = "JunoShellOnboardingBrandDelightShown"
     static let hudDelightAnimationsEnabledKey = "JunoHUDDelightAnimationsEnabled"
@@ -77,7 +79,15 @@ enum JunoUserDefaults {
         get { UserDefaults.standard.bool(forKey: onboardingCompletedKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: onboardingCompletedKey)
+            if newValue {
+                UserDefaults.standard.set(currentOnboardingRequirementsVersion, forKey: onboardingRequirementsVersionKey)
+            }
         }
+    }
+
+    static var onboardingRequirementsVersion: Int {
+        get { UserDefaults.standard.integer(forKey: onboardingRequirementsVersionKey) }
+        set { UserDefaults.standard.set(newValue, forKey: onboardingRequirementsVersionKey) }
     }
 
     /// Trimming empty; persisted for home greetings.
@@ -375,6 +385,7 @@ enum JunoUserDefaults {
     static func resetOnboardingForRetest() {
         let ud = UserDefaults.standard
         ud.set(false, forKey: onboardingCompletedKey)
+        ud.removeObject(forKey: onboardingRequirementsVersionKey)
         ud.removeObject(forKey: onboardingBrandDelightShownKey)
         ud.removeObject(forKey: actionsOnboardingDecisionMadeKey)
         ud.removeObject(forKey: actionsNudgeShownKey)
