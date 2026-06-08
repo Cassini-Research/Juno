@@ -28,6 +28,16 @@ You need three pieces of infrastructure:
 No app-side API key is needed for Sparkle itself. API keys may be needed only
 for your hosting provider if you automate uploads.
 
+The Sparkle update host and website download host can be the same server or
+different servers. Treat them as different release surfaces:
+
+- Sparkle OTA host: `appcast.xml`, versioned Sparkle `.zip` archives, release
+  notes, and generated delta files.
+- Website download host: versioned `.dmg` files for fresh installs.
+
+Do not put the website `.dmg` in Sparkle's appcast. Sparkle expects the `.zip`
+archive generated and signed by `generate_appcast`.
+
 ## One-Time Setup
 
 ### 1. Install Apple signing assets
@@ -47,6 +57,11 @@ Developer ID Application: Your Company Name (TEAMID)
 
 That string is passed to release scripts as `--sign` or
 `CODESIGN_IDENTITY`.
+
+Use the exact identity string printed by `security find-identity`. The display
+name is fixed by the Apple Developer Program membership that issued the
+certificate. Individual memberships show the person's legal name; organization
+memberships show the legal entity name.
 
 ### 2. Store notarization credentials
 
@@ -168,6 +183,10 @@ script. For the example above:
 Set cache headers conservatively for `appcast.xml` while testing. A short TTL
 such as 5 minutes is easier to debug than a CDN-cached appcast.
 
+Upload `appcast.xml` last. Sparkle clients use the appcast as the source of
+truth, so publishing it before the archive is publicly readable can make update
+checks fail.
+
 ### 5. Test from an older installed build
 
 Install an older OTA-enabled build, launch Juno, and use:
@@ -183,6 +202,224 @@ defaults delete com.juno.shell SULastCheckTime
 ```
 
 Then relaunch Juno.
+
+## Production Release Flow
+
+Use this flow for a public release from a release Mac. It builds one
+Developer ID signed and notarized `Juno.app`, publishes Sparkle OTA files, and
+optionally creates a notarized DMG from that same app for website downloads.
+
+### 1. Set release variables
+
+Use the real production update host. Keep a separate output directory for
+production artifacts so old localhost appcasts are never uploaded by mistake.
+
+```bash
+export JUNO_APP_VERSION="0.2.1"
+export JUNO_BUILD_NUMBER="2"
+export CODESIGN_IDENTITY="Developer ID Application: Your Company Name (TEAMID)"
+export JUNO_OTA_PUBLIC_ED_KEY="paste-public-key-here"
+export JUNO_OTA_FEED_URL="https://updates.example.com/appcast.xml"
+export JUNO_OTA_DOWNLOAD_URL_PREFIX="https://updates.example.com/"
+export JUNO_NOTARY_KEYCHAIN_PROFILE="juno-notary"
+export JUNO_RELEASE_UPDATES_DIR="dist/ota-public"
+```
+
+`JUNO_BUILD_NUMBER` must increase for every public release. Reusing a build
+number can make Sparkle ignore the update.
+
+### 2. Build the OTA release
+
+```bash
+./scripts/build_juno_engine_bundle.sh
+
+rm -rf "$JUNO_RELEASE_UPDATES_DIR"
+mkdir -p "$JUNO_RELEASE_UPDATES_DIR"
+
+./scripts/build_juno_ota_release.sh \
+  --version "$JUNO_APP_VERSION" \
+  --build-number "$JUNO_BUILD_NUMBER" \
+  --sign "$CODESIGN_IDENTITY" \
+  --engine dist/juno_engine_bundle \
+  --updates-dir "$JUNO_RELEASE_UPDATES_DIR" \
+  --ota-feed-url "$JUNO_OTA_FEED_URL" \
+  --ota-public-ed-key "$JUNO_OTA_PUBLIC_ED_KEY" \
+  --download-url-prefix "$JUNO_OTA_DOWNLOAD_URL_PREFIX" \
+  --notary-keychain-profile "$JUNO_NOTARY_KEYCHAIN_PROFILE"
+```
+
+Pass `--release-notes path/to/notes.md` if you want custom notes in the Sparkle
+update dialog. Without it, the script writes minimal release notes.
+
+### 3. Verify before publishing
+
+```bash
+xcrun stapler validate dist/Juno.app
+spctl -a -vv dist/Juno.app
+codesign --verify --deep --strict --verbose=2 dist/Juno.app
+
+grep -E "sparkle:version|sparkle:shortVersionString|enclosure url" \
+  "$JUNO_RELEASE_UPDATES_DIR/appcast.xml"
+
+grep -E "127\\.0\\.0\\.1|localhost|updates\\.example\\.com" \
+  "$JUNO_RELEASE_UPDATES_DIR/appcast.xml" && {
+    echo "error: appcast contains a non-production URL" >&2
+    exit 1
+  }
+```
+
+Expected results:
+
+- `stapler validate` works.
+- `spctl` reports `accepted` and `source=Notarized Developer ID`.
+- `codesign --verify` succeeds.
+- The appcast enclosure URL points at the production update host and the new
+  versioned `.zip`.
+
+### 4. Publish OTA files
+
+Publish these files from `$JUNO_RELEASE_UPDATES_DIR`:
+
+- `appcast.xml`
+- `Juno-VERSION-BUILD.zip`
+- `Juno-VERSION-BUILD.md`, `.html`, or `.txt`, if present
+- generated `.delta` files, if present
+
+Do not publish `$JUNO_RELEASE_UPDATES_DIR/.notary` or temporary staging
+directories.
+
+For an SSH-managed static host, use a staging directory and move `appcast.xml`
+last:
+
+```bash
+REMOTE_HOST="deploy@example.com"
+REMOTE_DIR="/var/www/updates.example.com"
+STAGING="$REMOTE_DIR/.incoming-$(date -u +%Y%m%dT%H%M%SZ)"
+
+ssh "$REMOTE_HOST" "mkdir -p '$STAGING'"
+rsync -av \
+  --exclude '.notary/' \
+  --exclude 'appcast.xml' \
+  "$JUNO_RELEASE_UPDATES_DIR"/ \
+  "$REMOTE_HOST:$STAGING"/
+rsync -av "$JUNO_RELEASE_UPDATES_DIR/appcast.xml" "$REMOTE_HOST:$STAGING/appcast.xml"
+ssh "$REMOTE_HOST" "\
+  set -e; \
+  find '$STAGING' -maxdepth 1 -type f ! -name appcast.xml -exec mv {} '$REMOTE_DIR'/ \\;; \
+  mv '$STAGING/appcast.xml' '$REMOTE_DIR/appcast.xml'; \
+  rmdir '$STAGING'"
+```
+
+On nginx or CDN-backed static hosting, use short cache headers for the appcast
+and immutable headers for versioned archives:
+
+```text
+appcast.xml: no-cache, max-age=60
+Juno-*.zip: public, max-age=31536000, immutable
+Juno-*.delta: public, max-age=31536000, immutable
+Juno-*.md/html/txt: public, max-age=31536000, immutable
+```
+
+### 5. Verify public OTA URLs
+
+```bash
+curl -I "$JUNO_OTA_FEED_URL"
+curl -fsSL "$JUNO_OTA_FEED_URL" \
+  | grep -E "sparkle:version|sparkle:shortVersionString|enclosure url"
+
+ARCHIVE_URL="$(curl -fsSL "$JUNO_OTA_FEED_URL" \
+  | sed -n 's/.*<enclosure url="\([^"]*\)".*/\1/p' \
+  | head -n 1)"
+curl -I "$ARCHIVE_URL"
+```
+
+Both the appcast and archive should return HTTP 200. Test from an older
+installed Juno build after the public URLs are verified.
+
+## Website DMG Release
+
+The DMG is for fresh installs from the website. Build it from the same
+Developer ID signed and stapled `dist/Juno.app` produced by the production OTA
+release flow. Do not rebuild ad-hoc for the DMG.
+
+### 1. Create the DMG
+
+```bash
+DMG_NAME="Juno-$JUNO_APP_VERSION-$JUNO_BUILD_NUMBER.dmg"
+DMG_PATH="dist/downloads/$DMG_NAME"
+
+rm -rf dist/dmg-stage dist/downloads
+mkdir -p dist/dmg-stage dist/downloads
+ditto dist/Juno.app dist/dmg-stage/Juno.app
+ln -s /Applications dist/dmg-stage/Applications
+
+hdiutil create \
+  -volname "Juno" \
+  -srcfolder dist/dmg-stage \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH"
+```
+
+This creates a simple drag-to-install disk image containing `Juno.app` and an
+`Applications` symlink.
+
+### 2. Sign, notarize, and staple the DMG
+
+```bash
+codesign --force \
+  --sign "$CODESIGN_IDENTITY" \
+  --timestamp \
+  "$DMG_PATH"
+
+xcrun notarytool submit "$DMG_PATH" \
+  --keychain-profile "$JUNO_NOTARY_KEYCHAIN_PROFILE" \
+  --wait
+
+xcrun stapler staple "$DMG_PATH"
+```
+
+If `notarytool` cannot find the profile, recreate it with
+`xcrun notarytool store-credentials` on the release Mac. Do not put the Apple
+ID password, app-specific password, API key, or Keychain profile contents in the
+repository.
+
+### 3. Verify the DMG
+
+```bash
+xcrun stapler validate "$DMG_PATH"
+spctl -a -t open --context context:primary-signature -vv "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
+hdiutil verify "$DMG_PATH"
+```
+
+Expected results:
+
+- `stapler validate` works.
+- `spctl` reports `accepted` and `source=Notarized Developer ID`.
+- `codesign --verify` succeeds.
+- `hdiutil verify` reports a valid checksum.
+
+### 4. Publish the website download
+
+Upload the versioned DMG to the website download host, for example:
+
+```text
+https://downloads.example.com/Juno-0.2.1-2.dmg
+```
+
+Use a long immutable cache header for versioned DMGs:
+
+```text
+Juno-*.dmg: public, max-age=31536000, immutable
+```
+
+If the website also has a stable `latest` download URL, update that pointer only
+after the versioned DMG is uploaded and returns HTTP 200:
+
+```bash
+curl -I "https://downloads.example.com/Juno-$JUNO_APP_VERSION-$JUNO_BUILD_NUMBER.dmg"
+```
 
 ## Local Appcast Testing
 
@@ -408,6 +645,13 @@ beta-only update.
   appcast together.
 - macOS blocks the app: confirm the app was Developer ID signed, notarized, and
   stapled before the final Sparkle archive was created.
+- `notarytool` cannot find the Keychain profile: rerun
+  `xcrun notarytool store-credentials` on the release Mac, or pass the correct
+  profile name to `--notary-keychain-profile`.
+- DMG is signed but Gatekeeper reports `Unnotarized Developer ID`: submit the
+  DMG itself to `notarytool`, wait for `Accepted`, then run
+  `xcrun stapler staple` on the DMG. Notarizing only `Juno.app` is not enough
+  for a website DMG download.
 
 ## References
 
