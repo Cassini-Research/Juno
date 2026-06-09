@@ -93,5 +93,10 @@ let package = Package(
             dependencies: ["JunoHotkeyCore"],
             path: "Tests/JunoHotkeyCoreTests"
         ),
+        .testTarget(
+            name: "JunoShellLogicTests",
+            dependencies: ["JunoShell"],
+            path: "Tests/JunoShellLogicTests"
+        ),
     ]
 )

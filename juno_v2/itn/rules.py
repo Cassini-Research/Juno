@@ -351,9 +351,13 @@ def _build_date_pattern() -> re.Pattern:
     ones_alts = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
     tens_alts = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
     num_alts = ones_alts + "|" + tens_alts
+    # Each year half may itself be a tens+ones compound ("twenty six"), so
+    # "twenty twenty six" splits as 20 / 26 → 2026, and "nineteen ninety
+    # nine" as 19 / 99 → 1999.
+    year_half = rf"(?:(?:{tens_alts})\s+(?:{ones_alts})|{num_alts})"
     return re.compile(
         rf"\b({month_alts})\s+({ordinal_alts}|\d{{1,2}})"
-        rf"(?:\s+({num_alts})\s+({num_alts}))?\b",
+        rf"(?:\s+({year_half})\s+({year_half}))?\b",
         re.IGNORECASE,
     )
 
@@ -394,19 +398,42 @@ def apply_dates(text: str, fmt: ITNFormatPolicy | None = None) -> tuple[str, lis
 
 
 # ---------------------------------------------------------------------- #
-# Rule: times ("three thirty pm" → "3:30 PM", "fourteen hundred" → "14:00")
+# Rule: times ("three thirty pm" → "3:30 PM", "at fourteen hundred" → "at 14:00")
 # ---------------------------------------------------------------------- #
 
 _ONES_PAT = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
 _TENS_PAT = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
 _NUM_PAT = _ONES_PAT + "|" + _TENS_PAT
 
+# Dotted forms first, and `(?!\w)` instead of `\b`: after the trailing "."
+# of "p.m." there is no word boundary, so `p\.m\.\b` can never match.
+_MERIDIEM_PAT = r"a\.m\.|p\.m\.|am|pm"
+
 _TIME_PAT = re.compile(
-    rf"\b({_NUM_PAT})\s+({_NUM_PAT})\s+(am|pm|a\.m\.|p\.m\.)\b"
-    rf"|\b({_NUM_PAT})\s+(am|pm|a\.m\.|p\.m\.)\b"
+    rf"\b({_NUM_PAT})\s+({_NUM_PAT})\s+({_MERIDIEM_PAT})(?!\w)"
+    rf"|\b({_NUM_PAT})\s+({_MERIDIEM_PAT})(?!\w)"
     rf"|\b(\d{{1,2}})\s+hundred\b",
     re.IGNORECASE,
 )
+
+# Word-form military time. A bare "fourteen hundred" is ambiguous (it is
+# usually a quantity: "fourteen hundred people"), so word-form conversion
+# requires explicit time context: an "at " prefix or an "hours" suffix.
+_MILITARY_WORDS_PAT = re.compile(
+    rf"\b(?:(at)\s+)?((?:{_NUM_PAT})(?:\s+(?:{_NUM_PAT}))?)\s+hundred(\s+hours)?\b",
+    re.IGNORECASE,
+)
+
+
+def _convert_military_words(m: re.Match) -> str:
+    at_prefix, hour_words, hours_suffix = m.group(1), m.group(2), m.group(3)
+    if not at_prefix and not hours_suffix:
+        return m.group(0)
+    hour = _parse_number_words(hour_words.split())
+    if hour is None or not 0 <= hour <= 23:
+        return m.group(0)
+    prefix = f"{at_prefix} " if at_prefix else ""
+    return f"{prefix}{hour:02d}:00"
 
 
 def _convert_time(m: re.Match, fmt: ITNFormatPolicy) -> str:
@@ -431,6 +458,7 @@ def apply_times(text: str, fmt: ITNFormatPolicy | None = None) -> tuple[str, lis
     pol = fmt or ITNFormatPolicy.default()
     applied: list[str] = []
     out = _TIME_PAT.sub(lambda m: _convert_time(m, pol), text)
+    out = _MILITARY_WORDS_PAT.sub(_convert_military_words, out)
     if out != text:
         applied.append("times")
     return out, applied
@@ -531,13 +559,15 @@ def apply_code_identifiers(text: str) -> tuple[str, list[str]]:
 # Rule: terminal operators ("pipe" → "|", "greater than" → ">", etc.)
 # ---------------------------------------------------------------------- #
 
+# Longer phrases first: "double pipe"/"double ampersand" must fire before
+# the single-token rules or the singles eat them ("double &").
 _TERMINAL_OPS = [
+    (re.compile(r"\bdouble\s+pipe\b", re.IGNORECASE), "||"),
+    (re.compile(r"\bdouble\s+ampersand\b", re.IGNORECASE), "&&"),
     (re.compile(r"\bpipe\b", re.IGNORECASE), "|"),
     (re.compile(r"\bgreater\s+than\b", re.IGNORECASE), ">"),
     (re.compile(r"\bless\s+than\b", re.IGNORECASE), "<"),
     (re.compile(r"\bampersand\b", re.IGNORECASE), "&"),
-    (re.compile(r"\bdouble\s+ampersand\b", re.IGNORECASE), "&&"),
-    (re.compile(r"\bdouble\s+pipe\b", re.IGNORECASE), "||"),
 ]
 
 
@@ -712,14 +742,12 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
                 else:  # punct
                     out.append(glyph)
                     out.append(" ")
-            # Skip following whitespace in input (we already added our own).
+            # Skip following whitespace in input (we already added our own —
+            # and "open"/"tight" attach directly to the next token, so the
+            # spoken gap must not survive as a literal space).
             j = m.end()
-            if kind in ("open", "tight"):
-                # leave the next char as-is
-                pass
-            else:
-                while j < n and interim[j] == " ":
-                    j += 1
+            while j < n and interim[j] == " ":
+                j += 1
             i = j
             continue
         out.append(interim[i])

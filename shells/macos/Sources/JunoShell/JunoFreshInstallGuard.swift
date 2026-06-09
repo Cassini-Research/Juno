@@ -49,7 +49,7 @@ enum JunoFreshInstallGuard {
             // Voice Actions: opt-in was tied to the previous onboarding
             // requirements. Reset to defaults so the user makes a fresh choice
             // during the new required setup.
-            ud.set(true, forKey: JunoUserDefaults.actionsEnabledKey)
+            ud.removeObject(forKey: JunoUserDefaults.actionsEnabledKey)
             ud.removeObject(forKey: "JunoRemindersNudgeColdDismissedAt")
             JunoUserDefaults.clearAllActionsNudgeDismissals()
             ud.synchronize()
