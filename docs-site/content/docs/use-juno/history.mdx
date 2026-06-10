@@ -1,0 +1,61 @@
+---
+title: "History"
+description: "Search, replay, reprocess, and delete sessions."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# History
+
+History is a local record of dictation sessions. Default retention is **90 days**.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/history-real.png"
+  alt="Juno History view showing transcript list with search and filter controls, and a selected entry with Copy, Reprocess, and Delete actions"
+  caption="Search past sessions, then copy, replay, reprocess, or delete the selected entry."
+/>
+
+## What each entry contains
+
+Each history entry shows:
+- **The final transcript** — the text that was inserted or made Copy Ready
+- **The app** — which app was focused during the session
+- **The time** — when the dictation happened
+- **Insertion result** — whether the text was inserted, Copy Ready, or blocked
+- **Replay** — a playback control when a linked recording is available
+- **Action outcomes** — if Voice Actions ran (a note was saved, a reminder was created), those appear here too
+
+Secure/password fields force history off — sessions in those fields are never retained.
+
+## Searching history
+
+Use the search bar at the top of the History view to find any past dictation by word or phrase. Results filter in real time. Use the app and date filters together with search to narrow down a specific session.
+
+## Actions on a selected entry
+
+| Action | What it does |
+| --- | --- |
+| Copy | Copies the final transcript text to the clipboard. |
+| Replay | Plays back the session audio through your Mac's output device. Requires a retained recording. |
+| Reprocess | Runs the retained audio through the current processing path again. Useful for applying a different style to a past session. |
+| Save phrase | Adds the transcription to your vocabulary or snippets for future sessions. |
+| Delete | Removes this entry and its linked recording if one exists. |
+
+## Bulk actions
+
+From the History view toolbar:
+- **Clear history** removes all entries according to the retention setting
+- **Clean up now** runs the cleanup for expired entries immediately rather than waiting for the next scheduled pass
+- **Delete recordings** removes all retained audio while leaving transcript entries in place
+
+## History and recordings are separate
+
+Retention settings for history and recordings are controlled independently in Settings. A history entry can outlive its linked recording — the text stays, but replay will not be available once the audio expires.
+
+See [Recordings](/docs/use-juno/recordings) for how audio retention and replay work.
+
+## Privacy and per-app control
+
+History retention follows global Settings by default. Override it per app in Per-app writing — useful for apps that contain sensitive writing you never want retained. Secure fields always force history off, regardless of settings.
+
+See [History and Recording Retention](/docs/privacy-and-data/history-and-recording-retention) for the privacy implications of each retention choice.

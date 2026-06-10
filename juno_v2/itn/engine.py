@@ -117,6 +117,12 @@ class ITNEngine:
                 all_rules.extend(r)
             out, r = apply_code_identifiers(out)
             all_rules.extend(r)
+            # Terminal/code dictation needs spoken punctuation MORE than
+            # prose ("quote fix colon preserve metadata quote" must become
+            # "fix: preserve metadata"). Runs after the terminal/code passes
+            # so their multi-word operator phrases are consumed first.
+            out, r = apply_spoken_punctuation(out)
+            all_rules.extend(r)
         else:
             # PROSE / NUMERIC / EMAIL_URL / FULL all run the numeric stack
             out, r = apply_currency(out, fmt)

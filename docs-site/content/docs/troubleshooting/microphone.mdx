@@ -1,0 +1,50 @@
+---
+title: "Microphone"
+description: "Fix audio capture."
+---
+
+import { FlowSteps } from '@/components/docs/FlowSteps';
+
+# Microphone
+
+The HUD enters Listening only after audio frames arrive.
+
+## Fix order
+
+<FlowSteps
+  steps={[
+    {
+      title: 'Check macOS Microphone permission',
+      description: 'Open System Settings → Privacy & Security → Microphone and confirm Juno is enabled.',
+      status: 'required',
+    },
+    {
+      title: 'Quit and reopen Juno',
+      description: 'macOS permission state can remain stale for a running app.',
+      status: 'required',
+    },
+    {
+      title: 'Test in Notes',
+      description: 'Use a simple text field and Fn / Globe to remove app-specific variables.',
+      status: 'required',
+    },
+    {
+      title: 'Watch the HUD',
+      description: 'It should move from Checking microphone… to Waiting for speech… and then Listening once speech starts.',
+      status: 'required',
+    },
+    {
+      title: 'Check the input device',
+      description: 'Confirm the selected Mac input device works in another app and is not muted, disconnected, or captured exclusively by another app.',
+      status: 'required',
+    },
+  ]}
+/>
+
+## If audio is distorted
+
+Open Settings → Audio and test **Mic processing** both off and on. It is off by default because system voice-processing paths can behave differently across Macs and macOS versions. If turning it on causes silence, distortion, or repeated nonsense output, turn it off and test again.
+
+## If Juno hears silence
+
+Move closer to the microphone, lower background noise, or check that the correct input device is selected in **System Settings → Sound → Input**. On laptops, the built-in mic catches room reflections — using a headset or external mic is the single biggest accuracy win.

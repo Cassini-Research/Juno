@@ -132,6 +132,8 @@ class PromotionCoordinator:
         def _promote_entry(entry) -> None:
             nonlocal promoted
             canonical = (getattr(entry, "canonical", "") or "").strip()
+            if _placeholder_seed_entry(entry):
+                return
             if not canonical or not learned_term_allowed(canonical):
                 return
             key = canonical.casefold()
@@ -168,17 +170,42 @@ class PromotionCoordinator:
         for entry in (self._seed.personal_entities or ()):
             _promote_entry(entry)
 
-        # 2) Promote a bounded number of terms from default enabled packs.
-        # This keeps first-run memory non-empty without dumping the whole bundle.
-        max_pack_terms = 200
+        # 2) Default-enabled domain packs. These carry exactly the
+        #    domain identifiers ASR mishears — skipping them
+        #    left the serving lexicon at 2 terms and made domain-term
+        #    correction a fiction (production: "Gwen" shipped unrepaired).
+        #    Bounded; the bias ranking layer selects per-utterance anyway.
+        pack_budget = 400
         for pack_id in (self._seed.manifest.default_enabled_packs or ()):
-            terms = self._seed.packs.get(pack_id) or ()
-            for entry in terms:
-                _promote_entry(entry)
-                if promoted >= max_pack_terms:
+            for entry in (self._seed.packs.get(pack_id) or ()):
+                if promoted >= pack_budget:
                     break
-            if promoted >= max_pack_terms:
+                _promote_entry(entry)
+            if promoted >= pack_budget:
                 break
 
-        _LOG.info("juno_promotion: initial_promotion completed promoted=%s", promoted)
-        return {"ok": True, "promoted": promoted}
+        skipped_pack_terms = sum(
+            len(self._seed.packs.get(pack_id) or ())
+            for pack_id in (self._seed.manifest.default_enabled_packs or ())
+        )
+
+        _LOG.info(
+            "juno_promotion: initial_promotion completed promoted=%s skipped_pack_terms=%s",
+            promoted,
+            skipped_pack_terms,
+        )
+        return {
+            "ok": True,
+            "promoted": promoted,
+            "skipped_pack_terms": skipped_pack_terms,
+            "reason": "default_packs_runtime_only",
+        }
+
+
+def _placeholder_seed_entry(entry) -> bool:
+    canonical = (getattr(entry, "canonical", "") or "").strip()
+    source = (getattr(entry, "source", "") or "").strip().casefold()
+    if source != "manual_seed":
+        return False
+    tokens = {token.casefold() for token in canonical.replace("_", " ").split() if token.strip()}
+    return bool(tokens & {"example", "sample", "demo", "test"})

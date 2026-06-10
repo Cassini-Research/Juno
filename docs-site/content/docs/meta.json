@@ -1,0 +1,15 @@
+{
+  "title": "Juno Docs",
+  "pages": [
+    "index",
+    "start",
+    "use-juno",
+    "privacy-and-data",
+    "troubleshooting",
+    "architecture",
+    "developers",
+    "reference",
+    "contribute",
+    "releases"
+  ]
+}

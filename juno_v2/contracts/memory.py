@@ -56,6 +56,7 @@ class MemorySnapshot:
     replacements: List[ReplacementRule] = field(default_factory=list)
     corrections: List[CorrectionPair] = field(default_factory=list)
     session_entities: List[SessionEntity] = field(default_factory=list)
+    snippets: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -65,6 +66,7 @@ class MemorySnapshot:
             'replacements': [item.to_dict() for item in self.replacements],
             'corrections': [item.to_dict() for item in self.corrections],
             'session_entities': [item.to_dict() for item in self.session_entities],
+            'snippets': list(self.snippets),
             'metadata': dict(self.metadata),
         }
 
@@ -107,6 +109,7 @@ class MemoryServingPacket:
     replacements: List[Dict[str, Any]] = field(default_factory=list)
     corrections: List[Dict[str, Any]] = field(default_factory=list)
     session_entities: List[str] = field(default_factory=list)
+    snippets: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -115,5 +118,6 @@ class MemoryServingPacket:
             'replacements': list(self.replacements),
             'corrections': list(self.corrections),
             'session_entities': list(self.session_entities),
+            'snippets': list(self.snippets),
             'metadata': dict(self.metadata),
         }

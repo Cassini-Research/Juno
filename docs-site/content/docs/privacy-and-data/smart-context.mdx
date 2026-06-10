@@ -1,0 +1,59 @@
+---
+title: "Smart Context"
+description: "What context Juno can use while writing and how to control it."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Smart Context
+
+Smart Context lets Juno read selected text, the current field, the app/window title, and your dictionary while writing — so it can punctuate correctly, match the style already in the field, and apply your vocabulary without explicit invocation.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/per-app-writing-configured-real.png"
+  alt="Per-app writing showing per-app privacy controls: Context, Learn corrections, Save history, Keep recordings"
+  caption="Use per-app privacy controls when a specific app needs stricter context or retention rules."
+/>
+
+## Context sources
+
+| Source | Default | What it enables |
+| --- | --- | --- |
+| Selected text | On | Lets Juno rewrite or transform what you have highlighted. Without this, voice-based selected-text replacement does not work. |
+| Current field context | On | Juno reads the text already in the field, so it continues your sentence, matches your paragraph style, and avoids repeating what is already there. |
+| App / window title | On | Juno knows whether you are writing a Slack message, an email, a document, or a code comment — even before you say a word. |
+| Dictionary and memory | On where allowed | Your vocabulary entries, replacements, snippets, and learned corrections are applied automatically in every session. |
+| Recent clipboard | Off | Juno can optionally use your most recent clipboard copy as context — useful when you want to dictate commentary on something you just copied. |
+
+## How context changes output
+
+Here are concrete examples of what changes when each source is active:
+
+**Selected text on**
+You highlight a dense paragraph and say "make that more direct." Juno rewrites exactly what is selected, not a guess at what you meant. Without this, voice transformation commands have no anchor — they either fail or rewrite the wrong range.
+
+**Current field context on**
+You are halfway through an email and start Juno mid-paragraph. With field context, Juno continues the sentence you were in — same tense, matching formality, no duplicate words. Without it, Juno starts fresh as if the field were blank.
+
+**App / window title on**
+You are in a Slack DM and dictate a quick reply. Juno calibrates to casual register, omits formal salutations, and uses short punchy sentences. The same words spoken into a Pages document produce something more structured because the context signal is different.
+
+**Recent clipboard on**
+You copy a URL or a name and immediately start Juno to dictate around it. With clipboard context on, Juno can use that copied content as reference — for instance, if you say "send this to the team" right after copying a link, Juno knows what "this" refers to. Off by default because clipboard content is often unrelated to what you are dictating.
+
+**Dictionary and memory**
+You have added "Juno" to your vocabulary. Every session applies it automatically: it never transcribes as "Uno" or "Junior." Replacements and snippets work the same way when their trigger is heard.
+
+## Restrict context per app, not globally
+
+If a surface is sensitive, change Per-app writing for that specific app — not the global setting. Global context off means every app loses the benefits above. Per-app context off means one app is isolated.
+
+Use per-app controls for: finance tools, legal and client documents, admin consoles, remote desktops, terminals, and any app where you do not want field content examined.
+
+See [Per-app writing](/docs/use-juno/per-app-writing) for how to configure per-app overrides.
+
+## Secure fields
+
+Secure and password-type fields force Smart Context off automatically. Learning, history, audio save, and paste are also blocked in those fields. Secure-field behavior cannot be toggled.
+
+See [Secure Fields](/docs/privacy-and-data/secure-fields) for the full behavior in password inputs.

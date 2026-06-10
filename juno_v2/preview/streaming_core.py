@@ -33,6 +33,7 @@ evidence until they are backed by agreement or finalization.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -121,6 +122,7 @@ class StreamingPreviewState:
     committed_replay_suppressed_events: int = 0
     committed_replay_agreement_drops: int = 0
     committed_burst_budget_events: int = 0
+    commit_draft_horizon_demotions: int = 0
     tail_commit_quarantine_events: int = 0
     committed_boh_strips: int = 0
     committed_boundary_letter_strips: int = 0
@@ -199,6 +201,7 @@ class StreamingPreviewSessionManager:
         force_trim_carry_seconds: float = 5.0,
         max_session_idle_seconds: float = 30.0,
         vad_enabled: bool = True,
+        commit_draft_horizon_ms: float | None = None,
     ) -> None:
         self.decoder = decoder
         self.sample_rate_hz = sample_rate_hz
@@ -209,6 +212,20 @@ class StreamingPreviewSessionManager:
         self.force_trim_carry_seconds = force_trim_carry_seconds
         self.max_session_idle_ns = int(max_session_idle_seconds * 1_000_000_000)
         self.vad_enabled = vad_enabled
+        # Words whose timestamps end inside the last N ms of buffered audio
+        # sit in Whisper's truncated-decode zone — that is where stable
+        # hallucinated continuations come from ("…listens to hey Juno" +
+        # cut-off speech → "I don't know."). Agreement commits inside the
+        # horizon are demoted back to the tail until more audio confirms
+        # them. 0 disables (default; production enables via env).
+        if commit_draft_horizon_ms is None:
+            try:
+                commit_draft_horizon_ms = float(
+                    os.environ.get("JUNO_V2_PREVIEW_COMMIT_DRAFT_HORIZON_MS", "0") or 0.0
+                )
+            except ValueError:
+                commit_draft_horizon_ms = 0.0
+        self.commit_draft_horizon_ms = max(0.0, float(commit_draft_horizon_ms))
         self._states: dict[str, StreamingPreviewState] = {}
 
     def warm(self) -> None:
@@ -218,9 +235,15 @@ class StreamingPreviewSessionManager:
 
     def process(self, req: PreviewDecodeRequest) -> StreamingPreviewResponse:
         self._prune_idle_states(active_utterance_id=req.utterance_id)
+        context_payload = req.context_payload if isinstance(req.context_payload, dict) else {}
+        retain_state_after_final = bool(context_payload.get("retain_state_after_final"))
+        preview_segment_final = bool(
+            context_payload.get("preview_segment_final")
+            or retain_state_after_final
+        )
+        semantic_final = bool(req.is_final and not preview_segment_final)
         preserve_zero_reset = bool(
-            isinstance(req.context_payload, dict)
-            and req.context_payload.get("preserve_state_on_decode_seq_zero")
+            context_payload.get("preserve_state_on_decode_seq_zero")
         )
         if req.reset_decoder_state or (req.decode_seq == 0 and not preserve_zero_reset):
             self._states.pop(req.utterance_id, None)
@@ -258,9 +281,10 @@ class StreamingPreviewSessionManager:
         decode_skip_reason: str | None = None
         decode_on_silence = False
         final_agreement_committed = False
+        final_agreement_budget_tail = False
         previous_committed_display_words = _display_word_count(state.hypothesis.committed)
         newly_committed_display_words = 0
-        if not admit and not req.is_final:
+        if not admit and not semantic_final:
             # Do not append silence to the audio buffer, but do allow a cadence
             # decode over the existing speech buffer. LocalAgreement needs this
             # second pass to confirm the last spoken words when the user pauses.
@@ -289,13 +313,22 @@ class StreamingPreviewSessionManager:
                         state.last_silence_decode_buffer_sig = buffer_sig
                         decoded = self._run_decode(state, req)
         else:
-            decode_skip_reason = self._cadence_skip_reason(state, is_final=req.is_final)
+            decode_skip_reason = self._cadence_skip_reason(state, is_final=semantic_final)
             if decode_skip_reason is None:
                 decoded = self._run_decode(state, req)
 
         # 3. If we decoded, run LocalAgreement-2 + buffer trim.
         tail_suppress_reason: str | None = None
         if decoded is not None:
+            decoded.word_dicts, variant_meta = _canonicalize_common_preview_word_variants(
+                decoded.word_dicts
+            )
+            decoded.metadata = {**decoded.metadata, **variant_meta}
+            if variant_meta.get("preview_word_variant_repairs"):
+                decoded.text = " ".join(
+                    str(w.get("word") or w.get("text") or "")
+                    for w in decoded.word_dicts
+                ).strip()
             repaired_word_dicts, repair_meta = repair_preview_word_dicts(
                 decoded.word_dicts,
                 context_payload=req.context_payload,
@@ -326,12 +359,50 @@ class StreamingPreviewSessionManager:
                 if excess:
                     del state.hypothesis.committed[-len(excess):]
                     state.hypothesis.tail = list(excess) + list(state.hypothesis.tail)
+                    if semantic_final:
+                        final_agreement_budget_tail = True
                     if state.hypothesis.committed:
                         state.hypothesis.last_committed_time = state.hypothesis.committed[-1].end
                     else:
                         state.hypothesis.last_committed_time = 0.0
                     newly_committed = newly_committed[:budget_prefix_len]
                     state.committed_burst_budget_events += 1
+            # Draft-horizon demotion: agreed words ending inside the last
+            # N ms of buffered audio are truncated-decode territory and may
+            # be stable hallucinations ("…hey Juno" + cut-off speech →
+            # "I don't know."). Hold them in the tail until more audio
+            # arrives. True utterance stop and pause-confirmation decodes
+            # bypass the guard — there the buffer end IS the speech end.
+            if (
+                newly_committed
+                and self.commit_draft_horizon_ms > 0
+                and not semantic_final
+                and not decode_on_silence
+            ):
+                sr = float(req.sample_rate_hz or self.sample_rate_hz)
+                buffer_end_t = state.buffer_start_t + (state.buffer_audio.size / sr)
+                horizon_start_t = buffer_end_t - (self.commit_draft_horizon_ms / 1000.0)
+                # Real decoder timestamps never exceed the audio length; a
+                # word claiming to end past the buffer means inconsistent
+                # timing (synthetic feeds, clock drift) — fail open rather
+                # than demote on data we cannot reason about.
+                epsilon_s = 0.05
+                horizon_cut = len(newly_committed)
+                while horizon_cut > 0:
+                    word_end = newly_committed[horizon_cut - 1].end
+                    if word_end > buffer_end_t + epsilon_s or word_end <= horizon_start_t:
+                        break
+                    horizon_cut -= 1
+                if horizon_cut < len(newly_committed):
+                    excess = newly_committed[horizon_cut:]
+                    del state.hypothesis.committed[-len(excess):]
+                    state.hypothesis.tail = list(excess) + list(state.hypothesis.tail)
+                    if state.hypothesis.committed:
+                        state.hypothesis.last_committed_time = state.hypothesis.committed[-1].end
+                    else:
+                        state.hypothesis.last_committed_time = 0.0
+                    newly_committed = newly_committed[:horizon_cut]
+                    state.commit_draft_horizon_demotions += 1
             newly_committed_norms = [w.normalized for w in newly_committed if w.normalized]
             quarantined_tail_commit_safe = _silence_agreement_commit_safe(
                 newly_committed,
@@ -362,7 +433,7 @@ class StreamingPreviewSessionManager:
                 state.tail_suppressed_events += 1
                 newly_committed = []
                 newly_committed_norms = []
-            if req.is_final and newly_committed:
+            if semantic_final and newly_committed:
                 final_agreement_committed = True
             if (
                 newly_committed
@@ -479,7 +550,7 @@ class StreamingPreviewSessionManager:
                 audio_rms=chunk_rms,
                 audio_peak=chunk_peak,
                 decode_on_silence=decode_on_silence,
-                is_final=req.is_final,
+                is_final=semantic_final,
             )
             if tail_display_suppress_reason is not None:
                 state.tail_suppressed_events += 1
@@ -510,19 +581,10 @@ class StreamingPreviewSessionManager:
         # second strip at this point would always be a no-op. The post-final-
         # drain strip below remains because the drain DOES extend committed.
 
-        retain_state_after_final = bool(
-            isinstance(req.context_payload, dict)
-            and req.context_payload.get("retain_state_after_final")
-        )
-        preview_segment_final = bool(
-            isinstance(req.context_payload, dict)
-            and (
-                req.context_payload.get("preview_segment_final")
-                or req.context_payload.get("retain_state_after_final")
-            )
-        )
         if preview_segment_final:
-            tail_promotion_max_words = max(0, _MAX_LIVE_COMMIT_WORDS - newly_committed_display_words)
+            tail_promotion_max_words = _MAX_SEGMENT_FINAL_TAIL_PROMOTION_WORDS
+        elif semantic_final and not state.hypothesis.committed:
+            tail_promotion_max_words = _MAX_FINAL_EMPTY_COMMITTED_TAIL_PROMOTION_WORDS
         else:
             tail_promotion_max_words = _MAX_FINAL_TAIL_PROMOTION_WORDS
 
@@ -534,14 +596,14 @@ class StreamingPreviewSessionManager:
         # evidence so later audio can still confirm them.
         tail_final_promotion_status = "agreement_committed" if final_agreement_committed else "none"
         tail_final_promotion_reason: str | None = None
-        if req.is_final and state.hypothesis.tail:
-            display_tail_blocks_commit = (
-                tail_display_suppress_reason in _TAIL_COMMIT_QUARANTINE_REASONS
+        if semantic_final and state.hypothesis.tail:
+            unsafe_tail_reason = tail_suppress_reason or tail_display_suppress_reason
+            confirmed_budget_tail = (
+                final_agreement_budget_tail
+                and unsafe_tail_reason == "tail_single_word_quarantine"
+                and tail_suppress_reason is None
             )
-            unsafe_tail_reason = tail_suppress_reason or (
-                tail_display_suppress_reason if display_tail_blocks_commit else None
-            )
-            if unsafe_tail_reason is not None:
+            if unsafe_tail_reason is not None and not confirmed_budget_tail:
                 tail_final_promotion_status = "blocked"
                 tail_final_promotion_reason = unsafe_tail_reason
                 state.tail_final_promotion_blocked_events += 1
@@ -556,13 +618,19 @@ class StreamingPreviewSessionManager:
             else:
                 tail_final_promotion_status = "promoted"
                 state.tail_final_promotion_events += 1
-                old_len = len(state.hypothesis.committed)
                 promoted_tail = list(state.hypothesis.tail)
+                promoted_tail, boundary_revision_reason = (
+                    state.hypothesis.resolve_boundary_revision_before_append(promoted_tail)
+                )
+                if boundary_revision_reason is not None:
+                    state.committed_replay_agreement_drops += 1
+                old_len = len(state.hypothesis.committed)
                 state.hypothesis.committed.extend(promoted_tail)
                 promoted_tail, duplicate_drop_reason = (
                     state.hypothesis.drop_adjacent_duplicate_boundary_after_append(
                         old_len,
                         promoted_tail,
+                        allow_committed_suffix_drop=True,
                     )
                 )
                 if duplicate_drop_reason is not None:
@@ -588,11 +656,15 @@ class StreamingPreviewSessionManager:
                     committed_text = state.hypothesis.committed_text()
                 tail_text = ""
             state.last_tail_no_speech_prob = None
+        elif req.is_final and preview_segment_final and state.hypothesis.tail:
+            tail_final_promotion_status = "deferred"
+            tail_final_promotion_reason = "segment_boundary"
 
-        if bool(req.context_payload.get("preview_display_orthography")):
+        if bool(context_payload.get("preview_display_orthography")):
             committed_text, tail_text, orthography_meta = normalize_preview_orthography(
                 committed_text,
                 tail_text,
+                protected_terms=_preview_orthography_protected_terms(context_payload, req.bias_phrases),
             )
         else:
             orthography_meta = {
@@ -639,6 +711,7 @@ class StreamingPreviewSessionManager:
             "committed_replay_suppressed_events": state.committed_replay_suppressed_events,
             "committed_replay_agreement_drops": state.committed_replay_agreement_drops,
             "committed_burst_budget_events": state.committed_burst_budget_events,
+            "commit_draft_horizon_demotions": state.commit_draft_horizon_demotions,
             "committed_burst_max_words": _MAX_LIVE_COMMIT_WORDS,
             "tail_commit_quarantine_events": state.tail_commit_quarantine_events,
             "silence_tail_quarantine_events": state.silence_tail_quarantine_events,
@@ -1155,6 +1228,45 @@ def _context_entity_count(context_payload: dict) -> int:
     return len(candidate_entities) if isinstance(candidate_entities, list) else 0
 
 
+def _preview_orthography_protected_terms(
+    context_payload: dict[str, Any],
+    bias_phrases: list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    if not isinstance(context_payload, dict):
+        return list(bias_phrases or ())[:64]
+    out: list[str] = []
+
+    def add(value: Any) -> None:
+        text = str(value or "").strip()
+        if text:
+            out.append(text)
+
+    for key in ("candidate_entities", "recent_screen_terms", "preview_personalization_terms"):
+        raw = context_payload.get(key)
+        if not isinstance(raw, list):
+            continue
+        for item in raw[:64]:
+            if isinstance(item, dict):
+                add(item.get("text") or item.get("canonical") or item.get("term"))
+                for alias in item.get("aliases") or item.get("spoken_forms") or ():
+                    add(alias)
+            else:
+                add(item)
+    packet = context_payload.get("memory_serving_packet")
+    if isinstance(packet, dict):
+        for value in (packet.get("lexicon_terms") or [])[:64]:
+            add(value)
+        for row in (packet.get("corrections") or [])[:64]:
+            if isinstance(row, dict):
+                add(row.get("corrected"))
+        for row in (packet.get("replacements") or [])[:64]:
+            if isinstance(row, dict):
+                add(row.get("replacement"))
+    for phrase in bias_phrases or ():
+        add(phrase)
+    return out[:160]
+
+
 # Maximum word count we'll let through in the unstable tail as a last resort.
 # The shell coalesces chunks under preview backpressure, so a legitimate tail
 # can exceed the old 14-word limit. Repetition / BoH checks carry the real
@@ -1169,6 +1281,42 @@ _TAIL_LOOP_NGRAM_REPETITIONS = 3
 
 
 _VALID_LEADING_SINGLE_LETTERS = frozenset({"a", "i", "o"})
+_COMMON_PREVIEW_WORD_VARIANTS = {
+    "oke": "Okay",
+}
+
+
+def _canonicalize_common_preview_word_variants(
+    word_dicts: list[dict],
+) -> tuple[list[dict], dict[str, object]]:
+    """Normalize known ASR spelling variants before LocalAgreement.
+
+    This is intentionally tiny and lexical. It is not personalization or fuzzy
+    correction; it only maps invalid/common preview spellings to the canonical
+    word so LocalAgreement can recognize later corrected decodes as overlap
+    instead of committing both forms (for example ``Oke Okay``).
+    """
+    if not word_dicts:
+        return list(word_dicts or []), {"preview_word_variant_repairs": []}
+    repaired = [dict(w) for w in word_dicts]
+    applied: list[dict[str, object]] = []
+    for idx, word in enumerate(repaired):
+        raw = str(word.get("word") or word.get("text") or "")
+        if not raw:
+            continue
+        match = re.match(r"^(\W*)([A-Za-z]+)(\W*)$", raw.strip())
+        if match is None:
+            continue
+        prefix, core, suffix = match.groups()
+        replacement = _COMMON_PREVIEW_WORD_VARIANTS.get(core.casefold())
+        if replacement is None:
+            continue
+        fixed = f"{prefix}{replacement}{suffix}"
+        word["word"] = fixed
+        word["text"] = fixed
+        applied.append({"index": idx, "raw": raw, "replacement": fixed})
+    return repaired, {"preview_word_variant_repairs": applied[:8]}
+
 
 
 def _strip_leading_hallucinated_letter(
@@ -1278,7 +1426,9 @@ _TAIL_COMMIT_QUARANTINE_REASONS = {
     "tail_low_confidence_single_word_quarantine",
 }
 _MAX_LIVE_COMMIT_WORDS = 4
+_MAX_SEGMENT_FINAL_TAIL_PROMOTION_WORDS = 0
 _MAX_FINAL_TAIL_PROMOTION_WORDS = 12
+_MAX_FINAL_EMPTY_COMMITTED_TAIL_PROMOTION_WORDS = 32
 _SILENCE_ONLY_SINGLE_WORD_BLOCKLIST = frozenset(
     {
         "and",

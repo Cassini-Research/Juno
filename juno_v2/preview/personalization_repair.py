@@ -38,6 +38,21 @@ _COMMON_SINGLE_WORD_REPAIR_BLOCKLIST = {
     "work",
 }
 
+_SCREEN_PHRASE_TOKEN_CONFUSIONS = {
+    ("author", "auth"),
+    ("off", "auth"),
+    ("of", "auth"),
+    ("dogs", "docs"),
+    ("dock", "doc"),
+}
+
+_SCREEN_PHRASE_REPAIR_SOURCES = {
+    "candidate_entity",
+    "preview_context",
+    "recent_screen_term",
+    "selection",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class PreviewPersonalizationTerm:
@@ -292,6 +307,8 @@ def _span_can_repair(span_text: str, term: PreviewPersonalizationTerm) -> bool:
         return False
     if _span_matches_explicit_alias(span_norm, term):
         return True
+    if _span_matches_explicit_screen_phrase(span_tokens, term):
+        return True
     # Live HUD text is trust-sensitive: once a word reaches the committed lane,
     # the user reads it as "what Juno heard." Keep rich memory/screen reasoning
     # for final Qwen resolution, and only do exact/explicit-alias preview repair
@@ -335,6 +352,41 @@ def _span_can_repair(span_text: str, term: PreviewPersonalizationTerm) -> bool:
     if len(term.tokens) > 1:
         threshold = 0.84
     return ratio >= threshold
+
+
+def _span_matches_explicit_screen_phrase(
+    span_tokens: list[str],
+    term: PreviewPersonalizationTerm,
+) -> bool:
+    term_tokens = list(term.tokens)
+    if term.source not in _SCREEN_PHRASE_REPAIR_SOURCES:
+        return False
+    if len(term_tokens) < 2 or len(span_tokens) != len(term_tokens):
+        return False
+
+    mismatches: list[tuple[str, str]] = [
+        (span, expected)
+        for span, expected in zip(span_tokens, term_tokens, strict=True)
+        if span.casefold() != expected.casefold()
+    ]
+    if len(mismatches) != 1:
+        return False
+
+    heard, expected = mismatches[0]
+    if heard.casefold() in _STOPWORDS or expected.casefold() in _STOPWORDS:
+        return False
+    pair = (heard.casefold(), expected.casefold())
+    if pair in _SCREEN_PHRASE_TOKEN_CONFUSIONS:
+        return True
+    if len(expected) >= 4 and _edit_distance_at_most(heard.casefold(), expected.casefold(), 1):
+        return True
+    if (
+        len(expected) >= 6
+        and heard[:1].casefold() == expected[:1].casefold()
+        and _edit_distance_at_most(heard.casefold(), expected.casefold(), 2)
+    ):
+        return True
+    return False
 
 
 def _preview_fuzzy_repair_enabled(term: PreviewPersonalizationTerm) -> bool:

@@ -1,0 +1,68 @@
+---
+title: "Architecture Overview"
+description: "The local app, engine, storage, and insertion stack."
+full: true
+---
+
+import { DiagramBlock } from '@/components/docs/DiagramBlock';
+
+# Architecture Overview
+
+Juno is a macOS app connected to a local voice engine. Both run on this Mac; there is no server component.
+
+<DiagramBlock
+  title="Runtime architecture"
+  caption="The macOS shell drives the HUD and insertion; the Python engine handles speech, writing, and personalization. Both run locally."
+  takeaway="Every layer is on this Mac. The boundary between shell and engine is a local socket, not a network call."
+>
+  <img src="/images/diagrams/architecture-runtime-overview.svg" alt="Juno runtime architecture" style={{ width: '100%', height: 'auto' }} />
+</DiagramBlock>
+
+## Repo layout
+
+```
+harpy-v2-oai/
+├── shells/macos/Sources/JunoShell/   ← Swift macOS app (UI, HUD, insertion, history)
+├── shells/macos/Sources/JunoTextMonitor/  ← AX helper for selected-text observation
+├── juno_v2/                          ← Python voice engine
+│   ├── asr/                          ← Speech recognition
+│   ├── audio/                        ← Audio capture and preprocessing
+│   ├── vad/                          ← Voice activity detection
+│   ├── modes/                        ← Writing styles (verbatim, casual_chat, formal_email, …)
+│   ├── transforms/                   ← Writing engine that reshapes text
+│   ├── actions/                      ← Hey Juno grammar and action routing
+│   ├── memory/                       ← Local dictionary, snippets, corrections
+│   ├── personalization/              ← Correction learning
+│   ├── insertion/                    ← Paste/keystroke insertion path
+│   ├── workbench/                    ← Local storage (history, recordings, logs)
+│   └── engine/                       ← Engine entry, model loading, IPC server
+└── shells/macos/Tests/JunoShellTests/  ← Swift test suite
+```
+
+## The five layers
+
+| Layer | What lives here | Deeper page |
+| --- | --- | --- |
+| **macOS shell** | Onboarding, HUD, shortcut capture, Settings, History UI, Actions UI, insertion path, secure-field policy | [Mac App and Helpers](/docs/architecture/macos-app-and-helpers) |
+| **Local voice engine** | ASR, VAD, audio capture, writing engine, modes, action grammar | [Local Voice Engine](/docs/architecture/local-voice-engine) |
+| **HUD state machine + insertion** | The dictation lifecycle from shortcut press to inserted text or Copy Ready | [Dictation Lifecycle](/docs/architecture/dictation-lifecycle) |
+| **Privacy + secure fields** | Smart Context routing, secure-field detection, per-app overrides | [Privacy Data Flow](/docs/architecture/privacy-data-flow) |
+| **Storage + memory** | Local history DB, retained recordings, dictionary/snippets, correction learning | [Storage Lifecycle](/docs/architecture/storage-lifecycle), [Memory and Personalization](/docs/architecture/memory-and-personalization) |
+
+## What goes between shell and engine
+
+The shell talks to the engine over a local Unix socket. The protocol is documented in `juno_v2/engine/bridge.py` and consumed by `shells/macos/Sources/JunoShell/JunoBridge.swift`. Messages are JSON over length-prefixed framing — purely on-device, no network.
+
+Engine responses include: partials (live transcription as you speak), finals (polished result), HUD state hints, and action results (Reminders / Notes / Calendar). The shell maps these to HUD state transitions and insertion decisions.
+
+## Failure modes
+
+**Engine unreachable.** If the engine crashes or has not finished warming, the shell shows the failure on Home with a Repair action rather than failing silently. The shell never enters Listening if the engine is not reachable. See [Failure and Recovery Model](/docs/architecture/failure-and-recovery-model).
+
+**Insertion target untrustworthy.** If Accessibility is missing, the focused field is a secure input, or focus shifted mid-session, the shell holds the final result in the HUD as Copy Ready rather than pasting.
+
+## Where to read next
+
+- The [dictation lifecycle](/docs/architecture/dictation-lifecycle) walks through one session end to end with module names.
+- The [local voice engine](/docs/architecture/local-voice-engine) describes the Python side in more detail.
+- The [privacy data flow](/docs/architecture/privacy-data-flow) documents the secure-field enforcement and per-app overrides.

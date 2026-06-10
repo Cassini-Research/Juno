@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from juno_v2.contracts.memory import SessionEntity
+from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.fold import fold_key
 from juno_v2.memory.stores._base import JsonFileStore
-from juno_v2.memory.term_policy import learned_term_allowed
 
 
 class EntityStore:
@@ -27,7 +27,7 @@ class EntityStore:
         return list(self._fs.read([]))
 
     def upsert_many(self, entities: list[str], *, source: str = "session") -> None:
-        clean = [e.strip() for e in entities if e and e.strip() and learned_term_allowed(e)]
+        clean = [e.strip() for e in entities if e and e.strip() and session_entity_allowed(e)]
         if not clean:
             return
         with self._fs.lock:

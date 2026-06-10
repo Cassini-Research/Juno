@@ -6,13 +6,15 @@
 #
 # Default behavior of a fresh deploy:
 #   - All TCC permissions for Juno are cleared (Microphone, Accessibility,
-#     SpeechRecognition, Apple Events / Notes Automation, Reminders,
+#     ScreenCapture, Apple Events / Notes Automation, Reminders,
 #     Calendar) and tccd is restarted so the next launch re-prompts.
 #   - Onboarding state, preferences, caches and logs are wiped so you see
 #     a true new-user flow.
 #   - Product history (product_history.sqlite + audio/) is *preserved*
 #     across the reset by default — pass --wipe-history if you want a
-#     genuinely empty History page.
+#     genuinely empty History page. The Voice Actions index is intentionally
+#     reset, because it carries action-runtime state rather than History UI
+#     data and can make a fresh permission test look stale.
 #
 # After this script, open System Settings → Privacy & Security → Accessibility,
 # remove any duplicate “Juno” rows with minus, add only /Applications/Juno.app if needed.
@@ -138,7 +140,7 @@ stash_workbench_history() {
   local dest_dir="$3"
   local found=0
   mkdir -p "$dest_dir"
-  for _base in product_history.sqlite actions_index.sqlite; do
+  for _base in product_history.sqlite; do
     for _sfx in "" "-wal" "-shm"; do
       if [[ -f "$src_dir/${_base}${_sfx}" ]]; then
         cp -p "$src_dir/${_base}${_sfx}" "$dest_dir/" 2>/dev/null || true
@@ -170,7 +172,7 @@ restore_workbench_history() {
   [[ -d "$src_dir" ]] || return 0
   echo "==>    Restoring $label history to $dest_dir"
   mkdir -p "$dest_dir"
-  for _base in product_history.sqlite actions_index.sqlite; do
+  for _base in product_history.sqlite; do
     for _sfx in "" "-wal" "-shm"; do
       if [[ -f "$src_dir/${_base}${_sfx}" ]]; then
         cp -p "$src_dir/${_base}${_sfx}" "$dest_dir/" 2>/dev/null || true
@@ -227,6 +229,24 @@ else
 fi
 
 if [[ "$KEEP_USER_DATA" == 0 ]]; then
+  # Evidence preservation: engine traces + retained audio are the only
+  # forensic record of dictation behavior (the 2026-06-10 analysis lost its
+  # raw trace and audio to this exact wipe). Archive the diagnostic roots
+  # before deletion; History stash/restore above is unaffected.
+  ARCHIVE_ROOT="$HOME/Documents/juno_log_archives/$(date +%Y%m%d_%H%M%S)_preinstall"
+  for _domain in "${PREF_DOMAINS[@]}"; do
+    if [[ -d "$HOME/Library/Application Support/${_domain}/logs" ]]; then
+      mkdir -p "$ARCHIVE_ROOT/${_domain}"
+      cp -R "$HOME/Library/Application Support/${_domain}/logs" "$ARCHIVE_ROOT/${_domain}/" 2>/dev/null || true
+    fi
+  done
+  if [[ -d "$HOME/Library/Logs/Juno" ]]; then
+    mkdir -p "$ARCHIVE_ROOT"
+    cp -R "$HOME/Library/Logs/Juno" "$ARCHIVE_ROOT/system_logs" 2>/dev/null || true
+  fi
+  if [[ -d "$ARCHIVE_ROOT" ]]; then
+    echo "==>    Archived engine logs + audio → $ARCHIVE_ROOT"
+  fi
   echo "==>    Application Support + Logs + Caches (Juno current + legacy roots)"
   for _domain in "${PREF_DOMAINS[@]}"; do
     rm -rf "$HOME/Library/Application Support/${_domain}" || true
@@ -268,7 +288,6 @@ verify_installed_permission_plumbing() {
   for _key in \
     NSMicrophoneUsageDescription \
     NSAccessibilityUsageDescription \
-    NSSpeechRecognitionUsageDescription \
     NSAppleEventsUsageDescription \
     NSRemindersUsageDescription \
     NSRemindersFullAccessUsageDescription \
@@ -302,8 +321,7 @@ verify_installed_permission_plumbing() {
   if [[ "$missing" != 0 ]]; then
     exit 8
   fi
-  echo "==>    Verified permission request declarations: mic, AX, speech, Notes Automation, Reminders, Calendar"
-  echo "==>    Live user grants are checked in-app at launch; this line only verifies Info.plist keys and entitlements."
+  echo "==>    Verified permission plumbing: mic, AX, Notes Automation, Reminders, Calendar"
 }
 
 verify_installed_permission_plumbing
@@ -325,7 +343,7 @@ fi
 echo
 echo "Fresh environment steps complete."
 if [[ "$CLEANSE" == 1 ]]; then
-  echo "Permissions reset for $BUNDLE_ID: Microphone, Accessibility, SpeechRecognition,"
+  echo "Permissions reset for $BUNDLE_ID: Microphone, Accessibility, ScreenCapture,"
   echo "                                 AppleEvents (Notes Automation), Reminders, Calendar."
   echo "  → All Voice Actions + Voice Commands prompts will re-fire on next launch."
 fi

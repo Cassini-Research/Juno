@@ -1,0 +1,32 @@
+---
+title: "Permissions Reset"
+description: "Reset stale macOS permissions."
+---
+
+# Permissions Reset
+
+Reset permissions when macOS and Juno disagree about access.
+
+## Safe reset path
+
+1. Quit Juno completely.
+2. Open **System Settings → Privacy & Security → Microphone** and remove or disable Juno if macOS allows it.
+3. Open **System Settings → Privacy & Security → Accessibility** and remove or disable old Juno copies.
+4. Delete old app builds you are no longer using.
+5. Reopen the final Juno app.
+6. Grant Microphone and Accessibility again.
+7. Run the clean test in Notes.
+
+## Developer reset path
+
+Use macOS `tccutil` only when you know the final app bundle identifier. Resetting the wrong service or bundle can remove permissions for other builds and make the issue harder to compare. Keep exact commands in developer release notes once the bundle identifier is locked.
+
+## After a macOS update
+
+macOS often silently revokes app permissions after a system update, even when the app is unchanged. If Juno stopped working after updating macOS, this is the most common cause.
+
+Run the safe reset path above after any macOS update where Juno breaks. You do not need to reinstall Juno — just remove and re-grant Microphone and Accessibility for the app copy you are using, then quit and reopen.
+
+## After reset
+
+Always quit and reopen Juno after changing Accessibility. Then test with Fn / Globe in Notes before returning to the original app.

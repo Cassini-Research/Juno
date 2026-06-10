@@ -22,9 +22,7 @@ from juno_v2.transcript.patching import (
     visible_text_hash,
 )
 from juno_v2.transcript.validators import (
-    remove_instructional_exclusion_phrases,
     repair_low_signal_mid_sentence_capitalization,
-    restore_explicit_final_word_tail,
     validate_adjudication_result,
 )
 from juno_v2.writer.backends.base import WriterBackend
@@ -62,6 +60,15 @@ class TranscriptAdjudicatorConfig:
     final_chunking_enabled: bool = field(default_factory=lambda: _env_bool("JUNO_V2_FINAL_ADJUDICATION_CHUNKING", True))
     max_final_chunk_words: int = field(default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_CHUNK_WORDS", 240))
     min_final_chunk_words: int = field(default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_CHUNK_MIN_WORDS", 280))
+    # Hard ceiling on final-stage adjudication input. The final corrector
+    # re-emits the whole transcript, so decode time scales with utterance
+    # length (observed 14-19s on 120-170 word utterances, with the output
+    # then discarded by the unsupported-phrase guard). Past this size the
+    # final paste keeps the whisper text rather than stalling behind a model
+    # pass that overwhelmingly falls back anyway. 0 disables the gate.
+    max_final_adjudication_words: int = field(
+        default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_MAX_WORDS", 60)
+    )
 
 
 def _live_corrector_enabled_default() -> bool:
@@ -112,6 +119,25 @@ class TranscriptAdjudicator:
         if self.backend is None or not callable(getattr(self.backend, "rewrite", None)):
             print(f"[ADJ]         skipped utt={packet.utterance_id[:8]} reason=backend_unavailable", file=sys.stderr, flush=True)
             return self._rejected(packet, fallback, "backend_unavailable", base_hash=base_hash, stable_chars=stable_chars)
+
+        if packet.stage == "final":
+            word_limit = int(getattr(self.config, "max_final_adjudication_words", 0) or 0)
+            if word_limit > 0:
+                source_words = _word_count(_final_adjudication_source_text(packet))
+                if source_words > word_limit:
+                    print(
+                        f"[ADJ]         skipped utt={packet.utterance_id[:8]} "
+                        f"reason=final_input_too_long words={source_words} limit={word_limit}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return self._rejected(
+                        packet,
+                        fallback,
+                        f"final_input_too_long:{source_words}w",
+                        base_hash=base_hash,
+                        stable_chars=stable_chars,
+                    )
 
         if packet.stage == "final" and _should_chunk_final_adjudication(packet, self.config):
             return self._adjudicate_final_chunked(
@@ -237,19 +263,6 @@ class TranscriptAdjudicator:
                 parsed.corrected_text = repaired_text
                 parsed.metadata = dict(parsed.metadata or {})
                 parsed.metadata["low_signal_capitalization_repairs"] = capitalization_repairs[:16]
-            exclusion_text, exclusion_repairs = remove_instructional_exclusion_phrases(
-                packet,
-                parsed.corrected_text,
-            )
-            if exclusion_repairs and exclusion_text != parsed.corrected_text:
-                parsed.corrected_text = exclusion_text
-                parsed.metadata = dict(parsed.metadata or {})
-                parsed.metadata["instructional_exclusion_repairs"] = exclusion_repairs[:8]
-            tail_text, tail_restore = restore_explicit_final_word_tail(packet, parsed.corrected_text)
-            if tail_restore and tail_text != parsed.corrected_text:
-                parsed.corrected_text = tail_text
-                parsed.metadata = dict(parsed.metadata or {})
-                parsed.metadata["explicit_final_word_tail_restore"] = tail_restore
         ok, reason = validate_adjudication_result(packet, parsed)
         if not ok:
             parsed.rejected = True

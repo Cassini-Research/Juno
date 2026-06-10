@@ -44,6 +44,11 @@ enum JunoEventKitGrantCache {
         }
     }
 
+    static func hasGrant(_ descriptor: JunoActionPermissionDescriptor) -> Bool {
+        guard let key = key(descriptor) else { return false }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
     static func setGrant(_ descriptor: JunoActionPermissionDescriptor, granted: Bool) {
         guard let key = key(descriptor) else { return }
         UserDefaults.standard.set(granted, forKey: key)
@@ -336,13 +341,14 @@ final class JunoActionPermissionStore: ObservableObject {
                 return .granted
             }
             optimisticEventKitGrants[descriptor] = nil
-            // Do not trust the persisted "ever granted" flag for startup
-            // status. TCC can be reset or tied to a different installed app
-            // identity while UserDefaults survives, which made Actions/Home
-            // show "Allowed" even though EventKit rejected the actual save.
-            // Only the short in-memory grant above bridges EventKit's
-            // immediate post-prompt lag.
-            JunoEventKitGrantCache.setGrant(descriptor, granted: false)
+            // After a successful EventKit prompt, macOS can still report
+            // notDetermined from the static authorization API on a later
+            // cold launch. This path is only used after Juno has recorded a
+            // real successful grant, and denied/restricted below always
+            // clears it, so a revoked permission is not hidden.
+            if JunoEventKitGrantCache.hasGrant(descriptor) {
+                return .granted
+            }
             return .notDetermined
         case .denied, .restricted, .notInstalled:
             optimisticEventKitGrants[descriptor] = nil

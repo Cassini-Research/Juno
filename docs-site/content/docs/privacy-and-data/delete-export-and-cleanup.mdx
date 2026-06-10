@@ -1,0 +1,66 @@
+---
+title: "Delete, Export, and Cleanup"
+description: "Delete local data or export diagnostics."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Delete, Export, and Cleanup
+
+Juno data is local, so deletion happens on this Mac.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/settings-real.png"
+  alt="Juno Settings page showing General section with Keep recordings for control and other retention settings."
+  caption="Use Settings to control history retention, audio retention, and cleanup."
+/>
+
+## Single-entry deletion
+
+| Action | Where | What it does |
+| --- | --- | --- |
+| Delete one transcript | History page → select entry → Delete | Removes that transcript and its linked recording (if one exists) |
+| Delete one Dictionary entry | Dictionary & Memory page → select entry → Delete | Removes that vocabulary, snippet, replacement, or style entry |
+| Remove a Per-app override | Per-app writing → app picker → remove app | Falls back to global defaults for that app |
+| Forget a custom style | Styles page → custom style → Delete | Removes that style; built-ins are not deletable |
+
+## Bulk deletion
+
+All in **Settings → Storage**:
+
+| Action | What it does |
+| --- | --- |
+| **Clear history** | Wipes every transcript entry and every linked recording. Not reversible. |
+| **Delete recordings** | Wipes all retained audio; transcripts stay intact. |
+| **Clean up now** | Runs the retention cleanup immediately (instead of waiting for the daily pass) — removes anything past your retention window. |
+
+These are immediate and irreversible. Confirm dialogs ask once before each.
+
+## Export (for support, not for migration)
+
+**Settings → Advanced → Diagnostics → Export diagnostics…** downloads a `.zip` of engine state. It's intended for support requests, not for moving data between Macs.
+
+The export contains diagnostic snapshots — no audio, no transcript content. If you want a record of your dictations, use the History page to copy individual entries.
+
+## Reset back to first launch
+
+If you want to wipe Juno completely (e.g., to test the onboarding flow):
+
+1. Quit Juno
+2. Delete `~/Library/Application Support/com.juno.shell/` (transcripts, recordings, memory, models)
+3. Delete `~/Library/Preferences/com.juno.shell.plist` (settings)
+4. Delete `~/Library/Logs/Juno/` (logs)
+5. Reopen Juno — onboarding restarts
+
+Full uninstall (Juno + data + permissions): see [Uninstall](/docs/troubleshooting/uninstall).
+
+## What's never deleted by these actions
+
+- Models in `~/Library/Application Support/com.juno.shell/models/` — those are large files that do not change with retention. Manage them in Settings → Models (Install/Repair) or by uninstalling.
+- The app binary itself — delete `/Applications/Juno.app` if you want it gone.
+- macOS permission grants — those are separate (see [Permissions Reset](/docs/troubleshooting/permissions-reset)).
+
+## What's never *kept* regardless of these actions
+
+- Sessions that ran in secure / password fields — those are never recorded in the first place
+- Audio when **Keep recordings for** is set to **Never** — discarded at the end of every session

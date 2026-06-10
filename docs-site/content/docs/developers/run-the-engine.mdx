@@ -1,0 +1,50 @@
+---
+title: "Run the Engine"
+description: "Run the local voice engine."
+audience: ["developer"]
+pageType: "how-to"
+---
+
+# Run the Engine
+
+Use replay and tests before live audio.
+
+## Demo stack
+
+```bash
+./scripts/run_demo_v2.sh
+```
+
+This starts the local preview streaming service and live runtime for testing. Development assets are stored under `.juno_v2_demo/`.
+
+## Workbench only
+
+```bash
+./scripts/run_workbench_v2.sh
+```
+
+Use this to test routes, history, memory, styles, notes, and runtime state without the full Mac app path.
+
+## Live engine paths
+
+The maintained live helper for the current app starts a resident MLX Whisper preview service, then starts the full Juno runtime against it:
+
+```bash
+./scripts/run_live_fast_v2.sh
+```
+
+This is the path to use for local live testing when you are not launching the packaged macOS app. It uses Whisper-large-v3-turbo for the live preview and final dictation lanes, with the preview service isolated so live checkpoints do not compete with the final writer path.
+
+There is also a legacy challenger launcher in the repo. Do not use it as the default docs or QA path unless you are intentionally comparing old preview behavior.
+
+## Replay path
+
+Replay should be the first path used for deterministic testing because it removes microphone and desktop-surface variables.
+
+```bash
+./scripts/run_engine_replay_v2.sh
+```
+
+## Latency logs
+
+Live helpers emit latency lines for committed utterances when latency logging is enabled. Keep the default on for QA runs unless you are intentionally reducing log noise.

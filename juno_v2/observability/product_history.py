@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS utterances (
     paste_kind TEXT,
     words INTEGER,
     processing_ms REAL,
-    final_transcription_ms REAL,
     language TEXT,
     language_mode TEXT,
     environment_profile TEXT,
@@ -54,7 +53,6 @@ CREATE INDEX IF NOT EXISTS idx_utterances_app ON utterances(app_bundle_id);
 # the column is missing — safe to run on every startup.
 _SCHEMA_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("actions_json", "ALTER TABLE utterances ADD COLUMN actions_json TEXT"),
-    ("final_transcription_ms", "ALTER TABLE utterances ADD COLUMN final_transcription_ms REAL"),
 )
 
 
@@ -194,11 +192,11 @@ class ProductHistoryStore:
                         app_bundle_id, app_name, window_title,
                         mode, surface_id, transcript, raw_transcript,
                         committed_text, corrected_text, paste_status, paste_kind,
-                        words, processing_ms, final_transcription_ms, language, language_mode, environment_profile,
+                        words, processing_ms, language, language_mode, environment_profile,
                         context_summary_json, context_used_json,
                         audio_path, audio_expires_at, replay_available, correction_count,
                         failure_reason, deleted_at, actions_json
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(utterance_id) DO UPDATE SET
                         updated_at = excluded.updated_at,
                         app_bundle_id = COALESCE(excluded.app_bundle_id, utterances.app_bundle_id),
@@ -210,7 +208,6 @@ class ProductHistoryStore:
                         raw_transcript = excluded.raw_transcript,
                         words = excluded.words,
                         processing_ms = excluded.processing_ms,
-                        final_transcription_ms = excluded.final_transcription_ms,
                         context_summary_json = excluded.context_summary_json,
                         context_used_json = excluded.context_used_json,
                         replay_available = MAX(excluded.replay_available, utterances.replay_available),
@@ -235,7 +232,6 @@ class ProductHistoryStore:
                         str(record.get("paste_kind") or "") or None,
                         int(record.get("words") or 0) or 0,
                         float(record.get("processing_ms") or 0) or 0.0,
-                        float(record.get("final_transcription_ms") or record.get("decode_ms") or 0) or 0.0,
                         str(record.get("language") or "") or None,
                         str(record.get("language_mode") or "") or None,
                         str(record.get("environment_profile") or "") or None,
@@ -288,7 +284,7 @@ class ProductHistoryStore:
                         """
                         SELECT utterance_id, created_at, updated_at, app_bundle_id, app_name, window_title,
                                mode, surface_id, transcript, raw_transcript, committed_text, corrected_text,
-                               paste_status, paste_kind, words, processing_ms, final_transcription_ms, language, language_mode,
+                               paste_status, paste_kind, words, processing_ms, language, language_mode,
                                environment_profile, context_summary_json, context_used_json,
                                audio_path, audio_expires_at, replay_available, correction_count, failure_reason,
                                actions_json
@@ -304,7 +300,7 @@ class ProductHistoryStore:
                         """
                         SELECT utterance_id, created_at, updated_at, app_bundle_id, app_name, window_title,
                                mode, surface_id, transcript, raw_transcript, committed_text, corrected_text,
-                               paste_status, paste_kind, words, processing_ms, final_transcription_ms, language, language_mode,
+                               paste_status, paste_kind, words, processing_ms, language, language_mode,
                                environment_profile, context_summary_json, context_used_json,
                                audio_path, audio_expires_at, replay_available, correction_count, failure_reason,
                                actions_json
@@ -324,18 +320,18 @@ class ProductHistoryStore:
         # 4:app_name 5:window_title 6:mode 7:surface_id 8:transcript
         # 9:raw_transcript 10:committed_text 11:corrected_text
         # 12:paste_status 13:paste_kind 14:words 15:processing_ms
-        # 16:final_transcription_ms 17:language 18:language_mode
-        # 19:environment_profile 20:context_summary_json 21:context_used_json
-        # 22:audio_path 23:audio_expires_at 24:replay_available
-        # 25:correction_count 26:failure_reason 27:actions_json
+        # 16:language 17:language_mode 18:environment_profile
+        # 19:context_summary_json 20:context_used_json
+        # 21:audio_path 22:audio_expires_at 23:replay_available
+        # 24:correction_count 25:failure_reason 26:actions_json
         for r in rows:
             ctx_used: dict[str, Any] = {}
             try:
-                ctx_used = json.loads(r[21] or "{}")
+                ctx_used = json.loads(r[20] or "{}")
             except (json.JSONDecodeError, ValueError):
                 ctx_used = {}
             actions_payload: list[dict[str, Any]] | None = None
-            raw_actions = r[27] if len(r) > 27 else None
+            raw_actions = r[26] if len(r) > 26 else None
             if raw_actions:
                 try:
                     decoded = json.loads(raw_actions)
@@ -363,17 +359,16 @@ class ProductHistoryStore:
                     "app_category": None,
                     **ctx_used,
                 },
-                "failure_reason": r[26],
+                "failure_reason": r[25],
                 "session_class": "insert",
                 "processing_ms": r[15],
-                "final_transcription_ms": r[16],
                 "words": r[14],
-                "replay_available": bool(r[24]),
+                "replay_available": bool(r[23]),
                 "paste_kind": r[13],
                 "paste_status": r[12],
-                "correction_count": r[25],
-                "audio_path": r[22],
-                "audio_expires_at": r[23],
+                "correction_count": r[24],
+                "audio_path": r[21],
+                "audio_expires_at": r[22],
             }
             if actions_payload is not None:
                 entry["actions"] = actions_payload

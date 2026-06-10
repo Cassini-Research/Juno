@@ -219,9 +219,7 @@ def build_canonical_engine(spec: CanonicalEngineBuildSpec) -> CanonicalEngineArt
     # Flagging the registration prevents warm_all() (which runs on the main
     # thread) from doing a wasted warm that would just be unloaded and
     # re-warmed on the worker.
-    _preview_warm_on_main_thread = preview_config.backend_name not in {
-        'qwen_asr',
-    }
+    _preview_warm_on_main_thread = True
     lifecycle.register_backend('preview_asr', preview_backend, metadata={
         'configured_backend': preview_config.backend_name,
         'model_path': str(preview_config.model_path),

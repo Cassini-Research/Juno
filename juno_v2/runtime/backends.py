@@ -4,7 +4,6 @@ from juno_v2.final.backends.base import FinalAsrBackend
 from juno_v2.final.backends.faster_whisper import FasterWhisperFinalBackend
 from juno_v2.final.backends.local_http_json import LocalHttpJsonFinalBackend
 from juno_v2.final.backends.mlx_whisper import MlxWhisperFinalBackend
-from juno_v2.final.backends.qwen_asr import QwenAsrFinalBackend
 from juno_v2.final.config import FinalAsrConfig
 from juno_v2.preview.backends.base import PreviewAsrBackend
 from juno_v2.preview.backends.faster_whisper import FasterWhisperPreviewBackend
@@ -38,8 +37,6 @@ def create_final_backend(config: FinalAsrConfig) -> FinalAsrBackend:
         return LocalHttpJsonFinalBackend(config)
     if backend == "mlx_whisper":
         return MlxWhisperFinalBackend(config)
-    if backend == "qwen_asr":
-        return QwenAsrFinalBackend(config)
     raise ValueError(f"Unsupported final backend: {config.backend_name}")
 
 

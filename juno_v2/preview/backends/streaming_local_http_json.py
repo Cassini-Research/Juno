@@ -18,7 +18,6 @@ class StreamingLocalHttpJsonPreviewBackend(PreviewAsrBackend):
 
     Expects a local HTTP service with:
       GET  /healthz
-      GET  /warm
       POST /preview_stream
 
     The backend keeps decoder state local to the service and uses utterance_id +
@@ -33,25 +32,20 @@ class StreamingLocalHttpJsonPreviewBackend(PreviewAsrBackend):
             raise ValueError('local_http_endpoint is required for StreamingLocalHttpJsonPreviewBackend')
 
     def warm(self) -> None:
-        self._get_status('/warm', strict=True)
+        self.healthcheck(strict=True)
 
     def healthcheck(self, *, strict: bool = False) -> bool:
-        payload = self._get_status('/healthz', strict=strict)
-        return bool(payload.get('ok', False))
-
-    def _get_status(self, path: str, *, strict: bool = False) -> dict:
-        health_url = self.config.local_http_endpoint.rstrip('/') + path
+        health_url = self.config.local_http_endpoint.rstrip('/') + '/healthz'
         req = request.Request(health_url, method='GET')
         try:
             with request.urlopen(req, timeout=self.config.local_http_timeout_sec) as resp:  # noqa: S310
                 payload = json.loads(resp.read().decode('utf-8'))
             ok = bool(payload.get('ok', False))
         except Exception:
-            payload = {}
             ok = False
         if strict and not ok:
-            raise RuntimeError(f'Local streaming preview ASR {path} failed')
-        return payload
+            raise RuntimeError('Local streaming preview ASR health check failed')
+        return ok
 
     def restart(self) -> None:
         # The local service owns decoder state; reset is expressed per utterance.

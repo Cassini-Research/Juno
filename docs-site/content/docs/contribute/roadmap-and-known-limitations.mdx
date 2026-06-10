@@ -1,0 +1,41 @@
+---
+title: "Roadmap and Known Limitations"
+description: "Current product boundaries."
+audience: ["user", "contributor", "developer"]
+pageType: "concept"
+---
+
+# Roadmap and Known Limitations
+
+These are current product boundaries, not bugs.
+
+## Current boundaries
+
+| Boundary | Implication |
+| --- | --- |
+| **macOS-only** | No iOS, no iPad, no Windows, no Linux. The shell is SwiftUI; the engine is x86/arm64 Python. |
+| **English-first language model coverage** | Auto-detect, English, Hindi + English, Mandarin Chinese, Spanish, Keep original. Other languages need either model expansion or a different shipped engine. |
+| **No cross-device sync** | Each Mac is its own island. History, vocabulary, and corrections do not sync via iCloud or any other channel. |
+| **Insertion only into safe targets** | Secure fields, remote-desktop windows, and apps that reject programmatic paste fall back to Copy Ready. This is a hard rule, not a roadmap item. |
+| **Voice Actions limited to Apple Reminders, Notes, Calendar** | No Slack, Linear, Things, Todoist, or third-party integrations. |
+| **No cloud option** | There is no "use a cloud model" toggle. Local-first is the architecture, not a default. |
+
+## Active work areas
+
+- Packaged engine distribution and update flow (smaller installs, less manual model management)
+- Better quiet-speech recognition without external mic dependency
+- Richer Dictionary & Memory UI (bulk import, export, share)
+- Per-app insertion-method tuning for known-problematic Electron and web apps
+- Faster Refining for the writing-engine path (Formal email, Structured notes, Polished rewrite)
+- Code-switching language pairs beyond Hindi + English
+- Cleaner crash/diagnostic capture in the support bundle
+
+## What we will not do
+
+- Add a cloud-processed mode, even opt-in
+- Send any user data to a server for model training
+- Add a "sync between Macs" feature that requires our infrastructure
+- Override secure-field protection for any reason
+- Add an always-listening / wake-word-without-shortcut mode
+
+If a surface is unsafe, Juno falls back to Copy Ready. Expanding to more surfaces never means weakening that rule.

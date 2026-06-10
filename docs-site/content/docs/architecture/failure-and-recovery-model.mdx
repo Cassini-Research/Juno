@@ -1,0 +1,52 @@
+---
+title: "Failure and Recovery Model"
+description: "Failure states and recovery paths."
+full: true
+---
+
+import { DiagramBlock } from '@/components/docs/DiagramBlock';
+
+# Failure and Recovery Model
+
+Each failure mode has a named HUD state and a recovery path.
+
+<DiagramBlock
+  title="Failure + recovery"
+  caption="Each named failure has a HUD state and a documented recovery path. Nothing fails silently."
+  takeaway="If something went wrong, the HUD tells you what; the linked troubleshooting page tells you how to fix it."
+>
+  <img src="/images/diagrams/architecture-failure-recovery.svg" alt="Failure and recovery model" style={{ width: '100%', height: 'auto' }} />
+</DiagramBlock>
+
+## How failure surfaces in the UI
+
+The HUD shows a named state for each failure (Checking microphone, Blocked, Error with engine offline, etc.) rather than a generic spinner. State transitions are constrained — Listening cannot appear before audio frames arrive, and Inserted cannot appear if paste was rejected. When transcription succeeds but insertion can't, the result is held as Copy Ready. Every Error state's HUD message links to the relevant troubleshooting page.
+
+## Failure modes
+
+| Failure | Where it surfaces | Recovery |
+| --- | --- | --- |
+| Microphone permission missing | HUD shows Checking microphone forever; Home → Permissions row | [Microphone troubleshooting](/docs/troubleshooting/microphone) |
+| Microphone granted, no audio frames | HUD stuck on Checking microphone | Check input device in System Settings → Sound, restart Juno |
+| Accessibility missing | HUD reaches Listening but sessions always end in Copy Ready | [Accessibility troubleshooting](/docs/troubleshooting/accessibility) |
+| Engine not reachable | Home shows Offline; shortcut won't open a session | Settings → Models → Repair, then [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected) |
+| Model download stalled | Setup step shows "Downloading models" indefinitely | Settings → Models → Repair |
+| Speech detected but no transcription | HUD stuck on Refining for more than 5s | Engine slow or not responding; Settings → Models, then Repair |
+| Secure field detected | HUD shows Blocked | Move to a normal text field — intentional behavior |
+| App rejects paste | HUD shows Copy Ready | [Insertion and Copy Ready troubleshooting](/docs/troubleshooting/insertion-and-copy-ready-output) |
+| User pressed Esc mid-session | HUD closes; no text appears | Intentional — cancellation must never produce a late paste |
+| Focus shifted mid-session | HUD shows Copy Ready instead of inserting | Keep the target field focused for the full session |
+| Update revoked permissions | Home → Permissions row turns red | [Permissions Reset](/docs/troubleshooting/permissions-reset) |
+| Multiple Juno copies installed, wrong one has permission | Permission shows granted but Juno reports missing | Launch only the `/Applications/Juno.app` copy that was granted |
+
+## HUD state machine
+
+The HUD's state at any moment is the single source of truth about what the system is doing. The state machine is defined in `JunoHUDState.swift` and exhaustively tested in `HUDStateMachineTests.swift`. Internal modules emit state hints; the state machine decides which transitions are legal and what to display.
+
+Transitions are constrained: Listening requires a reachable engine; Inserted requires a successful paste. The HUD's label corresponds 1:1 to the active pipeline state.
+
+See [HUD States](/docs/use-juno/hud-states) for the user-facing reference and [Dictation Lifecycle](/docs/architecture/dictation-lifecycle) for the full pipeline.
+
+## Escalation path
+
+**Settings → Advanced → Logs → Generate support bundle…** captures the engine log, the shell log, the recent HUD state transitions, and the last few session metadata blocks (no audio, no transcript content). The bundle is a `.zip` you can attach to a support request. See [Support Bundle](/docs/troubleshooting/support-bundle).

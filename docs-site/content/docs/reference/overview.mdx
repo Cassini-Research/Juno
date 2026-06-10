@@ -1,0 +1,52 @@
+---
+title: "Reference"
+description: "Reference index."
+---
+
+# Reference
+
+Use this section to look up settings, states, commands, actions, and models.
+
+## Quick index
+
+| Looking for | Page |
+| --- | --- |
+| Shortcut and HUD states | [Shortcuts and HUD](/docs/reference/shortcuts-and-hud) |
+| Every Settings section and control | [Settings Reference](/docs/reference/settings-reference) |
+| What's blocked, what's local, what's enforced | [Privacy Reference](/docs/reference/privacy-reference) |
+| History DB, recordings, replay, retention | [History and Recordings](/docs/reference/history-and-recordings) |
+| Hey Juno verbs and Actions integrations | [Actions Reference](/docs/reference/actions-reference) |
+| All six styles + selected-text edits | [Styles and Writing](/docs/reference/styles-and-writing) |
+| Symptom → fix lookup | [Troubleshooting Quick Reference](/docs/reference/troubleshooting-quick-reference) |
+| Every model Juno ships (with sizes and lane mapping) | [Models](/docs/reference/models) |
+| Architecture and module layout | [Architecture Overview](/docs/architecture/overview) |
+| Running the engine and shell locally | [Developer setup](/docs/developers/repo-overview) |
+
+## System
+
+| Requirement | Detail |
+| --- | --- |
+| macOS | 15 (Sequoia) or later |
+| Mac | Apple Silicon (M1 / M2 / M3 / M4 …); Intel Macs are out of scope |
+| Disk | ~3–5 GB for the local model bundle |
+| Account | None — no sign-in, no Apple ID, no card |
+| Cost | Free during the current period; no trial timer, no usage meter |
+
+## The everyday loop, in shortest form
+
+1. Click into a text field
+2. Press **Fn** (or your chosen shortcut)
+3. Speak — wait for the HUD to show Listening
+4. Pause naturally; polished text lands on each pause
+5. Press **Fn** again to finalize
+
+Full version: [Speak and Insert](/docs/use-juno/speak-and-insert).
+
+## Hard rules (not configurable)
+
+Enforced regardless of any user setting:
+
+- Secure / password fields → capture, context, history, recordings, learning, paste all forced off
+- Audio, transcripts, and corrections → never used to train any model
+- Network activity → model file downloads only; no telemetry, no usage data, no account check-in
+- Cancelled sessions → never produce a late paste

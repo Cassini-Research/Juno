@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 620" role="img" aria-label="Runtime architecture">
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#120e09" flood-opacity=".10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  </style>
+  <rect width="1280" height="620" rx="0" fill="#f7f8fa"/>
+  <rect x="22" y="22" width="1236" height="576" rx="14" fill="#ffffff" stroke="#d0d5dd" filter="url(#softShadow)"/>
+  <g>
+    <g>
+    <path d="M 214 315 C 245 315, 245 309, 276 309" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+<g>
+    <path d="M 460 309 C 506 309, 506 309, 552 309" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+<g>
+    <path d="M 762 309 C 807 309, 807 245, 852 245" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+<g>
+    <path d="M 762 309 C 807 309, 807 373, 852 373" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+<g>
+    <path d="M 1042 245 C 1067 245, 1067 309, 1092 309" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+<g>
+    <path d="M 1042 373 C 1067 373, 1067 309, 1092 309" fill="none" stroke="#1f2937" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  </g>
+    <g>
+    <rect x="82" y="278" width="132" height="74" rx="10" fill="#fff4ed" stroke="#e7c7a4" stroke-width="1.2"/>
+    <text class="" x="148" y="306.12" text-anchor="middle" font-size="22" font-weight="780" fill="#704316"><tspan x="148" dy="0">You</tspan></text>
+    <text class="" x="148" y="331.28" text-anchor="middle" font-size="14" font-weight="580" fill="#667085"><tspan x="148" dy="0">start dictation</tspan></text>
+  </g>
+<g>
+    <rect x="276" y="250" width="184" height="118" rx="10" fill="#101828" stroke="#101828" stroke-width="1.2"/>
+    <text class="" x="368" y="294.84000000000003" text-anchor="middle" font-size="22" font-weight="780" fill="#f8f2e7"><tspan x="368" dy="0">Juno app</tspan></text>
+    <text class="" x="368" y="318.15999999999997" text-anchor="middle" font-size="14" font-weight="580" fill="rgba(248,242,231,.78)"><tspan x="368" dy="0">shortcut, HUD,</tspan><tspan x="368" dy="16.8">permissions, safe</tspan><tspan x="368" dy="16.8">insertion</tspan></text>
+  </g>
+<g>
+    <rect x="552" y="250" width="210" height="118" rx="10" fill="#ffffff" stroke="#d0d5dd" stroke-width="1.2"/>
+    <text class="" x="657" y="294.84000000000003" text-anchor="middle" font-size="22" font-weight="780" fill="#101828"><tspan x="657" dy="0">Local voice engine</tspan></text>
+    <text class="" x="657" y="334.96" text-anchor="middle" font-size="14" font-weight="580" fill="#667085"><tspan x="657" dy="0">speech, writing, memory</tspan></text>
+  </g>
+<g>
+    <rect x="852" y="202" width="190" height="86" rx="10" fill="#ecfdf3" stroke="#b8d8ca" stroke-width="1.2"/>
+    <text class="" x="947" y="234.68" text-anchor="middle" font-size="22" font-weight="780" fill="#174d3c"><tspan x="947" dy="0">Safe insert</tspan></text>
+    <text class="" x="947" y="263.92" text-anchor="middle" font-size="14" font-weight="580" fill="#667085"><tspan x="947" dy="0">text lands at cursor</tspan></text>
+  </g>
+<g>
+    <rect x="852" y="330" width="190" height="86" rx="10" fill="#fff4ed" stroke="#e7c7a4" stroke-width="1.2"/>
+    <text class="" x="947" y="362.68" text-anchor="middle" font-size="22" font-weight="780" fill="#704316"><tspan x="947" dy="0">Copy Ready</tspan></text>
+    <text class="" x="947" y="391.92" text-anchor="middle" font-size="14" font-weight="580" fill="#667085"><tspan x="947" dy="0">blocked fields stay safe</tspan></text>
+  </g>
+<g>
+    <rect x="1092" y="250" width="136" height="118" rx="10" fill="#f2f4f7" stroke="#d0d5dd" stroke-width="1.2"/>
+    <text class="" x="1160" y="294.84000000000003" text-anchor="middle" font-size="22" font-weight="780" fill="#344054"><tspan x="1160" dy="0">Local data</tspan></text>
+    <text class="" x="1160" y="326.56" text-anchor="middle" font-size="14" font-weight="580" fill="#667085"><tspan x="1160" dy="0">history, settings,</tspan><tspan x="1160" dy="16.8">retention</tspan></text>
+  </g>
+
+  </g>
+  <text class="" x="640" y="562.4" text-anchor="middle" font-size="16" font-weight="640" fill="#667085"><tspan x="640" dy="0">The user sees Juno. The engine stays local and private. Unsafe destinations use Copy</tspan><tspan x="640" dy="19.2">Ready instead of a forced paste.</tspan></text>
+</svg>

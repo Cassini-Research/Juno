@@ -1,0 +1,15 @@
+{
+  "title": "Troubleshooting",
+  "pages": [
+    "overview",
+    "microphone",
+    "accessibility",
+    "transcription-accuracy",
+    "voice-engine-not-connected",
+    "insertion-and-copy-ready-output",
+    "history-and-recordings",
+    "permissions-reset",
+    "support-bundle",
+    "uninstall"
+  ]
+}

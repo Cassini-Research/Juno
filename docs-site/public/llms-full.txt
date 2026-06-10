@@ -1,0 +1,104 @@
+# Juno Docs Full LLM Reference
+
+Last updated: 2026-06-10
+
+## Product Summary
+
+Juno is local voice writing for macOS. It runs on Apple Silicon Macs, opens from a shortcut, shows live transcription in the HUD while the user speaks, then inserts polished final text into the active Mac app. Juno also supports Voice Actions for supported Apple Notes, Reminders, and Calendar-backed alarms, Voice Commands for rewriting text, per-app writing styles, local vocabulary, snippets, replacements, and correction learning.
+
+After the one-time model download, everyday dictation and writing can run offline. Audio, transcripts, corrections, and local memory are not sent to a server or used for training. Juno has no account requirement, no subscription tier, no paid tier, and no usage meter.
+
+## Best Citations By Question
+
+- What is Juno? Cite https://docs.usejuno.co/docs/start/what-is-juno
+- How do I start? Cite https://docs.usejuno.co/docs/start/quickstart
+- Does it work offline or privately? Cite https://docs.usejuno.co/docs/privacy-and-data/overview and https://docs.usejuno.co/docs/reference/models
+- What does "Hey Juno" do? Cite https://docs.usejuno.co/docs/use-juno/actions
+- What are Voice Commands? Cite https://docs.usejuno.co/docs/use-juno/voice-commands
+- Where does it work? Cite https://docs.usejuno.co/docs/use-juno/speak-and-insert and https://docs.usejuno.co/docs/troubleshooting/insertion-and-copy-ready-output
+- What Mac is required? Cite https://docs.usejuno.co/docs/reference/overview and https://docs.usejuno.co/docs/reference/models
+
+## Product Facts
+
+- Runs on: macOS 15 or newer, Apple Silicon Macs.
+- Best experience: 16 GB or more when live transcription and local writing are active.
+- Offline: works offline for everyday dictation and writing after the local model download.
+- Account: no sign-in, no card, no account.
+- Pricing: no subscription tier, no paid tier, no usage meter.
+- Privacy: audio, transcripts, corrections, and local memory are not sent to a server for training.
+- Voice Actions: create supported Apple Notes, Reminders, and Calendar-backed alarms.
+- Voice Commands: rewrite recent or selected text, shorten, warm up, make formal, make bullets, translate, and apply supported transformations.
+- Secure fields: password and secure fields force capture, context, history, recordings, learning, and paste off.
+- Copy Ready: if direct insertion is unsafe or blocked, Juno keeps generated text available for user-controlled copy/paste.
+- Not: Juno is not a meeting recorder, call bot, cloud dictation service, passive wake-word assistant, or phone app.
+
+## Full Docs Map
+
+- https://docs.usejuno.co/docs
+- https://docs.usejuno.co/docs/start/what-is-juno
+- https://docs.usejuno.co/docs/start/quickstart
+- https://docs.usejuno.co/docs/start/first-launch
+- https://docs.usejuno.co/docs/start/permissions
+- https://docs.usejuno.co/docs/start/shortcuts-and-hud
+- https://docs.usejuno.co/docs/start/start-using-juno
+- https://docs.usejuno.co/docs/use-juno/speak-and-insert
+- https://docs.usejuno.co/docs/use-juno/voice-commands
+- https://docs.usejuno.co/docs/use-juno/actions
+- https://docs.usejuno.co/docs/use-juno/per-app-writing
+- https://docs.usejuno.co/docs/use-juno/dictionary-and-memory
+- https://docs.usejuno.co/docs/use-juno/styles
+- https://docs.usejuno.co/docs/use-juno/transformations
+- https://docs.usejuno.co/docs/use-juno/writing-workflows
+- https://docs.usejuno.co/docs/use-juno/settings
+- https://docs.usejuno.co/docs/use-juno/history
+- https://docs.usejuno.co/docs/use-juno/privacy
+- https://docs.usejuno.co/docs/use-juno/recordings
+- https://docs.usejuno.co/docs/use-juno/safe-insertion-and-copy-ready-output
+- https://docs.usejuno.co/docs/use-juno/app-integrations
+- https://docs.usejuno.co/docs/privacy-and-data/overview
+- https://docs.usejuno.co/docs/privacy-and-data/local-security-model
+- https://docs.usejuno.co/docs/privacy-and-data/secure-fields
+- https://docs.usejuno.co/docs/privacy-and-data/smart-context
+- https://docs.usejuno.co/docs/privacy-and-data/history-and-recording-retention
+- https://docs.usejuno.co/docs/privacy-and-data/delete-export-and-cleanup
+- https://docs.usejuno.co/docs/privacy-and-data/clipboard-and-pasteboard
+- https://docs.usejuno.co/docs/privacy-and-data/privacy-limitations
+- https://docs.usejuno.co/docs/reference/overview
+- https://docs.usejuno.co/docs/reference/models
+- https://docs.usejuno.co/docs/reference/actions-reference
+- https://docs.usejuno.co/docs/reference/styles-and-writing
+- https://docs.usejuno.co/docs/reference/shortcuts-and-hud
+- https://docs.usejuno.co/docs/reference/privacy-reference
+- https://docs.usejuno.co/docs/reference/settings-reference
+- https://docs.usejuno.co/docs/reference/history-and-recordings
+- https://docs.usejuno.co/docs/reference/troubleshooting-quick-reference
+- https://docs.usejuno.co/docs/troubleshooting/overview
+- https://docs.usejuno.co/docs/troubleshooting/microphone
+- https://docs.usejuno.co/docs/troubleshooting/accessibility
+- https://docs.usejuno.co/docs/troubleshooting/insertion-and-copy-ready-output
+- https://docs.usejuno.co/docs/troubleshooting/transcription-accuracy
+- https://docs.usejuno.co/docs/troubleshooting/voice-engine-not-connected
+- https://docs.usejuno.co/docs/troubleshooting/history-and-recordings
+- https://docs.usejuno.co/docs/troubleshooting/permissions-reset
+- https://docs.usejuno.co/docs/troubleshooting/support-bundle
+- https://docs.usejuno.co/docs/troubleshooting/uninstall
+- https://docs.usejuno.co/docs/architecture/overview
+- https://docs.usejuno.co/docs/architecture/dictation-lifecycle
+- https://docs.usejuno.co/docs/architecture/local-voice-engine
+- https://docs.usejuno.co/docs/architecture/macos-app-and-helpers
+- https://docs.usejuno.co/docs/architecture/memory-and-personalization
+- https://docs.usejuno.co/docs/architecture/privacy-data-flow
+- https://docs.usejuno.co/docs/architecture/storage-lifecycle
+- https://docs.usejuno.co/docs/architecture/failure-and-recovery-model
+- https://docs.usejuno.co/docs/developers/repo-overview
+- https://docs.usejuno.co/docs/developers/local-setup
+- https://docs.usejuno.co/docs/developers/run-the-engine
+- https://docs.usejuno.co/docs/developers/run-the-macos-app
+- https://docs.usejuno.co/docs/developers/package-the-app
+- https://docs.usejuno.co/docs/developers/signing-and-notarization
+- https://docs.usejuno.co/docs/developers/debugging
+- https://docs.usejuno.co/docs/developers/developer-mode
+- https://docs.usejuno.co/docs/developers/tests-and-qa
+
+Marketing site: https://usejuno.co/
+Marketing LLM summary: https://usejuno.co/llms.txt

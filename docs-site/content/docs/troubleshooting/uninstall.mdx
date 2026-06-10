@@ -1,0 +1,94 @@
+---
+title: "Uninstall Juno"
+description: "Remove Juno and local data."
+---
+
+# Uninstall Juno
+
+Remove the app, permissions, and local data.
+
+---
+
+## Step 1 — Quit Juno completely
+
+Click the Juno menu bar icon → quit the app. If Juno does not appear in the menu bar, check the Dock or use Activity Monitor to confirm no Juno process is running.
+
+---
+
+## Step 2 — Delete the app
+
+Open Finder → Applications → drag Juno to the Trash, or right-click → Move to Trash.
+
+If you have multiple Juno builds (e.g., a development build and a release build), delete all of them now. Leaving a stale copy means its Accessibility permission stays registered, which can cause confusion if you reinstall later.
+
+**Do not empty the Trash yet** — complete the remaining steps first in case you need to verify the bundle identifier from the app copy.
+
+---
+
+## Step 3 — Revoke permissions
+
+Open **System Settings → Privacy & Security** and remove Juno from each section where it appears:
+
+| Permission | Where to look |
+| --- | --- |
+| Microphone | Privacy & Security → Microphone |
+| Accessibility | Privacy & Security → Accessibility |
+| Speech Recognition | Privacy & Security → Speech Recognition (if you enabled live captions) |
+| Automation | Privacy & Security → Automation (if you used Actions for Notes, Reminders, or Alarms) |
+
+To remove an entry: select Juno in the list and click the minus button, or toggle it off. If macOS does not allow removal from the list, toggling off is sufficient.
+
+---
+
+## Step 4 — Remove data and local storage
+
+Juno stores its data, models, and logs in your Library folder. Open Finder, press **Cmd+Shift+G**, and navigate to each path below.
+
+**Application support (history, recordings, memory, settings):**
+```
+~/Library/Application Support/com.juno.shell/
+```
+Delete the entire `com.juno.shell` folder. This removes dictation history, retained recordings, Smart Context memory, vocabulary, corrections, snippets, replacements, writing styles, and all settings.
+
+**Logs:**
+```
+~/Library/Logs/Juno/
+```
+Delete the `Juno` folder. This removes diagnostic logs.
+
+**Voice engine models (large files):**
+The local voice engine and its models are bundled inside or alongside the app. Deleting the app in Step 2 removes the bundled engine. If models were downloaded to a separate location, they appear in:
+```
+~/Library/Application Support/com.juno.shell/
+```
+The folder deleted above includes any separately stored model files.
+
+**Preferences:**
+```
+~/Library/Preferences/com.juno.shell.plist
+```
+Delete this file if it exists. This removes low-level system preferences stored outside the main data folder.
+
+---
+
+## Step 5 — Empty the Trash
+
+Once you have completed Steps 1–4, empty the Trash.
+
+---
+
+## After uninstalling
+
+macOS caches TCC (Transparency, Consent, and Control) permission states. After emptying the Trash, restarting your Mac ensures the permission database is cleanly updated and no stale references to Juno remain.
+
+---
+
+## If you are reinstalling, not permanently removing
+
+If your goal is to fix a broken install rather than remove Juno permanently:
+
+- **Do not revoke Accessibility** unless specifically asked to — revoking and re-granting means another quit-and-reopen cycle.
+- **Do not delete Application Support** unless you want a clean slate — this removes all your vocabulary, history, recordings, and settings.
+- The safest reinstall path is: quit Juno → replace the app binary → reopen → let the engine reconnect.
+
+For permission issues after reinstalling, see [Permissions Reset](/docs/troubleshooting/permissions-reset).

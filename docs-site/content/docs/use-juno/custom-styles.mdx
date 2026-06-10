@@ -1,0 +1,101 @@
+---
+title: "Custom Styles"
+description: "Create your own writing styles."
+---
+
+# Custom Styles
+
+Create a custom style when the built-in styles do not match your writing format.
+
+---
+
+## What a custom style is
+
+A custom style layers on top of a built-in style. You pick a base style, then add free-text instructions Juno applies to every dictation in that style.
+
+**Examples of what a custom style can do:**
+
+- Always write in second person, present tense, for blog posts.
+- Strip filler and structure Slack replies under 100 words.
+- Output only the corrected code with no commentary for code review comments.
+- Write like a product changelog entry: terse, active voice, no adjectives.
+- Format output as a JSON object with specific keys.
+- Apply your house writing constraints to every dictation.
+
+---
+
+## Creating a custom style
+
+Open **Styles -> New style** or use the custom style editor from the Juno popover.
+
+| Field | What it does |
+| --- | --- |
+| Style name | What appears in the style picker and Per-app writing. Make it specific: "Slack reply" not "casual." |
+| Base style | Which built-in behavior to start from. Polished rewrite and Default are the most flexible bases. |
+| Instructions | Free-text writing instructions. This is the most important field: be direct and specific about what you want. |
+| Enabled | Toggle the style on or off without deleting it. |
+
+---
+
+## Writing good instructions
+
+The instructions field runs before every dictation in this style. More specific instructions produce more predictable output.
+
+**Weak instruction:**
+> "Write casually."
+
+**Strong instruction:**
+> "Write as if texting a close colleague. No more than 3 sentences. Skip the greeting and sign-off. Use contractions. If a URL or name appears, keep it exactly as spoken."
+
+**Patterns that work:**
+
+- State the format explicitly: "Output as a bullet list with no header."
+- State constraints: "Maximum 50 words."
+- Name the audience: "Written for a technical reader who does not need context."
+- Name what to preserve: "Keep all proper nouns and product names exactly as I say them."
+- Name what to remove: "Remove filler phrases like basically, kind of, sort of, you know."
+- Name the register: "Professional but not stiff, the way a confident senior engineer writes."
+
+Start simple. Add a base behavior, use the style for a session, observe where output diverges from what you want, then add instructions targeting those divergences.
+
+---
+
+## Example custom styles worth building
+
+### Slack reply
+- Base: Casual chat
+- Instructions: "Direct, under 80 words, no greeting, no sign-off, punchy. If the message contains a question, answer it in the first sentence."
+
+### Daily standup
+- Base: Structured notes
+- Instructions: "Three bullets only: what I did yesterday, what I am doing today, any blockers. No introductory sentence."
+
+### Code comment
+- Base: Polished rewrite
+- Instructions: "Rewrite as a concise inline code comment. Imperative voice. No 'this function does'; just state the behavior. Maximum one line."
+
+### Changelog
+- Base: Formal email
+- Instructions: "Format as a changelog entry. Start with a past-tense verb: Added, Fixed, Improved, or Changed. No 'we' or 'I'. Maximum 25 words per entry."
+
+### Meeting notes
+- Base: Structured notes
+- Instructions: "Format as meeting notes. Decisions and action items as bullets. Include owner names and dates when mentioned. No filler."
+
+### Prompt-safe text
+- Base: Default
+- Instructions: "Format output as a single plain text block. Preserve all technical terms, variable names, and quoted strings exactly. No capitalization changes. No punctuation additions."
+
+---
+
+## Per-app style pinning
+
+Once you have a custom style, pin it to a specific app in **Per-app writing -> [App] -> Default style**. Every dictation in that app opens with that style. You can still switch mid-session; pinning sets the default, not a lock.
+
+---
+
+## Managing custom styles
+
+Styles can be renamed, edited, toggled off, or deleted from the custom style editor. Disabling a style removes it from the picker without losing the configuration. Deleting is permanent.
+
+If a style's instructions are producing unpredictable results, simplify the instructions. Remove constraints until output normalizes, then add them back one at a time.

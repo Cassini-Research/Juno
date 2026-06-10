@@ -84,13 +84,18 @@ def _preview_candidates_from_session_context_tape(tape: Any, *, limit: int = 24)
         selected = str(item.get("selected_text") or "").strip()
         before = str(item.get("focused_text_before") or item.get("focused_text") or "").strip()
         after = str(item.get("focused_text_after") or "").strip()
+        field_excerpt = str(item.get("field_text_excerpt") or "").strip()
         doc = str(item.get("focused_document_path") or item.get("focused_file_path") or "").strip()
-        key = (app.casefold(), title.casefold(), (selected or before or after).casefold())
+        key = (
+            app.casefold(),
+            title.casefold(),
+            (selected or before or after or field_excerpt).casefold(),
+        )
         if key in seen_snapshots:
             continue
         seen_snapshots.add(key)
-        chunks.extend([app, title, selected, before, after, doc])
-        for chunk in (title, selected, before, after, doc):
+        chunks.extend([app, title, selected, before, after, field_excerpt, doc])
+        for chunk in (title, selected, before, after, field_excerpt, doc):
             phrase_candidates.extend(
                 match.group(0).strip()
                 for match in re.finditer(
@@ -122,6 +127,89 @@ def _preview_candidates_from_session_context_tape(tape: Any, *, limit: int = 24)
         out.append(value)
         if len(out) >= limit:
             break
+    return out
+
+
+_ACTION_PREVIEW_WAKE_RE = re.compile(r"^\s*(?:hey\s+juno|juno)\b", re.IGNORECASE)
+_ACTION_PREVIEW_KIND_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "note",
+        re.compile(
+            r"\b(?:take|create|add|write|save)\s+(?:a\s+)?note\b|\bnote\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "reminder",
+        re.compile(r"\bremind(?:er|ers)?\b|\bremind\s+me\b", re.IGNORECASE),
+    ),
+    (
+        "alarm",
+        re.compile(r"\b(?:set\s+)?alarm\b", re.IGNORECASE),
+    ),
+)
+
+
+def _action_preview_display_text(committed_text: str, tail_text: str) -> str | None:
+    """Return a compact HUD status for wake-phrase action utterances.
+
+    The preview lane is acoustic text, but action utterances are not pasted as
+    dictation. Showing every partial action fragment in the committed HUD lane
+    makes successful multi-action requests look broken because overlapping
+    preview windows repeat note/reminder/alarm text. Keep this display-only:
+    final action extraction still runs from the final transcript.
+    """
+    combined = re.sub(" +", " ", f"{committed_text or ''} {tail_text or ''}").strip()
+    if not combined or _ACTION_PREVIEW_WAKE_RE.search(combined) is None:
+        return None
+
+    seen: set[str] = set()
+    found: list[tuple[int, str]] = []
+    for label, pattern in _ACTION_PREVIEW_KIND_PATTERNS:
+        match = pattern.search(combined)
+        if match is None or label in seen:
+            continue
+        seen.add(label)
+        found.append((match.start(), label))
+    if not found:
+        return "Hey Juno"
+    labels = [label for _, label in sorted(found, key=lambda item: item[0])]
+    return f"Hey Juno: {', '.join(labels)}"
+
+
+def _merge_action_preview_display_text(previous: str | None, current: str) -> str:
+    """Keep wake-action HUD status monotonic across overlapping preview chunks."""
+    if not previous:
+        return current
+    if current.startswith(previous):
+        return current
+    if previous.startswith(current):
+        return previous
+    prev_labels = _action_preview_display_labels(previous)
+    cur_labels = _action_preview_display_labels(current)
+    if not prev_labels:
+        return current if cur_labels else previous
+    if not cur_labels:
+        return previous
+    merged: list[str] = []
+    for label in [*prev_labels, *cur_labels]:
+        if label not in merged:
+            merged.append(label)
+    return f"Hey Juno: {', '.join(merged)}"
+
+
+def _action_preview_display_labels(text: str) -> list[str]:
+    match = re.match(r"^\s*Hey\s+Juno(?:\s*:\s*(?P<labels>.+))?\s*$", text or "", flags=re.IGNORECASE)
+    if match is None:
+        return []
+    labels = match.group("labels")
+    if not labels:
+        return []
+    out: list[str] = []
+    for raw in labels.split(","):
+        label = raw.strip().lower()
+        if label in {"note", "reminder", "alarm"} and label not in out:
+            out.append(label)
     return out
 from juno_core_v3.policy.surface_gate import SurfaceId
 from juno_core_v3.actions.timeparse import parse_when
@@ -1530,6 +1618,8 @@ class WorkbenchApp:
             max_workers=1,
             thread_name_prefix="juno-utterance-lifecycle",
         )
+        self._action_preview_display_lock = threading.Lock()
+        self._action_preview_display_by_utterance: dict[str, str] = {}
         try:
             from juno_v2.observability.actions_index import get_actions_index
 
@@ -1822,11 +1912,13 @@ class WorkbenchApp:
             "writer_enabled": True,
             "itn_enabled": True,
             "audio_save_enabled": True,
-            # When True the engine streams per-utterance preview
+            # When True (default) the engine streams per-utterance preview
             # decodes for the live HUD caption. When False the engine session
-            # skips preview-lane decode invocations to save CPU/GPU. Default
-            # is off; the macOS shell enables it only on eligible Macs.
-            "live_caption_enabled": _env_bool('JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED', False),
+            # skips preview-lane decode invocations to save CPU/GPU; the model
+            # remains downloaded and the resident streaming-preview service
+            # stays warm so toggling back on is cheap. Read once at session
+            # start; mutating mid-session is undefined.
+            "live_caption_enabled": True,
             "language_mode": "auto",
             "smart_context": True,
             "use_selected_text": True,
@@ -1851,10 +1943,6 @@ class WorkbenchApp:
                     defaults.update(raw)
         except Exception:
             pass
-        if 'JUNO_V2_LIVE_CAPTION_START_ENABLED' in os.environ:
-            defaults["live_caption_enabled"] = _env_bool('JUNO_V2_LIVE_CAPTION_START_ENABLED', False)
-        if not _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True):
-            defaults["live_caption_enabled"] = False
         return defaults
 
     def _persist_settings(self) -> None:
@@ -2043,17 +2131,12 @@ class WorkbenchApp:
         streaming-preview service, and the lifecycle registration of the
         preview backend are all unchanged.
         """
-        allowed = _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True)
-        enabled = bool(enabled) and allowed
-        self._settings["live_caption_enabled"] = enabled
+        self._settings["live_caption_enabled"] = bool(enabled)
         self._persist_settings()
         runner = getattr(self, "dictation_runner", None)
         if runner is not None and hasattr(runner, "preview_decode_enabled"):
-            runner.preview_decode_enabled = enabled
-        out = {"ok": True, "live_caption_enabled": enabled}
-        if not allowed:
-            out["disabled_reason"] = "host_not_eligible"
-        return out
+            runner.preview_decode_enabled = bool(enabled)
+        return {"ok": True, "live_caption_enabled": bool(enabled)}
 
     def broker_settings_set_retention(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         def _parse_policy(key: str, *, allow_days: bool = True) -> str | None:
@@ -4063,13 +4146,6 @@ class WorkbenchApp:
         model to the wrong thread and the next chunk crashes with
         ``RuntimeError: There is no Stream(gpu, 0) in current thread``.
         """
-        if not bool(self._settings.get("live_caption_enabled", False)):
-            self.recorder.record(
-                TraceKind.ASR_PREVIEW,
-                "broker_preview_warm_skipped",
-                {"reason": "live_caption_disabled"},
-            )
-            return {"ok": True, "skipped": True, "reason": "live_caption_disabled"}
         runner = getattr(self, "dictation_runner", None)
         backend = getattr(runner, "preview_backend", None) if runner else None
         if backend is None:
@@ -4105,7 +4181,8 @@ class WorkbenchApp:
         The macOS shell streams ~120ms PCM frames to this endpoint while
         the user is dictating. Each call returns the cumulative-utterance
         partial text the preview backend produces for that chunk. The
-        shell renders that text directly in the HUD — no SFSpeech.
+        shell renders that text directly in the HUD — no Apple Speech
+        intermediate.
 
         Stateful per ``utterance_id`` via ``decode_seq``; the first chunk
         sends ``decode_seq=0`` which resets decoder state. The last
@@ -4121,26 +4198,7 @@ class WorkbenchApp:
         if not uid:
             return {"ok": False, "error": "missing_utterance_id"}
         root_uid = str(payload.get("root_utterance_id") or uid).strip() or uid
-        if not bool(self._settings.get("live_caption_enabled", False)):
-            self.recorder.record(
-                TraceKind.ASR_PREVIEW,
-                "broker_preview_chunk_skipped",
-                {
-                    "utterance_id": uid,
-                    "root_utterance_id": root_uid,
-                    "reason": "live_caption_disabled",
-                    "is_final": bool(payload.get("is_final") or False),
-                },
-            )
-            self._record_utterance_lifecycle(
-                uid,
-                {
-                    "event": "preview_chunk_skipped",
-                    "root_utterance_id": root_uid,
-                    "reason": "live_caption_disabled",
-                    "is_final": bool(payload.get("is_final") or False),
-                },
-            )
+        if not bool(self._settings.get("live_caption_enabled", True)):
             return {
                 "ok": True,
                 "text": "",
@@ -4236,6 +4294,12 @@ class WorkbenchApp:
                 except Exception:
                     preview_context_payload = {}
             preview_context_payload["language_decision"] = language_decision
+            # One bias decision layer for all lanes: the plan's phrases are
+            # already screen-first + family-deduped. The HUD consumes them as
+            # evidence-gated repair terms (never as a generative prompt).
+            plan_phrases = list(getattr(preview_plan, "bias_phrases", None) or [])
+            if plan_phrases:
+                preview_context_payload["preview_personalization_terms"] = plan_phrases[:24]
             raw_memory_summary = plan_metadata.get("memory_packet_summary", {})
             preview_context_payload["memory_packet_summary"] = (
                 dict(raw_memory_summary) if isinstance(raw_memory_summary, dict) else {}
@@ -4329,10 +4393,30 @@ class WorkbenchApp:
         raw_meta = dict(getattr(result, "metadata", {}) or {})
         # LocalAgreement-2 contract: the preview-service emits a stable
         # ``committed_text`` (never shrinks) plus an unstable ``tail_text``.
-        # The broker is a thin passthrough — no heuristic filter layer.
         # ``text`` is the combined committed + tail string for legacy callers.
+        #
+        # Wake-phrase utterances keep streaming as ordinary dictation. The
+        # earlier "Hey Juno: <kinds>" status takeover replaced the committed
+        # lane and blanked the tail, which froze the HUD for the rest of the
+        # utterance and leaked the synthetic status string into the live
+        # transcript hint. The detected action kinds stay available to
+        # observers as display metadata only.
         committed_text = str(raw_meta.get("committed_text") or "")
         tail_text = str(raw_meta.get("tail_text") or "")
+        action_preview_text = _action_preview_display_text(committed_text, tail_text)
+        if action_preview_text is not None:
+            action_preview_text = self._remember_action_preview_display(
+                state_uid,
+                action_preview_text,
+                final_chunk=bool(root_final),
+            )
+            raw_meta["display_override"] = {
+                "kind": "action_status",
+                "text": action_preview_text,
+                "display_only": True,
+            }
+        elif root_final:
+            self._clear_action_preview_display(state_uid)
         if committed_text and tail_text:
             text = f"{committed_text} {tail_text}"
         else:
@@ -4443,6 +4527,7 @@ class WorkbenchApp:
                 "tail_commit_quarantine_events": raw_meta.get("tail_commit_quarantine_events"),
                 "committed_replay_suppressed_events": raw_meta.get("committed_replay_suppressed_events"),
                 "committed_replay_agreement_drops": raw_meta.get("committed_replay_agreement_drops"),
+                "commit_draft_horizon_demotions": raw_meta.get("commit_draft_horizon_demotions", 0),
                 "committed_boundary_letter_strips": raw_meta.get("committed_boundary_letter_strips"),
                 "tail_no_speech_prob": raw_meta.get("tail_no_speech_prob"),
                 "last_segment_no_speech_prob": raw_meta.get("last_segment_no_speech_prob"),
@@ -4601,6 +4686,26 @@ class WorkbenchApp:
     # The remaining text-state helpers (_preview_last_text_*) are orphaned dead
     # code; they'll be removed in a separate cleanup pass once we confirm
     # nothing else depends on them.
+
+    def _remember_action_preview_display(
+        self,
+        uid: str,
+        current: str,
+        *,
+        final_chunk: bool,
+    ) -> str:
+        with self._action_preview_display_lock:
+            previous = self._action_preview_display_by_utterance.get(uid)
+            merged = _merge_action_preview_display_text(previous, current)
+            if final_chunk:
+                self._action_preview_display_by_utterance.pop(uid, None)
+            else:
+                self._action_preview_display_by_utterance[uid] = merged
+            return merged
+
+    def _clear_action_preview_display(self, uid: str) -> None:
+        with self._action_preview_display_lock:
+            self._action_preview_display_by_utterance.pop(uid, None)
 
     def _preview_chunk_lock_for(self, uid: str):
         import threading
@@ -5603,9 +5708,8 @@ class WorkbenchApp:
 
         The response also includes ``recognition_hints`` — a list of
         domain-specific terms (identifiers, filenames, lexicon entries)
-        that the shell passes to ``SFSpeechRecognizer.contextualStrings``
-        so live partial transcription is biased toward the user's current
-        surface vocabulary.
+        that the shell passes into the local preview/final pipeline so
+        transcription is biased toward the user's current surface vocabulary.
         """
         decision = self.capability.decide()
         self.recorder.record(
@@ -5646,9 +5750,8 @@ class WorkbenchApp:
         1. Technical identifiers extracted from the focused text / selected text.
         2. The user's top lexicon terms and session entities from memory.
 
-        ``SFSpeechRecognizer.contextualStrings`` biases Apple's on-device
-        ASR toward these strings during live dictation, improving accuracy
-        for domain-specific vocabulary before Whisper's final pass.
+        The local preview/final pipeline uses these strings as surface
+        vocabulary evidence for domain-specific terms before final formatting.
         """
         from juno_v2.context.provider import _extract_candidates
 
@@ -5879,11 +5982,11 @@ class WorkbenchApp:
         shell_timeline = self._sanitize_shell_timeline(shell_timeline)
         language_mode = language or str(self._settings.get("language_mode") or "auto")
         if language_mode == "auto":
-            # Whisper auto-detect picks the wrong language on short / voice-processed
-            # clips and emits autoregressive loops (e.g. "T segurança" × 166). Force
-            # English so the user-facing default is reliable; non-English speakers
-            # pick their language explicitly in Settings → Language & speech.
-            language_for_asr = "en"
+            # Keep Auto as a real ASR auto-detect request. The backends still
+            # apply the existing silence / low-confidence guards, but forcing
+            # English here erased Hindi or mixed-language source text before
+            # History could show what the user actually spoke.
+            language_for_asr = None
         elif language_mode == "keep_original":
             language_for_asr = None
         elif language_mode.startswith("pair:"):
@@ -6003,10 +6106,6 @@ class WorkbenchApp:
                 "scheduler_queue_wait_ms": scheduled.queue_wait_ms,
                 "scheduler_worker_service_ms": scheduled.worker_service_ms,
                 "mlx_lock_wait_ms": scheduled.mlx_lock_wait_ms,
-                "final_transcription_ms": float(
-                    out.get("final_transcription_ms") or out.get("decode_ms") or 0.0
-                ),
-                "audio_duration_ms": float(out.get("audio_duration_ms") or 0.0),
                 "prompt_chars": metadata_for_scheduler.get("prompt_chars"),
                 "output_tokens": metadata_for_scheduler.get("output_tokens")
                 or metadata_for_scheduler.get("output_tokens_estimate"),
@@ -6085,7 +6184,7 @@ class WorkbenchApp:
         host_hints = None
         if isinstance(payload.get("host_hints"), dict):
             host_hints = HostResourceHints.from_dict(payload["host_hints"])
-        return self.broker_dictation_transcribe(
+        out = self.broker_dictation_transcribe(
             b"live-text-correction",
             language=payload.get("language") or payload.get("language_mode"),
             app_bundle_id=payload.get("app_bundle_id"),
@@ -6104,6 +6203,14 @@ class WorkbenchApp:
             else None,
             shell_timeline=payload.get("shell_timeline") if isinstance(payload.get("shell_timeline"), dict) else None,
         )
+        if isinstance(out, dict):
+            meta = out.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
+                out["metadata"] = meta
+            meta["live_correction"] = True
+            meta["live_correction_skipped"] = False
+        return out
 
     def _live_corrector_ready_for_live_request(self) -> bool:
         svc = getattr(self, "live_corrector_service", None)
@@ -6427,14 +6534,6 @@ class WorkbenchApp:
                 "snippets": len(self.memory.snippets.raw()),
             },
         }
-
-    def broker_memory_clear_all(self, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
-        err = self._memory_required()
-        if err:
-            return err
-        with self._lock:
-            counts = self.memory.clear_all()
-        return {"ok": True, **counts}
 
     def broker_memory_vocab_list(self) -> Dict[str, Any]:
         err = self._memory_required()
@@ -6929,8 +7028,6 @@ class WorkbenchRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(HTTPStatus.OK, self.app.broker_storage_prune_all_audio())
         if path == "/api/broker/history/clear_all":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_clear_all())
-        if path == "/api/broker/memory/clear_all":
-            return self._send_json(HTTPStatus.OK, self.app.broker_memory_clear_all())
         if path == "/api/broker/history/cancel_draft":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_cancel_draft(payload))
         if path == "/api/broker/history/reprocess":

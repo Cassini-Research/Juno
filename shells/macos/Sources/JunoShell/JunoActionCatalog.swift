@@ -25,6 +25,7 @@ struct JunoActionDescriptor: Identifiable, Hashable {
     let displayName: String
     let pluralName: String
     let symbolName: String
+    let nativeBundleIdentifier: String
     let accent: Color
     /// One-line value prop for cards.
     let blurb: String
@@ -44,8 +45,9 @@ extension JunoActionDescriptor {
         displayName: "Reminder",
         pluralName: "Reminders",
         symbolName: "bell.badge",
+        nativeBundleIdentifier: "com.apple.reminders",
         accent: Color(red: 0.95, green: 0.55, blue: 0.20),
-        blurb: "Time-based pings that ring through Apple Reminders.",
+        blurb: "Time-based pings that ring through Reminders.",
         activatePhrases: [
             "remind me",
             "reminder",
@@ -66,8 +68,9 @@ extension JunoActionDescriptor {
         displayName: "Note",
         pluralName: "Notes",
         symbolName: "note.text",
+        nativeBundleIdentifier: "com.apple.Notes",
         accent: Color(red: 0.95, green: 0.78, blue: 0.30),
-        blurb: "Saved to a folder called \u{201C}Juno\u{201D} in Apple Notes.",
+        blurb: "Saved to a folder called \u{201C}Juno\u{201D} in Notes.",
         activatePhrases: [
             "take a note",
             "make a note",
@@ -90,8 +93,9 @@ extension JunoActionDescriptor {
         displayName: "Alarm",
         pluralName: "Alarms",
         symbolName: "alarm",
+        nativeBundleIdentifier: "com.apple.iCal",
         accent: Color(red: 0.55, green: 0.45, blue: 0.95),
-        blurb: "Saved as one-shot Calendar alerts so they ring even when Juno is closed.",
+        blurb: "Alarms that ring even when Juno is closed.",
         activatePhrases: [
             "set an alarm",
             "alarm",

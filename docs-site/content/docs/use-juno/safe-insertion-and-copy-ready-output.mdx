@@ -1,0 +1,53 @@
+---
+title: "Insertion and Copy Ready"
+description: "Direct insertion and copy fallback."
+---
+
+# Safe Insertion and Copy Ready
+
+Juno inserts text only when the destination is safe. Otherwise it shows **Copy Ready**.
+
+## When Juno inserts directly
+
+All of these must be true:
+
+- The focused app exposes a normal editable text field
+- Accessibility permission is granted
+- The field is not a secure / password-type input
+- The session was not cancelled
+- The focus did not change during the session
+- The destination accepts programmatic paste
+
+If any of these fails, the HUD shows Copy Ready instead.
+
+## When Juno uses Copy Ready
+
+| Situation | What's happening |
+| --- | --- |
+| Secure / password-like field | Juno blocks capture, context, learning, history, recording save, and paste — all forced off for the session. The HUD shows **Blocked**, not Copy Ready. |
+| Accessibility missing | Juno cannot safely inspect or write to the focused field. |
+| App changed focus mid-session | The destination at session start and at finish may not be the same place. |
+| Cancelled session (Esc) | A cancelled session must never produce a late paste. |
+| App rejects programmatic paste | Some Electron apps, browser embedded editors, and remote-desktop clients silently transform or discard pasted text. Juno detects this and falls back. |
+| Remote desktop / VM window | Juno cannot insert into a remote session at all. Copy Ready is the only path. |
+
+## Selected text is stricter
+
+When a session starts with text already highlighted (for use with Polished rewrite or Commands), Juno waits for the **final** result before replacing the selection. Partial commits do not overwrite selected text during the rewrite.
+
+The flow: select, press shortcut, dictate the transformation ("make this tighter," "rewrite as bullets"), press again. Selection stays intact until the final result is ready, then it gets replaced.
+
+## What Copy Ready means
+
+Copy Ready means transcription succeeded but insertion was skipped. Press ⌘C or click the copy button in the HUD, then paste manually.
+
+For apps where Copy Ready is the correct outcome — remote desktops, password managers, full-screen exclusive games — use it as the workflow. For apps where it is unexpected, troubleshoot.
+
+## Reducing unexpected Copy Ready
+
+1. **Check Accessibility** — System Settings → Privacy & Security → Accessibility → Juno is on. Quit and reopen Juno after granting.
+2. **Test in Notes** — open Apple Notes, click into a blank field, dictate a sentence. If it inserts there, the problem is the original app.
+3. **Check the field type** — confirm whether it is a normal text field or an embedded web editor / Electron component. Some fields do not accept paste.
+4. **Configure the app in Per-app writing** — if one specific app always shows Copy Ready, that's an app behavior. Set its expectations accordingly.
+
+For the full diagnostic flow when insertion is failing, see [Insertion and Copy Ready troubleshooting](/docs/troubleshooting/insertion-and-copy-ready-output).

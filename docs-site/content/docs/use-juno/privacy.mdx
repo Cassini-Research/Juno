@@ -1,0 +1,53 @@
+---
+title: "Privacy"
+description: "Local storage and privacy controls."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Privacy
+
+Privacy shows what is stored locally and gives one-click controls to clear it.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/privacy-real.png"
+  alt="Juno Privacy page. Headline: Everything stays on your Mac. Shows current dictation history count and audio recordings count, each with Clear and Delete buttons."
+  caption="Review what Juno stores locally and clear retained data in one place."
+/>
+
+## What is on the page
+
+**Headline — "Everything stays on your Mac."**
+No cloud, no account. Audio, transcripts, vocabulary, corrections, and settings all live on this Mac.
+
+**Audio preview row.**
+A waveform of the most recent session with its transcript displayed alongside. The audio shown was never uploaded.
+
+**On this Mac, right now.**
+A two-row counter showing exactly what is locally retained at this moment:
+
+- **Dictation history** — the count of transcripts currently in History. Click **Clear** to wipe them all immediately.
+- **Audio recordings** — the count of retained audio files. Click **Delete** to remove all audio (transcripts stay; only the audio is removed).
+
+These actions are immediate and not reversible. They obey retention settings.
+
+**Read the full privacy policy.**
+Link to the full written policy. Use this when you need to point a teammate or a compliance reviewer at the exact wording.
+
+## What is enforced regardless of any setting
+
+These are product rules, not optional toggles:
+
+- **Secure fields block everything.** Any field macOS reports as a password input forces context, learning, history, recording save, and paste off for that session. The HUD shows **Blocked**, not Listening.
+- **No training on your data.** Your audio, transcripts, corrections, and Dictionary & Memory entries are never used to train models. There is no opt-in.
+- **No account, no cloud signup.** Juno does not have a server-side account system. You cannot accidentally share data by being signed in.
+- **Audio for transcription is held in memory, not on disk, until you confirm retention.** If Recordings is set to Never, audio is discarded the moment transcription finishes.
+
+## When to come here
+
+- After dictating something sensitive — confirm it is not in History, or click Clear.
+- Before handing your Mac to someone else — check the counts, clear if needed.
+- When introducing Juno to a teammate or compliance reviewer — Privacy is the one-screen summary of local data handling.
+- For compliance review, use the retention counters and policy link to explain where audio and transcripts are stored.
+
+For the deeper policy and the per-app override controls, see [Privacy and Data Overview](/docs/privacy-and-data/overview) and [Per-app writing](/docs/use-juno/per-app-writing).

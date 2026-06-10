@@ -1,0 +1,39 @@
+---
+title: "Troubleshooting"
+description: "Fix common Juno issues."
+---
+
+# Troubleshooting
+
+Start with permissions, microphone, engine, insertion, then app behavior.
+
+## Fast routing table
+
+| Symptom | Start here |
+| --- | --- |
+| HUD never appears | Check shortcut settings and whether Juno is running. |
+| HUD appears but never listens | Open **Microphone**. |
+| Text is generated but not inserted | Open **Accessibility** and **Insertion / Copy Ready**. |
+| Transcription produces wrong words or unexpected text | Open **Transcription Accuracy**. |
+| Juno says the voice engine is unavailable | Open **Voice Engine Not Connected**. |
+| History is missing | Open **History and Recordings**. |
+| macOS shows permission granted but Juno disagrees | Open **Permissions Reset**. |
+| You need help reporting a bug | Open **Support Bundle**. |
+
+## The clean test
+
+Before changing advanced settings, run the clean test:
+
+1. Quit and reopen Juno.
+2. Open Notes or Mail.
+3. Click into a normal blank text field.
+4. Press Fn / Globe once.
+5. Say: “This is a Juno test.”
+6. Press Fn / Globe again.
+7. Confirm whether the result is inserted, Copy Ready, or blocked.
+
+If the clean test works, the issue is probably specific to the original app, field, shortcut, or privacy override. If the clean test fails, follow the symptom-specific pages in this section.
+
+## Avoid these resets until the affected layer is identified
+
+Do not reset all permissions, delete models, clear history, or enable Developer mode before identifying which layer failed.

@@ -1,0 +1,9 @@
+flowchart LR
+    Session["Dictation session"] --> SQLite["Product history SQLite"]
+    Session --> Audio["Date-partitioned audio files"]
+    Session --> Runtime["Runtime token, socket, endpoint metadata"]
+    Session --> Logs["Workbench logs and support bundle inputs"]
+    SQLite --> Cleanup["Retention cleanup and delete flows"]
+    Audio --> Cleanup
+    Runtime --> Cleanup
+    Logs --> Cleanup

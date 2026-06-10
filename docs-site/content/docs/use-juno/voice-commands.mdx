@@ -1,0 +1,94 @@
+---
+title: "Voice Commands"
+description: "Edit text by voice."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Voice Commands
+
+Use short commands to edit recent or selected text.
+
+## Rewrite recent text
+
+These commands change the wording or structure of the last passage. Each uses Juno's local writing engine.
+
+| Say | What happens |
+| --- | --- |
+| **`warmer`** / `make that warmer` | Softens the register |
+| **`shorter`** / `make that shorter` | Compresses to the essentials |
+| **`bullets`** / `turn that into bullets` | Restructures the passage as a bulleted list |
+| **`more formal`** / `make that more formal` | Rewrites in a more formal register |
+
+Commands can be combined:
+
+> *"Make that shorter, then turn it into bullets, then translate that to Spanish."*
+
+The last passage is compressed, restructured as a list, and translated.
+
+The full library:
+
+| Say | What happens |
+| --- | --- |
+| `fix that` | Cleans up grammar, punctuation, and light wording |
+| `make that shorter` | Tightens the text to its core meaning |
+| `make that longer` | Adds more detail |
+| `make that clearer` | Rewrites the text to read more cleanly |
+| `make that more formal` | Lifts the tone |
+| `make that more casual` | Loosens the tone |
+| `make that warmer` | Softens to a more personal register |
+| `turn that into bullets` | Rewrites the passage as a bulleted list |
+| `turn that into a numbered list` | Rewrites the passage as a numbered list |
+| `translate that to Spanish` | Translates into the language you name (Mandarin, Hindi, French, German, etc.) |
+| `replace onboarding with setup` | Targeted find/replace inside the recent text |
+| `delete the last sentence` | Removes the most recent full sentence |
+| `delete the last paragraph` | Removes the most recent paragraph |
+
+If you started the session with text already highlighted, every command above operates on that selection instead of the last sentence dictated.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/voice-commands-real.png"
+  alt="Juno Voice Commands page showing in-moment commands and edit-what-you-just-said commands"
+  caption="Use short commands to edit recent text or rewrite a selected passage."
+/>
+
+## Commands during dictation
+
+Instant commands are recognized when the phrase finishes and do not require a writing-engine pass.
+
+| Say | What happens |
+| --- | --- |
+| `scratch that` | Erases the current sentence |
+| `undo that` | Undoes Juno's last typed change |
+| `delete that` | Deletes the last thing Juno typed |
+| `delete last word` | Erases the most recent word |
+| `delete last two words` | Erases the last two words |
+| `delete last sentence` | Erases the last full sentence |
+| `new line` | Inserts a line break |
+| `new paragraph` | Inserts a paragraph break |
+| `next bullet` | Starts the next bulleted item |
+| `next number` | Starts the next numbered item |
+| `open quote` | Inserts an opening quotation mark |
+| `close quote` | Inserts a closing quotation mark |
+
+## Instant vs engine commands
+
+Deletions, line breaks, and bullet starts execute immediately. Rewrite commands such as `make that shorter`, `turn that into bullets`, and `translate that to...` route through the local **writing engine** and take additional processing time.
+
+If the writing engine is unavailable (still warming after a fresh install, model file failed), instant commands still work; engine commands return a brief notice. See [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected).
+
+## Voice Commands vs Hey Juno
+
+Two different surfaces, often confused:
+
+| Goal | What to say | Where it lands |
+| --- | --- | --- |
+| Delete the latest phrase | `scratch that` | The current text field, instantly |
+| Start a bullet | `next bullet` | The current text field |
+| Rewrite the last passage | `make that shorter` | The current text field (engine pass) |
+| Translate the last passage | `translate that to Spanish` | The current text field |
+| Create a reminder | `Hey Juno, remind me to call Sarah at 6pm` | Apple Reminders |
+| Take a note | `Hey Juno, take a note about the standup outcomes` | Apple Notes (Juno folder) |
+| Multiple things at once | `Hey Juno, remind me to call Sarah at 6 and take a note about the proposal` | Reminders + Notes — see [Actions](/docs/use-juno/actions) for the compound grammar |
+
+Voice Commands stay inside the current field. Actions create items in Apple apps. Both can be used in the same workflow.

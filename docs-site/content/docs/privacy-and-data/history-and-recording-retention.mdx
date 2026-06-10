@@ -1,0 +1,72 @@
+---
+title: "History Retention"
+description: "Transcript and audio retention."
+---
+
+# History and Recording Retention
+
+Transcript history and audio recordings have separate retention windows.
+
+## Defaults
+
+| Data | Default window | Available choices |
+| --- | --- | --- |
+| Transcript history | **90 days** | 7 / 30 / 90 / Forever / Never |
+| Recordings | **30 days** | 7 / 30 / Forever / Never |
+
+## Where to change them
+
+- **Transcripts** — Settings → Storage → **Keep history for**
+- **Recordings** — Settings → General → **Keep recordings for**
+
+Changes apply on the next daily cleanup pass. To enforce immediately, click **Settings → Storage → Clean up now**.
+
+## How they interact
+
+History and recordings are stored separately and have independent lifecycles:
+
+| History | Recordings | Result |
+| --- | --- | --- |
+| 90 days | 30 days | Transcripts kept 90 days; audio older than 30 days is gone (replay disabled but transcript stays). |
+| 90 days | Off | Transcripts kept; no audio retained. Replay never available. |
+| Off | Off | Nothing retained after a session ends. |
+| Forever | Forever | Everything kept until you delete it explicitly. |
+
+Deleting a History entry **also** deletes the linked recording, regardless of recording retention. Deleting via Settings → Storage → Delete recordings does NOT delete transcripts.
+
+## On disk
+
+- Transcripts: `~/Library/Application Support/com.juno.shell/Workbench/history.sqlite`
+- Recordings: `~/Library/Application Support/com.juno.shell/Workbench/recordings/` (one `.m4a` or `.wav` per session)
+
+Don't edit these directly — use the in-app controls. Manual deletion leaves orphaned database rows referencing files that no longer exist.
+
+## Per-app overrides
+
+You can disable history or recordings for a specific app without changing global defaults. This is useful for client work, password managers, terminals, or any app where a local record is not appropriate.
+
+Configure in **Per-app writing → [your app] → Save history** / **Keep recordings**. Per-app settings can only make retention stricter than the global setting; they cannot re-enable retention that is disabled globally.
+
+See [Per-app writing](/docs/use-juno/per-app-writing).
+
+## Secure fields are never retained
+
+Sessions in a secure / password field are never recorded — neither transcript nor audio — regardless of these settings. The Blocked state prevents capture at the source.
+
+## Storage size
+
+A typical dictation session is 30–60 seconds. Compressed audio is roughly **100–300 KB per session**. Transcript rows are a few KB each. At default retention with ~20 sessions/day, expect roughly 60–180 MB of audio plus a few MB of transcripts after the 30-day window saturates.
+
+**Settings → Storage** shows current disk usage and lets you clear it.
+
+## Quick recipes
+
+| Goal | Settings |
+| --- | --- |
+| Maximum privacy | History: Never. Recordings: Never. |
+| Replay-friendly | History: 90 days. Recordings: 30 days. (Defaults — best for most.) |
+| Long memory, no audio | History: Forever. Recordings: Off. |
+| Audit trail for client work, no audio | History: Forever, with per-app overrides disabling history for non-client apps. Recordings: Off. |
+| Demo mode for a coworker | History: Never. Recordings: Never. Re-enable after. |
+
+For the full deletion guide, see [Delete, Export, and Cleanup](/docs/privacy-and-data/delete-export-and-cleanup).

@@ -1,0 +1,30 @@
+---
+title: "Security Policy"
+description: "How to report security and privacy issues in Juno."
+audience: ["security", "contributor", "maintainer"]
+pageType: "reference"
+---
+
+# Security Policy
+
+Security and privacy issues should be reported privately, not posted as public issues. This includes vulnerabilities affecting local token auth, secure-field suppression, retained audio, history deletion, support bundles, helper binaries, code signing, notarization, update channels, and local API exposure.
+
+## What to report privately
+
+Report privately if you find:
+
+- A way to read or mutate local engine state without the local token.
+- A secure/password field where Juno captures context, saves history, saves audio, learns, or pastes.
+- A support bundle that includes private dictation content unexpectedly.
+- A retained recording that cannot be deleted through expected controls.
+- A helper binary or update flow that can be replaced or hijacked.
+- A signing, notarization, or entitlement weakness.
+- A crash that exposes sensitive text, tokens, or filesystem paths.
+
+## What to include
+
+Include affected version or commit, macOS version, reproduction steps, expected behavior, actual behavior, and any logs or screenshots with private content redacted.
+
+## Maintainer response standard
+
+Triage should identify severity, affected surfaces, reproduction status, mitigation, patch owner, release vehicle, and user communication needs. Avoid public disclosure until a fix or mitigation is available.

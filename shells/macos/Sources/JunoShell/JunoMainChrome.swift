@@ -137,6 +137,7 @@ private struct JunoHomeView: View {
                             JunoActionsHomeCard {
                                 controller.toggleDictation()
                             }
+                            JunoScreenContextHomeCard(stats: stats)
                             JunoHomeStatsGraph(stats: stats)
                             JunoHairlineRule(.faint)
                             JunoHomeRecentList(
@@ -297,19 +298,16 @@ private struct JunoSetupGateView: View {
                             }
                         }
                         HStack(spacing: 8) {
-                            Image(systemName: perms.speechStatus == .authorized ? "checkmark.circle.fill" : "text.bubble")
+                            let screenContextReady = perms.screenContextEnabled && perms.screenRecordingGranted
+                            Image(systemName: screenContextReady ? "checkmark.circle.fill" : "viewfinder")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(perms.speechStatus == .authorized ? JunoDesignTokens.meadow : JunoTheme.secondaryText(scheme))
-                            Text(perms.speechStatus == .authorized ? "Live captions are enabled." : "Live captions are optional and currently off.")
+                                .foregroundStyle(screenContextReady ? JunoDesignTokens.meadow : JunoTheme.secondaryText(scheme))
+                            Text(screenContextReady ? "Visible screen text is enabled." : "Visible screen text is optional.")
                                 .font(.caption)
                                 .foregroundStyle(JunoTheme.secondaryText(scheme))
-                            if perms.speechStatus != .authorized {
-                                Button(perms.speechStatus == .notDetermined ? "Enable live captions" : "Open Speech Recognition") {
-                                    if perms.speechStatus == .notDetermined {
-                                        perms.requestSpeechRecognition()
-                                    } else {
-                                        perms.openSpeechRecognitionSettings()
-                                    }
+                            if !screenContextReady {
+                                Button("Open Screen Recording") {
+                                    perms.requestScreenRecording()
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
@@ -1705,54 +1703,21 @@ private struct HistoryRowView: View {
             Button(action: onSelect) {
                 HStack(alignment: .top, spacing: 10) {
                     appIcon
-                    Circle()
-                        .fill(entry.outcomeColor)
-                        .frame(width: 6, height: 6)
-                        .padding(.top, 6)
 
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         // App-name text dropped — the icon column on the
                         // left already identifies the app. The body
                         // preview is the row's headline now.
                         Text(entry.historyPrimaryLine)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(JunoTheme.primaryText(scheme))
 
-                        HStack(spacing: 6) {
-                            if entry.isActionHistoryRow {
-                                Text("ACTION")
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                    .tracking(0.6)
-                                    .foregroundStyle(JunoDesignTokens.accent)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(Capsule().fill(JunoDesignTokens.accent.opacity(0.10)))
-                            }
-                            Text(entry.historySecondaryLine)
-                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                                .foregroundStyle(JunoTheme.secondaryText(scheme))
-                                .lineLimit(1)
-                        }
-
-                        // Action chips (compact). Cap at 2 visible + a
-                        // "+N" pill so a 4-action utterance ("3 reminders
-                        // and 1 alarm") doesn't wrap onto a second line
-                        // and burst the row height. Detail-pane shows
-                        // every chip with full status; the row is just a
-                        // glance affordance.
-                        if let actions = entry.actions, !actions.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(Array(actions.prefix(2).enumerated()), id: \.offset) { _, a in
-                                    actionPill(for: a)
-                                }
-                                if actions.count > 2 {
-                                    overflowPill(remaining: actions.count - 2)
-                                }
-                            }
-                            .padding(.top, 1)
-                        }
+                        Text(entry.historySecondaryLine)
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(JunoTheme.secondaryText(scheme))
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1800,13 +1765,13 @@ private struct HistoryRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isSelected ? JunoDesignTokens.accent.opacity(scheme == .dark ? 0.12 : 0.07) : Color.clear)
+                .fill(isSelected ? JunoTheme.secondaryText(scheme).opacity(scheme == .dark ? 0.10 : 0.055) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSelected ? JunoDesignTokens.accent.opacity(0.30) : Color.clear,
-                    lineWidth: 0.8
+                    isSelected ? JunoTheme.border(scheme).opacity(0.65) : Color.clear,
+                    lineWidth: 0.6
                 )
         )
         .onHover { hovering in
@@ -1845,68 +1810,38 @@ private struct HistoryRowView: View {
         .help(help)
     }
 
+    @ViewBuilder
     private var appIcon: some View {
-        let bundleId = entry.context?.appBundleId
-        let url = bundleId.flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
-        let img = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
-            ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil)
-            ?? NSImage()
-        return Image(nsImage: img)
-            .resizable()
-            .scaledToFit()
-            .frame(width: 18, height: 18)
-            .cornerRadius(4)
-    }
-
-    /// Compact "+N" pill rendered when an utterance produced more
-    /// actions than fit in the 2-chip row budget. Tapping the row still
-    /// opens the detail pane which lists every action with full status.
-    @ViewBuilder
-    private func overflowPill(remaining: Int) -> some View {
-        let color = JunoTheme.secondaryText(scheme)
-        Text("+\(remaining)")
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
-            .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
-            .background(Capsule().fill(color.opacity(0.10)))
-            .help("\(remaining) more action\(remaining == 1 ? "" : "s") in this session")
-    }
-
-    /// Tiny status pill for an executed action. The fill colour mirrors the
-    /// status (green/orange/red) so the row tells the user "we made a
-    /// reminder, it saved" — or "we tried, permission was off" — without
-    /// the user having to open the row.
-    @ViewBuilder
-    private func actionPill(for action: JunoActionResult) -> some View {
-        let descriptor = action.kind.descriptor
-        let color: Color = {
-            switch action.status {
-            case .ok: return .green
-            case .permissionDenied, .blockedNoPermission: return .orange
-            case .sinkError, .timeParseFailed: return .red
-            case .blockedToggleOff: return JunoTheme.secondaryText(scheme)
-            case .pending: return JunoTheme.secondaryText(scheme)
-            }
-        }()
-        return HStack(spacing: 3) {
-            Image(systemName: descriptor.symbolName)
-                .font(.system(size: 8, weight: .semibold))
-            Text(descriptor.displayName)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
+        if entry.isActionHistoryRow {
+            Image(systemName: "bolt.badge.checkmark")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.accent)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(JunoDesignTokens.accent.opacity(scheme == .dark ? 0.18 : 0.10))
+                )
+                .help("Voice Action")
+        } else {
+            let bundleId = entry.context?.appBundleId
+            let url = bundleId.flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+            let img = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
+                ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+                ?? NSImage()
+            Image(nsImage: img)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .cornerRadius(4)
         }
-        .foregroundStyle(color)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1.5)
-        .background(
-            Capsule().fill(color.opacity(0.10))
-        )
     }
+
 }
 
 private struct HistoryDetailPane: View {
     let entry: UtteranceHistoryEntry
     @ObservedObject private var windowNav = JunoMainWindowNavigator.shared
+    @ObservedObject private var actionExecutor = JunoActionExecutor.shared
     let banner: JunoHistoryBannerState?
     let isDeleting: Bool
     let isSavingPhrase: Bool
@@ -1996,6 +1931,10 @@ private struct HistoryDetailPane: View {
             return "Already in Dictionary & Memory."
         }
         return nil
+    }
+
+    private var displayedActionResults: [JunoActionResult] {
+        entry.actionResultsForHistoryDisplay(activeUtteranceId: actionExecutor.inFlight?.utteranceId)
     }
 
     var body: some View {
@@ -2095,7 +2034,8 @@ private struct HistoryDetailPane: View {
         //   under it.
         // The transcript ALWAYS appears when text exists, even when the
         // session failed to insert/process. We never hide user data.
-        if let actions = entry.actions, !actions.isEmpty {
+        let actions = displayedActionResults
+        if !actions.isEmpty {
             actionHeroSection(actions: actions)
 
             // Single unified "What you said" provenance section under
@@ -2218,12 +2158,12 @@ private struct HistoryDetailPane: View {
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.displayAppName)
+                Text(entry.historyHeaderTitle)
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
                     .lineLimit(1)
-                if let ts = entry.displayTimestamp {
-                    Text(ts)
+                if let subtitle = entry.historyHeaderSubtitle {
+                    Text(subtitle)
                         .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundStyle(JunoTheme.secondaryText(scheme))
                         .lineLimit(1)
@@ -2488,7 +2428,7 @@ private struct HistoryDetailPane: View {
             )
         }
         if !failedActionResults.isEmpty {
-            let summary = JunoActionBatchFormatter.summarize(entry.actions ?? [])
+            let summary = JunoActionBatchFormatter.summarize(displayedActionResults)
             return RecoveryStripSummary(
                 message: summary.headline,
                 symbol: "exclamationmark.triangle.fill",
@@ -2727,10 +2667,6 @@ private struct HistoryDetailPane: View {
             out.append(DiagnosticsLine(label: "Processing",
                                        value: String(format: "%.0f ms", ms)))
         }
-        if let ms = entry.finalTranscriptionMs, ms > 0 {
-            out.append(DiagnosticsLine(label: "Final ASR",
-                                       value: String(format: "%.0f ms", ms)))
-        }
         if let words = entry.words, words > 0 {
             out.append(DiagnosticsLine(label: "Words", value: String(words)))
         }
@@ -2848,14 +2784,28 @@ private struct HistoryDetailPane: View {
                 else { replayAudio() }
             }
 
-            footerLink(
-                title: "Re-run with another style",
-                systemImage: "arrow.triangle.2.circlepath",
-                help: replayOn ? "Re-run this session in a different writing style" : replayDisabledHelp,
-                isEnabled: replayOn && !isReprocessing
-            ) {
-                loadModesForReprocess()
-                showReprocessSheet = true
+            if entry.isActionHistoryRow {
+                footerLink(
+                    title: "Teach Juno",
+                    systemImage: "plus",
+                    help: "Save a name, product, acronym, or term from this action.",
+                    isEnabled: true
+                ) {
+                    showSavePhrasePopover = true
+                }
+                .popover(isPresented: $showSavePhrasePopover, arrowEdge: .top) {
+                    savePhrasePopoverContent
+                }
+            } else {
+                footerLink(
+                    title: "Re-run with another style",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    help: replayOn ? "Re-run this session in a different writing style" : replayDisabledHelp,
+                    isEnabled: replayOn && !isReprocessing
+                ) {
+                    loadModesForReprocess()
+                    showReprocessSheet = true
+                }
             }
 
             Spacer(minLength: 0)
@@ -2864,7 +2814,7 @@ private struct HistoryDetailPane: View {
     }
 
     private var failedActionResults: [JunoActionResult] {
-        (entry.actions ?? []).filter { result in
+        displayedActionResults.filter { result in
             switch result.status {
             case .permissionDenied, .blockedNoPermission, .blockedToggleOff,
                  .sinkError, .timeParseFailed:
@@ -3233,14 +3183,9 @@ private struct HistoryDetailPane: View {
     /// label. Verbatim mode is the only mode that semantically
     /// implies the body is "as spoken" rather than cleaned.
     private var heroStateChip: String? {
-        let rawTrim = entry.rawTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let finTrim = entry.transcript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let mode = (entry.mode ?? "").lowercased()
         if mode.contains("verbatim") {
             return "VERBATIM"
-        }
-        if !rawTrim.isEmpty && !finTrim.isEmpty && rawTrim == finTrim {
-            return "NO REWRITE"
         }
         return nil
     }
@@ -3325,6 +3270,8 @@ private struct HistoryDetailPane: View {
     /// open after the user collapses it.
     @ViewBuilder
     private func provenanceSection(raw: String, final: String, defaultExpanded: Bool) -> some View {
+        let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTrimmed = final.trimmingCharacters(in: .whitespacesAndNewlines)
         let report = JunoHistoryDiff.polishReport(raw: raw, final: final)
         let entryKey = entry.id
         if report.counts.hasAny {
@@ -3371,7 +3318,46 @@ private struct HistoryDetailPane: View {
                 showProvenance = defaultExpanded
             }
         }
-        // When ``counts.hasAny == false`` the section is omitted entirely.
+        else if !rawTrimmed.isEmpty && !finalTrimmed.isEmpty && rawTrimmed != finalTrimmed {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        showProvenance.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("WHAT YOU SAID")
+                            .junoType(.eyebrow)
+                            .foregroundStyle(JunoTheme.secondaryText(scheme))
+                        Spacer(minLength: 8)
+                        Image(systemName: showProvenance ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(JunoTheme.secondaryText(scheme))
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .junoNoFocusRing()
+
+                if showProvenance {
+                    transcriptBody(rawTrimmed)
+                        .font(.system(size: 14, design: .rounded))
+                        .lineSpacing(4)
+                        .transition(.opacity)
+                }
+            }
+            .onAppear {
+                if provenanceDefaultedFor != entryKey {
+                    provenanceDefaultedFor = entryKey
+                    showProvenance = defaultExpanded
+                }
+            }
+            .onChange(of: entry.id) { _ in
+                provenanceDefaultedFor = entryKey
+                showProvenance = defaultExpanded
+            }
+        }
     }
 
     /// Compact summary chips: "12 punctuation · 5 caps · 3 word swaps · 3 fillers".
@@ -3485,7 +3471,7 @@ private struct HistoryDetailPane: View {
     // (Notes / Reminders / Calendar). Replaces the old "What Juno did"
     // wrapper card and inner action rows. Design rationale:
     //
-    // - Destination line ("Apple Notes · Juno folder") replaces the
+    // - Destination line ("Notes · Juno folder") replaces the
     //   "Saved" status pill — destination *is* the success signal, and
     //   presence of this card on a History page already implies success.
     //   Status chips only appear on failure.
@@ -3523,21 +3509,19 @@ private struct HistoryDetailPane: View {
         VStack(alignment: .leading, spacing: 14) {
             // Top row: kind glyph + destination / failure line.
             HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(tint.opacity(scheme == .dark ? 0.22 : 0.14))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: descriptor.symbolName)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(tint)
-                }
+                JunoActionNativeIconTile(kind: action.kind, tileSize: 36, iconSize: 32, fallbackTint: tint)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(heroPrimaryLine(for: action))
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(JunoTheme.primaryText(scheme))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 6) {
+                        Text(heroPrimaryLine(for: action))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(JunoTheme.primaryText(scheme))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        if action.kind == .alarm {
+                            JunoAlarmInfoButton()
+                        }
+                    }
                     if let secondary = heroSecondaryLine(for: action) {
                         Text(secondary)
                             .font(.system(size: 12, weight: .regular, design: .rounded))
@@ -3584,16 +3568,16 @@ private struct HistoryDetailPane: View {
     }
 
     /// Top line of the hero — the destination on success, the failure
-    /// reason on failure. Reads as "Apple Notes · Juno folder",
-    /// "Reminders · Tomorrow at 9:00 AM", "Couldn't save to Apple Notes",
+    /// reason on failure. Reads as "Notes · Juno folder",
+    /// "Reminders · Tomorrow at 9:00 AM", "Couldn't save to Notes",
     /// "Permission needed", etc.
     private func heroPrimaryLine(for action: JunoActionResult) -> String {
         switch action.status {
         case .ok, .pending:
             switch action.kind {
-            case .note: return "Apple Notes  ·  \(JunoNotesFolderName) folder"
+            case .note: return "Notes  ·  \(JunoNotesFolderName) folder"
             case .reminder: return "Reminders"
-            case .alarm: return "Calendar"
+            case .alarm: return "Alarm"
             }
         case .permissionDenied, .blockedNoPermission:
             return "Permission needed"
@@ -3601,9 +3585,9 @@ private struct HistoryDetailPane: View {
             return "Voice Actions are off"
         case .sinkError:
             switch action.kind {
-            case .note:     return "Couldn't save to Apple Notes"
+            case .note:     return "Couldn't save to Notes"
             case .reminder: return "Couldn't save to Reminders"
-            case .alarm:    return "Couldn't save to Calendar"
+            case .alarm:    return "Couldn't save alarm"
             }
         case .timeParseFailed:
             return "Couldn't read the time"
@@ -3986,17 +3970,26 @@ private struct HistoryDetailPane: View {
 
     // MARK: - App icon
 
+    @ViewBuilder
     private var appIconView: some View {
-        let bundleId = entry.context?.appBundleId
-        let url  = bundleId.flatMap {
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+        if entry.isActionHistoryRow {
+            Image(systemName: "bolt.badge.checkmark")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.accent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(JunoDesignTokens.accent.opacity(scheme == .dark ? 0.18 : 0.10))
+        } else {
+            let bundleId = entry.context?.appBundleId
+            let url  = bundleId.flatMap {
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+            }
+            let img  = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
+                ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+                ?? NSImage()
+            Image(nsImage: img)
+                .resizable()
+                .scaledToFit()
         }
-        let img  = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
-            ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil)
-            ?? NSImage()
-        return Image(nsImage: img)
-            .resizable()
-            .scaledToFit()
     }
 
     // MARK: - Re-process
@@ -4675,6 +4668,25 @@ extension UtteranceHistoryEntry {
         return fmt.string(from: date)
     }
 
+    var historyHeaderTitle: String {
+        isActionHistoryRow ? "Voice Action" : displayAppName
+    }
+
+    var historyHeaderSubtitle: String? {
+        if isActionHistoryRow {
+            var parts: [String] = []
+            let app = displayAppName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !app.isEmpty && app != "Unknown" {
+                parts.append("From \(app)")
+            }
+            if let ts = displayTimestamp {
+                parts.append(ts)
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
+        return displayTimestamp
+    }
+
     var wordCountLabel: String? {
         guard let t = transcript else { return nil }
         let n = t.split { $0.isWhitespace }.filter { !$0.isEmpty }.count
@@ -4742,23 +4754,16 @@ extension UtteranceHistoryEntry {
     }
 
     var actionHistorySummary: String? {
-        guard let actions, !actions.isEmpty else { return nil }
+        let actions = actionResultsForHistoryDisplay(preserveFreshPending: true)
+        guard !actions.isEmpty else { return nil }
         if actions.count == 1, let action = actions.first {
             let body = action.bodyPreview.trimmingCharacters(in: .whitespacesAndNewlines)
             return body.isEmpty
                 ? action.kind.descriptor.displayName
                 : "\(action.kind.descriptor.displayName): \(body)"
         }
-        var seenKinds: Set<String> = []
-        let kinds = actions
-            .map { $0.kind.descriptor.displayName }
-            .filter { seenKinds.insert($0).inserted }
-            .joined(separator: ", ")
         let firstBody = actions.first?.bodyPreview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if firstBody.isEmpty {
-            return "\(actions.count) Voice Actions: \(kinds)"
-        }
-        return "\(actions.count) Voice Actions: \(kinds) · \(firstBody)"
+        return firstBody.isEmpty ? "\(actions.count) voice actions" : firstBody
     }
 
     var historySecondaryLine: String {
@@ -4780,7 +4785,8 @@ extension UtteranceHistoryEntry {
     }
 
     var actionHistoryOutcomeLine: String? {
-        guard let actions, !actions.isEmpty else { return nil }
+        let actions = actionResultsForHistoryDisplay(preserveFreshPending: true)
+        guard !actions.isEmpty else { return nil }
         let summary = JunoActionBatchFormatter.summarize(actions)
         switch summary.tone {
         case .allSaved, .allPending:
@@ -4788,6 +4794,33 @@ extension UtteranceHistoryEntry {
         case .blocked, .failed, .partial:
             return summary.oneLine
         }
+    }
+
+    func actionResultsForHistoryDisplay(
+        activeUtteranceId: String? = nil,
+        preserveFreshPending: Bool = false
+    ) -> [JunoActionResult] {
+        let raw = actions ?? []
+        guard !raw.isEmpty else { return [] }
+        let active = activeUtteranceId == utteranceId
+        let isFresh = isFreshPendingActionRow
+        return raw.map { action in
+            guard action.status == .pending else { return action }
+            if active { return action }
+            if preserveFreshPending && isFresh && action.hasExplicitStatus {
+                return action
+            }
+            return action.withDisplayStatus(
+                .sinkError,
+                error: "This action was parsed but was not saved. Retry it from History."
+            )
+        }
+    }
+
+    private var isFreshPendingActionRow: Bool {
+        guard let ts = updatedAtMs ?? tsUnixMs else { return false }
+        let ageMs = Int64(Date().timeIntervalSince1970 * 1000.0) - ts
+        return ageMs >= 0 && ageMs < 45_000
     }
 
     var showsRewriteSection: Bool {

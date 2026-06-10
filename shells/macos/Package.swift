@@ -44,7 +44,6 @@ let package = Package(
         .executableTarget(
             name: "JunoShell",
             dependencies: [
-                "JunoHotkeyCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/JunoShell",
@@ -67,13 +66,8 @@ let package = Package(
             name: "JunoPaste",
             path: "Sources/JunoPaste"
         ),
-        .target(
-            name: "JunoHotkeyCore",
-            path: "Sources/JunoHotkeyCore"
-        ),
         .executableTarget(
             name: "JunoHotkey",
-            dependencies: ["JunoHotkeyCore"],
             path: "Sources/JunoHotkey"
         ),
         .executableTarget(
@@ -87,11 +81,6 @@ let package = Package(
         .executableTarget(
             name: "JunoHost",
             path: "Sources/JunoHost"
-        ),
-        .testTarget(
-            name: "JunoHotkeyCoreTests",
-            dependencies: ["JunoHotkeyCore"],
-            path: "Tests/JunoHotkeyCoreTests"
         ),
     ]
 )

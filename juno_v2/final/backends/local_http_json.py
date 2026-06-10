@@ -9,7 +9,7 @@ import numpy as np
 
 from juno_v2.asr.wav import encode_wav_bytes
 from juno_v2.contracts.final import FinalDecodeRequest, FinalDecodeResult, FinalSegment
-from juno_v2.final.backends.base import FinalAsrBackend
+from juno_v2.final.backends.base import FinalAsrBackend, effective_decode_language
 from juno_v2.final.config import FinalAsrConfig
 
 
@@ -52,7 +52,7 @@ class LocalHttpJsonFinalBackend(FinalAsrBackend):
             method="POST",
             headers={
                 "Content-Type": "audio/wav",
-                "X-Juno-Language": req.language or self.config.language or "",
+                "X-Juno-Language": effective_decode_language(req, self.config.language) or "",
                 "X-Juno-Allowed-Languages": base64.b64encode(json.dumps(req.allowed_languages).encode("utf-8")).decode("ascii"),
                 "X-Juno-Language-Policy": req.language_policy or "",
                 "X-Juno-Utterance-Id": req.utterance_id,

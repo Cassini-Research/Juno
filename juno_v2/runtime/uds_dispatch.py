@@ -275,7 +275,6 @@ def dispatch_broker_http_like(app, params: Dict[str, Any], binary):
             "/api/broker/memory/snippet": app.broker_memory_snippet_upsert,
             "/api/broker/memory/snippet/remove": app.broker_memory_snippet_remove,
             "/api/broker/memory/correction/remove": app.broker_memory_correction_remove,
-            "/api/broker/memory/clear_all": app.broker_memory_clear_all,
             "/api/broker/dictation/preview/chunk": app.broker_dictation_preview_chunk,
             "/api/broker/writer/extract": app.broker_writer_extract,
         }

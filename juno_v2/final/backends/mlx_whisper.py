@@ -12,7 +12,7 @@ import numpy as np
 
 from juno_v2.contracts.final import FinalDecodeRequest, FinalDecodeResult, FinalSegment
 from juno_v2.contracts.tracing import TraceKind
-from juno_v2.final.backends.base import FinalAsrBackend
+from juno_v2.final.backends.base import FinalAsrBackend, effective_decode_language
 from juno_v2.final.config import FinalAsrConfig
 from juno_v2.runtime.mlx_lock import mlx_decode_guard
 
@@ -266,7 +266,7 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
             result = self._mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=model_ref,
-                language=req.language or self.config.language,
+                language=effective_decode_language(req, self.config.language),
                 initial_prompt=req.initial_prompt or self.config.initial_prompt,
                 fp16=True,
                 word_timestamps=False,

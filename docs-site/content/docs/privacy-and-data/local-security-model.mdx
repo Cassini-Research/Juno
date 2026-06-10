@@ -1,0 +1,82 @@
+---
+title: "Local Security Model"
+description: "Capture, storage, insertion, and secure fields."
+---
+
+# Local Security Model
+
+Juno uses local controls for capture, context, storage, learning, and insertion. Secure fields override every setting.
+
+## The five flows
+
+| Flow | macOS mechanism | On-disk location | Default retention |
+| --- | --- | --- | --- |
+| **Audio capture** | Microphone permission via `AVAudioSession` | In memory until transcription completes; not persisted in normal operation | N/A |
+| **Context** (selected text, current field, app/window title) | Accessibility (AX) API | Not stored; used only during the active session | N/A |
+| **Transcript history** | SQLite database | `~/Library/Application Support/com.juno.shell/Workbench/history.sqlite` | 90 days |
+| **Retained recordings** | Audio files | `~/Library/Application Support/com.juno.shell/Workbench/recordings/` | 30 days |
+| **Correction learning** | JSON memory store | `~/Library/Application Support/com.juno.shell/Memory/` | Until you delete the entry |
+
+Each flow has an independent setting (global + per-app override) and an independent delete control.
+
+## The hard gate: secure-field detection
+
+The shell's `JunoSecureFieldPolicy` checks every focused field via the Accessibility API. If the AX role is a secure text field, the policy returns `.blocked` and the HUD enters **Blocked** state. While blocked:
+
+- Microphone never opens — the session never reaches Listening
+- No context is collected (selected text, clipboard, app title all ignored)
+- No transcript is written to history
+- No audio is retained, even if recording retention is on
+- No correction learning runs
+- No paste attempt is made
+
+There is no setting that disables this. Policy at `shells/macos/Sources/JunoShell/JunoSecureFieldPolicy.swift`; tests in `SecureFieldPolicyTests.swift`.
+
+## Per-app overrides
+
+Per-app settings can make a flow stricter than the global setting, never looser:
+
+| Global setting | Per-app override | Effective behavior |
+| --- | --- | --- |
+| Flow on globally | "off" for app X | Off for X only |
+| Flow off globally | "on" for app X | Still off — overrides cannot unlock |
+| Secure field detected | Any combination | All flows forced off — overrides bypassed |
+
+Configure overrides in [Per-app writing](/docs/use-juno/per-app-writing).
+
+## Network activity
+
+Normal operation makes no network calls. Exceptions:
+
+- **Model downloads** — fetched once on install or Repair from a public model repository. Read-only file fetches.
+- **Update checks** — only if you enabled automatic updates. Check the release feed; no user data sent.
+
+No telemetry, no crash analytics without opt-in, no usage pings, no account check-in. Verify in Activity Monitor → Network.
+
+## Behaviors not implemented
+
+- Training of any model on audio, transcripts, corrections, or memory entries
+- Server-side account system
+- Sync between Macs (each Mac is its own island)
+- Reading clipboard or selected text outside an active dictation session
+- Persisting anything from a secure-field session
+- Per-app overrides that weaken the secure-field rule
+
+## Where the policy lives in code
+
+| Concern | File |
+| --- | --- |
+| Secure-field detection | `JunoSecureFieldPolicy.swift` |
+| Microphone capture | `JunoAudioCapture.swift` |
+| Accessibility capability check | `JunoCapability.swift` |
+| Safe insertion decision | `JunoSafeInsertion.swift` |
+| Storage paths and retention | `JunoHistoryStore.swift`, `JunoSupportBundle.swift` |
+| Memory / learning | `juno_v2/memory/`, `juno_v2/personalization/` |
+
+## Verifying it yourself
+
+- Open Activity Monitor → Network tab → filter for Juno. Normal use shows no outbound traffic except during a model download.
+- Open the storage paths above in Finder (`Cmd+Shift+G` and paste) to see exactly what's stored.
+- Open the Privacy page in Juno (sidebar → Privacy) to see live counters of what's currently retained, with one-click Clear for each.
+
+See also: [Privacy Overview](/docs/privacy-and-data/overview), [Smart Context](/docs/privacy-and-data/smart-context), [Secure Fields](/docs/privacy-and-data/secure-fields).

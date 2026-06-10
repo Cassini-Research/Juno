@@ -1,0 +1,62 @@
+---
+title: "Shortcuts and HUD"
+description: "Shortcut behavior and HUD states."
+---
+
+# Shortcuts and HUD
+
+One key starts and stops dictation. The HUD shows the current state.
+
+## The shortcut
+
+**Default: Fn / Globe.** Press once to start, press again to finish. No modifier, no chord, no Input Monitoring permission required.
+
+| Press | Result |
+| --- | --- |
+| Fn (start) | Opens the HUD; engine and surface readiness checks begin |
+| Fn (again, while listening) | Finalizes the session and inserts the result |
+| Esc (while listening) | Cancels the session — no text is inserted, no late paste arrives |
+
+Other shortcut options in Settings → Dictation → Shortcut: Right Command, Right Option, Option+Space, Control+Space. Anything other than Fn / Globe may need Input Monitoring granted.
+
+## HUD states
+
+The HUD shows one state at a time. Each state corresponds to a distinct phase of the pipeline:
+
+| State | Meaning | If it stalls here |
+| --- | --- | --- |
+| **Checking** | Session opened; verifying engine and surface readiness | Usually resolves in &lt;1s. Repeated stalls → [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected) |
+| **Checking microphone** | Waiting for the OS to deliver real audio frames | Microphone permission or device issue → [Microphone troubleshooting](/docs/troubleshooting/microphone) |
+| **Waiting for speech** | Audio frames arriving, no speech energy detected yet | Speak louder, closer, or check background noise |
+| **Listening** | Speech energy detected; capturing your dictation | Keep speaking — normal state |
+| **Refining** | Engine is processing the captured segment | Normal; should resolve in 1–2 seconds |
+| **Partial commit** | Polished partial is being placed into the field | Normal during pauses |
+| **Inserted** | Text placed in the focused field | Done — start writing or fire another session |
+| **Copy Ready** | Text exists but insertion was skipped | Copy it from the HUD. See [Insertion and Copy Ready](/docs/troubleshooting/insertion-and-copy-ready-output) |
+| **Blocked** | Secure/password field detected | Move to a normal text field. |
+| **Error** | Permission, engine, or microphone failure | Read the HUD message and follow the linked troubleshooting page |
+
+State names match `HUDStateMachine` in the shipped app.
+
+## What each state separates out
+
+- **Stuck on Checking microphone** → audio frames are not arriving → check Microphone permission and your input device
+- **Stuck on Waiting for speech** → frames are arriving but no voice → speak louder, reduce noise, check the mic is pointed at you
+- **Stuck on Refining** → engine is processing → wait a beat; normal
+
+## Shortcut conflicts
+
+Some keys are claimed by macOS or other apps and may not reliably reach Juno:
+
+| Conflict | Symptom | Fix |
+| --- | --- | --- |
+| macOS system shortcut | Key never opens the HUD | Reassign the system shortcut in System Settings → Keyboard → Keyboard Shortcuts, or pick a different Juno shortcut |
+| Another app's global hotkey | Key triggers the other app instead | Quit the conflicting app to confirm; if the conflict persists, pick a different combo |
+| Mechanical keyboard / VIA / Karabiner remap | Modifier behaves unexpectedly | Test with the built-in Mac keyboard to isolate |
+| Input Monitoring denied | Combo shortcut registered in Settings but does not fire | System Settings → Privacy & Security → Input Monitoring, enable Juno |
+
+**Fn / Globe bypasses these issues** because it is handled at the OS level and does not need Input Monitoring. If a combo shortcut does not work, switch back to Fn / Globe, confirm dictation works, then debug the combo.
+
+## When to change the shortcut
+
+Change the shortcut only after first dictation works. If a combo shortcut does not fire, switch back to Fn / Globe to isolate whether the issue is the shortcut or dictation itself.

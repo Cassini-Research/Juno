@@ -1,0 +1,63 @@
+---
+title: "Home"
+description: "Readiness, stats, recent sessions, and Try It."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Home
+
+Home shows readiness, recent activity, and a Try It card.
+
+<ScreenshotFrame
+  src="/images/screenshots/home-real.png"
+  alt="Juno Home page. Sidebar with Home selected, plus History, Actions, Voice Commands, Styles, Dictionary & Memory, Per-app writing entries. Header: Good morning, you. What you say shows up right where you type it on this Mac. TRY SAYING card: Hey Juno, set an alarm for 7am tomorrow, with a Try it button. Today: 374 words, 2m saved, most in Claude. Weekly bar chart showing Thu-Today with Today highlighted at 374, 425 words this week."
+  caption="Home shows readiness, Try It, daily activity, and recent sessions."
+/>
+
+## Readiness
+
+The header tells you whether Juno is ready to take a shortcut press right now. These are the states the header can show:
+
+| State | What it means | What to do |
+| --- | --- | --- |
+| **Ready** | The shortcut is armed, the engine is warm, and permissions are intact. | Open a writing app and press the shortcut. |
+| **Setup required** | Onboarding was not completed. | Click the prompt — it reopens the setup flow at the step you left. |
+| **Permissions needed** | Microphone or Accessibility was revoked, or never granted. | Open Settings → Permissions, or click the row to deep-link. |
+| **Starting up** | The voice engine is launching. | Wait — usually under 5 seconds on warm boot. |
+| **Downloading models** | A model file is being fetched. | Wait — see Settings → Models for progress. |
+| **Warming up** | Models are loaded; the engine is initializing. | Wait briefly. |
+| **Offline** | The engine is not reachable. | Open Settings → Models and click Repair. |
+
+When the header is not Ready, the primary button deep-links to the relevant setting (Permissions, Models, or onboarding) instead of a generic Settings link.
+
+## Try It
+
+Below the header is a one-tap practice surface. Press the shortcut while focus is on the Try It card and Juno runs a real session inside the window — same engine, same HUD, same insertion path. The result lands inside the card so you can see what your speech becomes without having to switch to Notes.
+
+The recommended phrasing on the card rotates between three sample asks ("Hey Juno, take a note: action items from the standup are…", "Send the proposal to Sarah by Friday.", "Remind me to call Maya at 4pm tomorrow.") so you can test dictation, Actions, and Voice Commands without leaving Home.
+
+## Today's stats
+
+A small panel summarizes today's activity:
+
+- **Words today** — how many words you dictated.
+- **Time saved** — an estimate based on average typing speed.
+- **Top app** — the app you dictated into most today.
+- **Weekly chart** — words per day for the past 7 days, with today highlighted.
+
+The stats are local, reset on the day boundary, and remain on your Mac.
+
+## Recent dictations
+
+The last three or four sessions appear below stats, with the app icon, the first words of the transcript, the duration, and the time. Click any row to open it in History, where you can copy, replay, reprocess, or delete.
+
+If History is off globally or for a specific app, the row does not appear. Home follows retention settings.
+
+## When the Home header reports a problem
+
+Follow the link in the header — it goes directly to the relevant Settings pane or troubleshooting page.
+
+- Permissions row → [Permissions](/docs/start/permissions)
+- Models row → Settings → Models, then [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected) if Repair does not resolve the issue
+- Insertion problems appear in Recent dictations as Copy Ready. See [Insertion and Copy Ready](/docs/troubleshooting/insertion-and-copy-ready-output)

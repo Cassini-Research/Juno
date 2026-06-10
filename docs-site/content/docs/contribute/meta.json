@@ -1,0 +1,13 @@
+{
+  "title": "Contribute",
+  "pages": [
+    "overview",
+    "development-standards",
+    "pull-requests",
+    "issue-reports",
+    "security-policy",
+    "code-of-conduct",
+    "license",
+    "roadmap-and-known-limitations"
+  ]
+}

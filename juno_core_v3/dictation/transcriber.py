@@ -98,6 +98,7 @@ class DictationTranscriber(Protocol):
         wav_bytes: bytes,
         *,
         language: str | None = None,
+        language_policy: str | None = None,
         initial_prompt: str | None = None,
         bias_phrases: list[str] | None = None,
     ) -> TranscribeResult: ...
@@ -167,10 +168,11 @@ class StubTranscriber:
         wav_bytes: bytes,
         *,
         language: str | None = None,
+        language_policy: str | None = None,
         initial_prompt: str | None = None,
         bias_phrases: list[str] | None = None,
     ) -> TranscribeResult:
-        del initial_prompt, bias_phrases  # stub ignores decode hints
+        del language_policy, initial_prompt, bias_phrases  # stub ignores decode hints
         audio, sr = _decode_wav_to_float32(wav_bytes)
         duration_ms = (audio.shape[0] / float(sr)) * 1000.0 if sr else 0.0
         return TranscribeResult(
@@ -243,6 +245,7 @@ class FinalBackendTranscriber:
         wav_bytes: bytes,
         *,
         language: str | None = None,
+        language_policy: str | None = None,
         initial_prompt: str | None = None,
         bias_phrases: list[str] | None = None,
     ) -> TranscribeResult:
@@ -252,15 +255,18 @@ class FinalBackendTranscriber:
 
         audio, sample_rate = _decode_wav_to_float32(wav_bytes)
         duration_ms = (audio.shape[0] / float(sample_rate)) * 1000.0 if sample_rate else 0.0
+        policy = language_policy or ("fixed" if language or self.language else "auto")
+        auto_policy = policy.strip().lower() in {"auto", "auto_supported", "pair", "keep_original"}
+        request_language = language if language is not None else (None if auto_policy else self.language)
         req = FinalDecodeRequest(
             utterance_id="mac_oneshot",
             audio=audio,
             sample_rate_hz=sample_rate,
             start_ms=0.0,
             end_ms=duration_ms,
-            language=language or self.language,
+            language=request_language,
             allowed_languages=[],
-            language_policy="auto",
+            language_policy=policy,
             initial_prompt=initial_prompt,
             bias_phrases=list(bias_phrases or []),
         )
@@ -324,10 +330,11 @@ class UnavailableTranscriber:
         wav_bytes: bytes,
         *,
         language: str | None = None,
+        language_policy: str | None = None,
         initial_prompt: str | None = None,
         bias_phrases: list[str] | None = None,
     ) -> TranscribeResult:
-        del language, initial_prompt, bias_phrases
+        del language, language_policy, initial_prompt, bias_phrases
         raise TranscribeUnavailable(self.code, self.reason)
 
 

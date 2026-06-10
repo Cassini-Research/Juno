@@ -1,0 +1,14 @@
+flowchart TD
+    Mic["Microphone audio"] --> Engine["Local voice engine"]
+    Selection["Selected text and current field"] --> Gate{"Secure field?"}
+    Clipboard["Recent clipboard opt-in"] --> Gate
+    Title["App and window title"] --> Gate
+    Gate -- "Yes" --> Block["Block context, learning, history, audio save, and paste"]
+    Gate -- "No" --> Engine
+    Engine --> Insert["Safe insertion"]
+    Engine --> Copy["Copy ready fallback"]
+    Engine --> History["Local history"]
+    Engine --> Audio["Optional recordings"]
+    Engine --> Learn["Correction learning"]
+    History --> Cleanup["Retention cleanup"]
+    Audio --> Cleanup

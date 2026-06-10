@@ -1,0 +1,32 @@
+---
+title: "Secure Fields"
+description: "How Juno behaves around password and secure input fields."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+
+# Secure Fields
+
+Secure/password fields are blocked surfaces. When Juno detects a secure field, it forces context, clipboard context, correction learning, transcript history, audio save, and paste off. This protects against accidental capture and accidental insertion.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/privacy-real.png"
+  alt="Juno Privacy screen showing local history and audio controls"
+  caption="Secure fields block capture, context, history, audio retention, learning, and insertion."
+/>
+
+## What is blocked
+
+| Behavior | Secure field behavior |
+| --- | --- |
+| Context | Forced off. |
+| Clipboard context | Forced off. |
+| Learning | Forced off. |
+| Transcript history | Forced off. |
+| Recording retention | Forced off. |
+| Direct paste | Blocked. |
+
+## What to do instead
+
+Move to a normal text field or use Copy Ready in a safe app, then manually decide whether to paste. Do not try to bypass secure-field behavior for credentials, tokens, payment details, or private keys.

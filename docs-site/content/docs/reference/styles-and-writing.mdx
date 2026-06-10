@@ -1,0 +1,90 @@
+---
+title: "Styles and Writing"
+description: "Styles, selected text, and commands."
+---
+
+# Styles and Writing
+
+Reference for styles, custom styles, and voice commands.
+
+## The six built-in styles
+
+| Style | Path | When to use |
+| --- | --- | --- |
+| **Verbatim** | Light cleanup only | Quotes, code-adjacent prose, legal phrasing |
+| **Casual chat** | Light cleanup, casual tone preserved | Slack, iMessage, quick replies |
+| **Formal email** | Writing engine pass, professional tone | Mail compose, external communication |
+| **Structured notes** | Writing engine pass, bullets / headings | Meeting notes, action items |
+| **Polished rewrite** | Writing engine on selected text | Rewriting a highlighted passage |
+| **Commands** | Engine acts on selected text per dictation | Voice-driven transformation of selection |
+
+Plus implicit **Default** — what runs when nothing is picked. Balanced light cleanup.
+
+## Heavy vs light styles
+
+| Style | Uses writing engine? | Latency |
+| --- | --- | --- |
+| Verbatim | No | Fastest |
+| Default | No | Fast |
+| Casual chat | No | Fast |
+| Formal email | Yes | +1–2s for engine pass |
+| Structured notes | Yes | +1–2s |
+| Polished rewrite | Yes | +1–2s; waits for final |
+| Commands | Yes | +1–2s; waits for final |
+
+If the writing engine is not ready, heavy styles fall back to Default behavior. See [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected).
+
+## Selected-text behavior
+
+When text is selected before pressing the shortcut:
+
+- The selection becomes the target for **Polished rewrite** and **Commands**
+- Juno waits for the *final* result before replacing the selection (no mid-rewrite overwrite)
+- If insertion is unsafe (secure field, focus shifted), the result becomes Copy Ready and the original selection is preserved
+- Voice editing commands (`make that shorter`, `turn that into bullets`) operate on the selection if one exists; otherwise on the last sentence dictated
+
+## Voice command lookup (instant)
+
+These fire immediately, no engine pass.
+
+| Phrase | Effect |
+| --- | --- |
+| `scratch that` | Erase the current sentence |
+| `undo that` | Undo the last typed change |
+| `delete that` | Delete the last thing Juno typed |
+| `delete last word` / `delete last two words` / `delete last sentence` | Erase recent text |
+| `new line` | Line break |
+| `new paragraph` | Paragraph break |
+| `next bullet` / `next number` | Start next list item |
+| `open quote` / `close quote` | Insert quotation mark |
+
+## Voice command lookup (writer)
+
+These run through the writing engine.
+
+| Phrase | Effect |
+| --- | --- |
+| `fix that` | Clean up grammar, punctuation, light wording |
+| `make that shorter` / `longer` / `clearer` / `more formal` / `more casual` | Style rewrites of the last passage |
+| `turn that into bullets` / `turn that into a numbered list` | Restructure as a list |
+| `translate that to <language>` | Translate the last passage |
+| `replace <word> with <other>` | Targeted swap |
+| `delete the last sentence` / `delete the last paragraph` | Targeted delete |
+
+Say voice commands as part of dictation. They apply to the last passage, the current sentence, or selected text — instantly.
+
+## Custom styles
+
+Build your own from the **Styles** sidebar page — click **New style** in the top-right. A custom style is a name + base style + plain-English instructions + optional snippet scope + optional auto-transform.
+
+Strong instruction: "Write concise customer-support replies. Tone: calm and direct. Always under three sentences. Avoid apology-first openings."
+
+Weak instruction: "Make it sound professional." This is too broad; use concrete tone, length, and structure instructions.
+
+Full guide: [Custom Styles](/docs/use-juno/custom-styles).
+
+## Rules that override style choice
+
+- Secure field detection blocks every flow, regardless of active style
+- Copy Ready still triggers when paste is not safe
+- Per-app writing overrides win over global style choice

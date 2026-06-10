@@ -1,0 +1,186 @@
+---
+title: "Writing Workflows"
+description: "Common writing workflows."
+---
+
+# Writing Workflows
+
+Use these patterns for common writing tasks.
+
+---
+
+## Capture a quick note
+
+**Use case:** Capture a short idea without switching away from the current app.
+
+**The workflow:**
+1. Press Fn / Globe from the current app.
+2. Speak the idea in full.
+3. Juno inserts the text in the focused field, or shows Copy Ready if no safe field is available.
+4. Continue working.
+
+This keeps short notes and follow-ups close to the work that prompted them.
+
+**Recommended setup:** Open Actions and enable Notes if you want **Hey Juno** captures to land directly in Apple Notes as a running inbox instead of wherever the cursor happens to be.
+
+---
+
+## Draft an email
+
+**Use case:** Draft a reply or new message from spoken context.
+
+**The workflow:**
+1. Open Mail and start a new reply or compose
+2. Click into the body
+3. Press Fn / Globe and speak the message content: *"Marcus, following up on the API question from last week. We can support the webhook format, and the implementation looks straightforward. We will confirm timing once it is in the sprint."*
+4. Press Fn/Globe to stop. Juno places a properly formatted email — punctuated, paragraphed, professionally toned.
+
+Speak the substance in your normal voice. Formal email style translates it into professional prose — full sentences, removed filler, structured for readability.
+
+A longer email can be drafted in one session or across multiple pauses.
+
+---
+
+## Take meeting notes
+
+**Use case:** Capture decisions, action items, and important details during a meeting.
+
+**The workflow:**
+1. Have Apple Notes or Notion open in the background
+2. When a decision, action item, or key detail is mentioned, press Fn / Globe, dictate it, then press Fn / Globe again
+3. Use `next bullet` between items so the note builds structurally without keyboard contact
+4. At the end: review, edit the few things that need it, and the notes are done
+
+**Example stream:**
+
+> *"Sarah approved the revised budget. Next bullet. James owns the vendor outreach, deadline end of this month. Next bullet. Deferred the roadmap conversation to Thursday call."*
+
+Juno creates structured notes from the spoken items.
+
+**Recommended setup:** Pin Structured notes style to Apple Notes.
+
+---
+
+## Journal by voice
+
+**Use case:** Capture journal entries in a natural voice and let Juno remove common speech artifacts.
+
+**The workflow:**
+1. Open Day One or Apple Notes
+2. Press Fn / Globe and speak the entry.
+3. Let Juno remove filler, punctuation issues, and repeated phrases while preserving the substance.
+
+Use the default style for natural prose, or a custom style if you want a specific journal format.
+
+---
+
+## Processing research and interviews
+
+**Use case:** Summarize interview notes, articles, or research while reviewing source material.
+
+**The workflow:**
+1. Read the source material with your cursor in your synthesis document
+2. Speak your analysis as you read: *"her main point seems to be that the bottleneck is not capacity, it is coordination — she keeps coming back to this idea that teams have the resources but not the visibility into how they connect, that feels important for the positioning argument"*
+3. Juno places clean prose continuously as you speak
+4. At the end, you have a first draft of the synthesis
+
+**With selected text:** Highlight the key quote → press Fn/Globe → say *"translate this into a one-line insight"* → Juno rewrites the selection as your note.
+
+---
+
+## Turn voice memos into drafts
+
+**Use case:** Convert existing spoken notes into a written draft.
+
+**The workflow:**
+
+1. Back at your desk, open the voice memo and your writing surface
+2. Play the memo through your speaker or one earbud
+3. Press Fn / Globe and re-speak the key ideas as you listen
+4. Juno places clean prose as you speak; the memo fills in the gaps you forget
+
+Use this when the goal is a clean draft rather than a verbatim transcript.
+
+---
+
+## Draft long-form writing
+
+**Use case:** Draft several paragraphs before switching into editing mode.
+
+**The workflow:**
+1. Speak a full section, such as three to five paragraphs, in a single dictation session.
+2. Use `new paragraph` to separate sections without pausing
+3. Do not try to edit while dictating — keep going
+4. Press Fn/Globe to finish and read the full result
+
+Review and edit after the section is complete.
+
+---
+
+## Code comments and documentation
+
+**Use case:** Add comments, docstrings, or documentation while reviewing code.
+
+**The workflow:**
+1. Select a function or block in your editor
+2. Press Fn/Globe: *"explain that this checks whether the saved session is still active, renews it when needed, and returns early when renewal fails"*
+3. Press Fn/Globe to finish
+
+With a custom Code Comment style, Juno produces a clean inline comment in the right format for your codebase.
+
+---
+
+## Rephrasing on the fly
+
+**Use case:** Rephrase selected text without switching tools.
+
+**The workflow:**
+1. Select the sentence
+2. Press Fn/Globe: say what you mean differently, or say a command: *"make that more direct"* or *"remove the hedge"*
+3. Juno replaces the selection with the rewrite
+
+This is useful for single-sentence edits where the intended meaning is clear and only the framing needs to change.
+
+---
+
+## Standup updates
+
+**Use case:** Draft a concise standup update before a meeting.
+
+**The workflow:**
+1. Open Slack or your standup tool
+2. 30 seconds before joining: Fn/Globe → speak what you did yesterday, what you are doing today, any blockers
+3. Use your Standup custom style with `next bullet` between sections
+4. The update is ready in the compose field before the call starts
+
+The update reflects your current work before the context switch into the meeting.
+
+---
+
+## Snippets for recurring text
+
+**Use case:** Expand recurring text by voice, including scheduling links, addresses, sign-offs, and standard message templates.
+
+**Recommended setup:** Use snippets.
+
+In Settings → Dictionary and Memory → Snippets, create a trigger → body entry for each recurring phrase:
+
+| Trigger | Body |
+| --- | --- |
+| `my calendar link` | your actual scheduling link |
+| `our address` | your company's full mailing address |
+| `project sign-off` | Thanks for the partnership on this — looking forward to the next step. |
+
+When you say "my calendar link" in any dictation, Juno expands it to the full text.
+
+**Snippet scopes:** Snippets can be global (expand everywhere) or scoped to messaging, email, docs, or code. A code-scoped snippet only expands when you are dictating in a code context, so you do not get code boilerplate appearing in your emails.
+
+---
+
+## Working in multiple languages
+
+If you work in more than one language, start with **Auto-detect** in Settings → Writing & language. Juno identifies the language per session.
+
+If you naturally mix English and Hindi in the same sentence, select the **Hindi + English** code-switching pair — both languages are recognized simultaneously, no setting changes mid-session.
+
+The picker today offers five languages — Auto-detect, English, Spanish, Mandarin Chinese, and Hindi + English (code-switching pair) — plus a separate **Keep original** translation toggle. See [Settings](/docs/use-juno/settings).

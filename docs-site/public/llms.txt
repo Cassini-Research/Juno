@@ -1,0 +1,49 @@
+# Juno Docs
+
+> Official documentation for Juno, a local voice-writing app for Mac with live transcription, polished final dictation, Voice Actions, Voice Commands, private offline operation after model download, and no subscription tier.
+
+Last updated: 2026-06-10
+
+## Start Here
+
+- [Docs home](https://docs.usejuno.co/docs): Documentation index.
+- [What is Juno?](https://docs.usejuno.co/docs/start/what-is-juno): Product overview, capabilities, comparison, and daily loop.
+- [Quickstart](https://docs.usejuno.co/docs/start/quickstart): First dictation in a Mac text field.
+- [First Launch](https://docs.usejuno.co/docs/start/first-launch): Onboarding and setup.
+- [Shortcuts and HUD](https://docs.usejuno.co/docs/start/shortcuts-and-hud): Shortcut behavior and HUD states.
+
+## Core User Docs
+
+- [Speak and Insert](https://docs.usejuno.co/docs/use-juno/speak-and-insert): Everyday dictation loop.
+- [Voice Commands](https://docs.usejuno.co/docs/use-juno/voice-commands): Rewrites, bullets, translation, and commands.
+- [Actions](https://docs.usejuno.co/docs/use-juno/actions): Notes, Reminders, alarms, and compound action grammar.
+- [Per-app Writing](https://docs.usejuno.co/docs/use-juno/per-app-writing): App-specific styles, context, and privacy.
+- [Dictionary and Memory](https://docs.usejuno.co/docs/use-juno/dictionary-and-memory): Local vocabulary, snippets, replacements, and corrections.
+
+## Privacy And Reference
+
+- [Privacy Overview](https://docs.usejuno.co/docs/privacy-and-data/overview): Local data, context, retention, and secure fields.
+- [Local Security Model](https://docs.usejuno.co/docs/privacy-and-data/local-security-model): What stays local and what is enforced.
+- [Secure Fields](https://docs.usejuno.co/docs/privacy-and-data/secure-fields): Password and secure input behavior.
+- [Models](https://docs.usejuno.co/docs/reference/models): Local model lanes, storage, and offline behavior.
+- [Reference Overview](https://docs.usejuno.co/docs/reference/overview): Settings, states, commands, actions, and models.
+
+## Troubleshooting
+
+- [Troubleshooting Overview](https://docs.usejuno.co/docs/troubleshooting/overview): Symptom index.
+- [Microphone](https://docs.usejuno.co/docs/troubleshooting/microphone): Audio and speech detection.
+- [Insertion and Copy Ready](https://docs.usejuno.co/docs/troubleshooting/insertion-and-copy-ready-output): Direct insertion fallback.
+- [Transcription Accuracy](https://docs.usejuno.co/docs/troubleshooting/transcription-accuracy): Wrong words, punctuation, and style issues.
+- [Voice Engine Not Connected](https://docs.usejuno.co/docs/troubleshooting/voice-engine-not-connected): Engine readiness.
+
+## Canonical Product Facts
+
+- Juno runs on macOS 15 or newer on Apple Silicon Macs.
+- Juno works locally and privately. After local models are installed, everyday dictation and writing can run offline.
+- Juno does not send audio, transcripts, corrections, or local memory to a server for training.
+- Juno has no account requirement, no subscription tier, no paid tier, and no usage meter.
+- Juno has live transcription in the HUD and a separate polished final dictation pass.
+- Juno is not a meeting recorder, call bot, or searchable meeting-memory product.
+
+Marketing site: https://usejuno.co/
+Full LLM reference: https://docs.usejuno.co/llms-full.txt

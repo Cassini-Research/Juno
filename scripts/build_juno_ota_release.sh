@@ -16,7 +16,6 @@ DOWNLOAD_URL_PREFIX="${JUNO_OTA_DOWNLOAD_URL_PREFIX:-}"
 ALLOW_INSECURE_FEED="${JUNO_OTA_ALLOW_INSECURE_FEED:-}"
 NOTARY_PROFILE="${JUNO_NOTARY_KEYCHAIN_PROFILE:-}"
 STAPLE="${STAPLE:-0}"
-RELEASE_NOTES_SOURCE="${JUNO_OTA_RELEASE_NOTES:-}"
 
 usage() {
   cat <<'EOF'
@@ -29,7 +28,6 @@ Options:
   --sign IDENTITY                Developer ID Application identity
   --engine PATH                  Prepared engine bundle to copy into Juno.app
   --ota-channel CHANNEL          Optional Sparkle channel (for example: beta)
-  --release-notes PATH           Optional .html, .md, or .txt release notes file
   --allow-insecure-ota-feed      Permit http/file appcast URLs for local testing
   --notary-keychain-profile NAME Submit a temporary zip with notarytool before final archive
   --staple                       Staple an existing notarization ticket before final archive
@@ -51,7 +49,6 @@ while [[ $# -gt 0 ]]; do
     --ota-public-ed-key) OTA_PUBLIC_ED_KEY="$2"; shift 2 ;;
     --ota-channel) OTA_CHANNEL="$2"; shift 2 ;;
     --download-url-prefix) DOWNLOAD_URL_PREFIX="$2"; shift 2 ;;
-    --release-notes) RELEASE_NOTES_SOURCE="$2"; shift 2 ;;
     --allow-insecure-ota-feed) ALLOW_INSECURE_FEED=1; shift ;;
     --notary-keychain-profile) NOTARY_PROFILE="$2"; shift 2 ;;
     --staple) STAPLE=1; shift ;;
@@ -132,42 +129,8 @@ ARCHIVE="$UPDATES_DIR/Juno-$VERSION-$BUILD_NUMBER.zip"
 rm -f "$ARCHIVE"
 ditto -c -k --sequesterRsrc --keepParent "$DIST_APP" "$ARCHIVE"
 
-release_notes_extension() {
-  local path="$1"
-  local base="${path##*/}"
-  local ext="${base##*.}"
-  printf '%s\n' "$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
-}
-
-NOTES_FILE="$UPDATES_DIR/Juno-$VERSION-$BUILD_NUMBER.md"
-if [[ -n "$RELEASE_NOTES_SOURCE" ]]; then
-  if [[ ! -f "$RELEASE_NOTES_SOURCE" ]]; then
-    echo "Release notes file not found: $RELEASE_NOTES_SOURCE" >&2
-    exit 2
-  fi
-  NOTES_EXT="$(release_notes_extension "$RELEASE_NOTES_SOURCE")"
-  case "$NOTES_EXT" in
-    html|md|txt) ;;
-    *)
-      echo "Release notes must be .html, .md, or .txt: $RELEASE_NOTES_SOURCE" >&2
-      exit 2
-      ;;
-  esac
-  NOTES_FILE="$UPDATES_DIR/Juno-$VERSION-$BUILD_NUMBER.$NOTES_EXT"
-  cp "$RELEASE_NOTES_SOURCE" "$NOTES_FILE"
-else
-  cat >"$NOTES_FILE" <<EOF
-# Juno $VERSION
-
-This update installs Juno $VERSION (build $BUILD_NUMBER).
-EOF
-fi
-
 GENERATE_APPCAST="$(find_sparkle_tool generate_appcast)"
 APPCAST_ARGS=()
-if "$GENERATE_APPCAST" --help 2>&1 | grep -q -- '--embed-release-notes'; then
-  APPCAST_ARGS+=(--embed-release-notes)
-fi
 if [[ -n "$DOWNLOAD_URL_PREFIX" ]]; then
   if "$GENERATE_APPCAST" --help 2>&1 | grep -q -- '--download-url-prefix'; then
     APPCAST_ARGS+=(--download-url-prefix "$DOWNLOAD_URL_PREFIX")
@@ -179,5 +142,4 @@ fi
 "$GENERATE_APPCAST" "${APPCAST_ARGS[@]}" "$UPDATES_DIR"
 
 echo "Archive: $ARCHIVE"
-echo "Release notes: $NOTES_FILE"
 echo "Appcast: $UPDATES_DIR/appcast.xml"

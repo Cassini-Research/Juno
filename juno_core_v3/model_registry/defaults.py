@@ -89,34 +89,6 @@ def build_default_registry(
             metadata={"note": "default preview ASR — faster_whisper small.en", "model_path": ".juno_v2_demo/models/faster-whisper-small-en"},
         )
     )
-    # Qwen3-ASR preview (0.6B) — optional multilingual streaming backend via
-    # the moona3k/mlx-qwen3-asr MLX port. CANDIDATE only; operators opt
-    # in via the registry CLI once weights have been pulled.
-    packages.append(
-        ModelPackage(
-            package_id="preview.qwen3-asr-0.6b",
-            version="0.1",
-            manifest=CapabilityManifest(
-                slot=ModelSlot.PREVIEW_ASR,
-                backend=RuntimeBackend.QWEN_ASR,
-                languages=("en", "zh", "es", "ja", "ko", "fr", "de", "pt", "ru", "ar"),
-                quantizations=("fp16", "8bit", "4bit"),
-                streaming=True,
-                min_ram_mb=1400,
-                warm_load_target_s=1.5,
-                thermal_class="desktop",
-                disallow_surfaces=(SurfaceClass.PHONE_CLASS, SurfaceClass.KEYBOARD_EXTENSION),
-            ),
-            rollback_target=None,
-            promotion=ModelPromotionStage.CANDIDATE,
-            metadata={
-                "note": "optional multilingual streaming backend (Qwen3-ASR-0.6B via MLX)",
-                "model_path": "Qwen/Qwen3-ASR-0.6B",
-                "hf_repo_id": "Qwen/Qwen3-ASR-0.6B",
-            },
-        )
-    )
-
     # Final ASR slot — faster_whisper is the universally supported runtime backend.
     packages.append(
         ModelPackage(
@@ -157,34 +129,6 @@ def build_default_registry(
             metadata={"note": "Mac-only MLX final backend; rollback to faster_whisper", "hf_repo_id": "mlx-community/whisper-large-v3-turbo"},
         )
     )
-    # Qwen3-ASR final (1.7B) — optional multilingual one-shot backend via the
-    # moona3k/mlx-qwen3-asr MLX port. CANDIDATE; rolls back to the
-    # faster_whisper medium default if withdrawn.
-    packages.append(
-        ModelPackage(
-            package_id="final.qwen3-asr-1.7b",
-            version="0.1",
-            manifest=CapabilityManifest(
-                slot=ModelSlot.FINAL_ASR,
-                backend=RuntimeBackend.QWEN_ASR,
-                languages=("en", "zh", "es", "ja", "ko", "fr", "de", "pt", "ru", "ar", "hi"),
-                quantizations=("fp16", "8bit", "4bit"),
-                streaming=False,
-                min_ram_mb=3600,
-                warm_load_target_s=3.0,
-                thermal_class="desktop",
-                disallow_surfaces=(SurfaceClass.PHONE_CLASS, SurfaceClass.KEYBOARD_EXTENSION),
-            ),
-            rollback_target="final.faster-whisper-medium-en",
-            promotion=ModelPromotionStage.CANDIDATE,
-            metadata={
-                "note": "multilingual Mac-only final backend (Qwen3-ASR-1.7B via MLX); rollback to faster_whisper",
-                "model_path": "Qwen/Qwen3-ASR-1.7B",
-                "hf_repo_id": "Qwen/Qwen3-ASR-1.7B",
-            },
-        )
-    )
-
     # Writer slot candidates.
     packages.append(
         ModelPackage(

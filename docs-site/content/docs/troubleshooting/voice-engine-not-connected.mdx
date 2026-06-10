@@ -1,0 +1,48 @@
+---
+title: "Voice Engine Not Connected"
+description: "Fix local engine startup."
+---
+
+import { FlowSteps } from '@/components/docs/FlowSteps';
+
+# Voice Engine Not Connected
+
+If the engine is unavailable, Home shows Offline and Settings shows Install or Repair.
+
+## Fix order
+
+<FlowSteps
+  steps={[
+    {
+      title: 'Open Settings → Models',
+      description: 'Check whether the required model lanes are Ready, Missing, Installing, or Repairable.',
+      status: 'required',
+    },
+    {
+      title: 'Run Install or Repair',
+      description: 'Use the app button instead of Terminal. Normal users should not manage engine files manually.',
+      status: 'required',
+    },
+    {
+      title: 'Quit and reopen Juno',
+      description: 'Restart the app after repair so the shell reconnects to the managed local engine.',
+      status: 'required',
+    },
+    {
+      title: 'Run the clean test',
+      description: 'Test in Notes with one short dictation after the engine reports ready.',
+      status: 'required',
+    },
+  ]}
+/>
+
+## Common causes
+
+- **Models still preparing** — Setup step downloaded but has not warmed yet. Wait, then check Settings → Models.
+- **Stale engine process** — A previous Juno session left a hanging engine process. Quit Juno completely from the menu bar and reopen.
+- **Model file corrupted** — Disk-level damage during a download. Settings → Models → Repair re-fetches.
+- **Engine and shell version mismatch** — Happens during a partial update. A full quit + reopen usually picks up the matched pair.
+
+## When to collect a support bundle
+
+If Models reports ready but dictation still cannot reach the engine, create a support bundle and include the exact HUD message, the app version, and whether this happened after an update.

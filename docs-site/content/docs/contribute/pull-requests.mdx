@@ -1,0 +1,37 @@
+---
+title: "Pull Requests"
+description: "Pull request expectations."
+audience: ["contributor", "maintainer"]
+pageType: "how-to"
+---
+
+# Pull Requests
+
+Pull requests should be small, testable, and clear about user impact.
+
+## PR requirements
+
+Include:
+
+- The problem being solved.
+- The changed files and runtime layer.
+- User-facing behavior before and after.
+- Automated tests run.
+- Manual Mac QA performed, when relevant.
+- Privacy, retention, and secure-field impact.
+- Screenshots or screen recordings for UI changes.
+- Any migration or compatibility consideration.
+
+## Required tests
+
+At minimum, run:
+
+```bash
+./scripts/run_tests_v2.sh
+```
+
+For broad runtime changes, run the broader maintained test command and relevant benchmark/gate scripts. For packaged app changes, run the package smoke and manual GUI checks.
+
+## Maintainer review
+
+Reviewers should check correctness, safety, regression risk, terminology, storage behavior, local auth behavior, and whether the change introduces hidden state that support cannot diagnose.

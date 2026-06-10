@@ -1,0 +1,55 @@
+---
+title: "Dictation Lifecycle"
+description: "Shortcut, engine, HUD, and insertion flow."
+full: true
+---
+
+import { DiagramBlock } from '@/components/docs/DiagramBlock';
+
+# Dictation Lifecycle
+
+A Juno session moves through the shell, engine, HUD, insertion path, and optional storage paths.
+
+<DiagramBlock
+  title="One session from shortcut press to inserted text"
+  caption="The shell drives the HUD state machine; the engine produces partials and a final transcript; the insertion path decides between direct paste and Copy Ready."
+  takeaway="Insertion happens after finalization. The HUD label reports the active stage."
+>
+  <img src="/images/diagrams/architecture-dictation-lifecycle.svg" alt="Dictation lifecycle" style={{ width: '100%', height: 'auto' }} />
+</DiagramBlock>
+
+## The eight stages
+
+1. **Shortcut received.** `HotkeyBridge` captures the configured key (Fn / Globe by default) and signals the shell. The HUD state machine transitions from `idle` to `checkingCapability`.
+2. **Capability check.** The shell verifies the engine is reachable, Accessibility is granted, and the focused field is inspectable. State: `checkingCapability` → `checkingMic` on success.
+3. **Microphone open.** `JunoAudioCapture` requests frames from the OS. State stays `checkingMic` until real audio frames arrive — never claims listening before then.
+4. **Speech detection.** Frames flow into the VAD (voice activity detection) pipeline in `juno_v2/vad/`. State: `checkingMic` → `waitingSpeech` once frames arrive, then `waitingSpeech` → `listening` once speech energy is detected.
+5. **Streaming transcription.** Audio segments flow into the local engine (`juno_v2/asr/`). On natural pauses, the engine emits polished partial results. State transitions: `listening` → `refining` → `partialCommit` → `listening` as each partial is processed and placed.
+6. **Finalization.** Pressing the shortcut again (or `Esc` to cancel) ends capture. The engine produces the final full transcript. The active style (`juno_v2/modes/`) may invoke the writing engine for Formal email, Structured notes, Polished rewrite, or Commands.
+7. **Insertion decision.** `SafeInsertion` checks: field type (secure/normal), focus stability since session start, Accessibility availability, paste-method viability. Result either lands the text or triggers Copy Ready in the HUD.
+8. **Storage + learning.** If history is enabled for this app, the transcript is written. If recordings are enabled, the audio is retained. If correction learning is enabled, the session's edits (if any) are queued for personalization.
+
+## Where each stage lives in the code
+
+| Stage | Module(s) |
+| --- | --- |
+| Shortcut capture | `shells/macos/Sources/JunoShell/HotkeyBridge.swift` |
+| HUD state machine | `JunoHUDState.swift`, `HUDStateMachine.swift` |
+| Capability + Accessibility | `JunoCapability.swift`, `JunoSecureFieldPolicy.swift` |
+| Audio capture | `JunoAudioCapture.swift` (Swift) + `juno_v2/audio/` (Python) |
+| Speech detection | `juno_v2/vad/` |
+| Streaming transcription | `juno_v2/asr/`, `juno_v2/engine/` |
+| Style and writing engine | `juno_v2/modes/`, `juno_v2/transforms/` |
+| Insertion | `JunoSafeInsertion.swift`, `juno_v2/insertion/` |
+| History + recordings | `JunoHistoryStore.swift`, `juno_v2/workbench/` |
+| Memory / learning | `juno_v2/memory/`, `juno_v2/personalization/` |
+
+## The selected-text path
+
+When a session starts with text already highlighted, the insertion path becomes a replace operation rather than an append. `SafeInsertion` holds the selection range and waits for the final result before issuing the replace — partial commits don't fire mid-rewrite. This protects the common "select sentence → rewrite by voice" workflow from being corrupted by a half-finished partial.
+
+## What the per-state HUD labels enable
+
+Each pipeline stage has its own HUD label, so a stall identifies the failing stage directly. A microphone permission failure (stage 3) and a speech-detection failure (stage 4) show as different states, not as a single ambiguous "Recording" indicator.
+
+For the user-facing HUD reference, see [HUD States](/docs/use-juno/hud-states). For the safety rules around insertion, see [Safe Insertion and Copy Ready](/docs/use-juno/safe-insertion-and-copy-ready-output).

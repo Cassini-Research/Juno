@@ -20,7 +20,7 @@ enum JunoPermissions {
     }
     static func openMicSettings()              { JunoSystemSettingsLinks.openMicrophonePrivacy() }
     static func openAXSettings()              { JunoSystemSettingsLinks.openAccessibilityPrivacy() }
-    static func openSpeechRecognitionSettings() { JunoSystemSettingsLinks.openSpeechRecognitionPrivacy() }
+    static func openScreenRecordingSettings() { JunoScreenContextAccess.openSystemSettings() }
 }
 
 private struct OnboardingSurface<Content: View>: View {
@@ -189,9 +189,7 @@ private struct OnboardingPermissionsStep: View {
     @Environment(\.colorScheme) private var scheme
 
     private var allCore: Bool { perms.micStatus == .authorized && perms.axGranted }
-    private var allPermissionsSatisfied: Bool {
-        perms.micStatus == .authorized && perms.axGranted && perms.speechStatus == .authorized
-    }
+    private var screenContextReady: Bool { perms.screenContextEnabled && perms.screenRecordingGranted }
 
     var body: some View {
         VStack(alignment: .center, spacing: 16) {
@@ -241,20 +239,20 @@ private struct OnboardingPermissionsStep: View {
                     settings: { JunoPermissions.openAXSettings() }
                 )
                 permCard(
-                    icon: "text.bubble.fill",
-                    label: "Live captions",
-                    detail: "Shows the words as you speak, before Juno pastes the polished line.",
-                    ok: perms.speechStatus == .authorized,
+                    icon: "viewfinder",
+                    label: "Visible screen text",
+                    detail: "Adds Juno to macOS Screen Recording so visible names and code terms can be read locally while you dictate.",
+                    ok: screenContextReady,
                     required: false,
-                    primaryLabel: speechPrimaryTitle,
+                    primaryLabel: screenRecordingPrimaryTitle,
                     primary: {
-                        switch perms.speechStatus {
-                        case .notDetermined: perms.requestSpeechRecognition { _ in onRefresh() }
-                        default: perms.openSpeechRecognitionSettings()
+                        perms.requestScreenRecording { _ in
+                            onRefresh()
                         }
                     },
-                    showSecondarySettings: speechShowSecondarySettings,
-                    settings: { JunoPermissions.openSpeechRecognitionSettings() }
+                    showSecondarySettings: false,
+                    settings: { JunoPermissions.openScreenRecordingSettings() },
+                    readyText: "Ready for local screen text."
                 )
             }
             .frame(maxWidth: 540)
@@ -293,11 +291,11 @@ private struct OnboardingPermissionsStep: View {
 
     private var headerSubtitle: String {
         if allCore {
-            return perms.speechStatus == .authorized
-                ? "Microphone, Accessibility, and live captions are ready."
-                : "Microphone and Accessibility are ready. Allow Live captions to finish."
+            return screenContextReady
+                ? "Microphone, Accessibility, and visible screen text are ready."
+                : "Microphone and Accessibility are ready. Visible screen text is optional."
         }
-        return "Microphone hears you. Accessibility writes where you’re typing. Live captions show words as you speak."
+        return "Microphone hears you. Accessibility writes where you’re typing. Visible screen text helps spell on-screen terms."
     }
 
     /// Three monochrome glyphs as the step's hero. Each glyph gains a hairline
@@ -307,7 +305,7 @@ private struct OnboardingPermissionsStep: View {
         HStack(spacing: 24) {
             permissionGlyph(symbol: "mic", granted: perms.micStatus == .authorized, dim: false)
             permissionGlyph(symbol: "hand.raised", granted: perms.axGranted, dim: false)
-            permissionGlyph(symbol: "text.bubble", granted: perms.speechStatus == .authorized, dim: true)
+            permissionGlyph(symbol: "viewfinder", granted: screenContextReady, dim: true)
         }
         .accessibilityHidden(true)
     }
@@ -358,23 +356,18 @@ private struct OnboardingPermissionsStep: View {
     /// Never duplicate the primary action: for denied mic the primary already opens System Settings.
     private var micShowSecondarySettings: Bool { false }
 
-    private var speechPrimaryTitle: String {
-        switch perms.speechStatus {
-        case .notDetermined: return "Allow speech recognition"
-        case .denied, .restricted: return "Open Speech Recognition privacy"
-        case .authorized: return "Granted"
-        @unknown default: return "Open Speech Recognition privacy"
-        }
+    private var screenRecordingPrimaryTitle: String {
+        if screenContextReady { return "Granted" }
+        return "Open Screen Recording"
     }
-
-    private var speechShowSecondarySettings: Bool { false }
 
     private func permCard(icon: String, label: String, detail: String,
                           ok: Bool, required: Bool,
                           primaryLabel: String,
                           primary: @escaping () -> Void,
                           showSecondarySettings: Bool,
-                          settings: @escaping () -> Void) -> some View {
+                          settings: @escaping () -> Void,
+                          readyText: String? = nil) -> some View {
         HStack(alignment: .center, spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -408,7 +401,7 @@ private struct OnboardingPermissionsStep: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if ok {
-                    Text(required ? "Ready for dictation." : "Live captions are available.")
+                    Text(readyText ?? (required ? "Ready for dictation." : "Ready."))
                         .font(.caption)
                         .foregroundStyle(JunoTheme.secondaryText(scheme))
                 }
@@ -1184,9 +1177,9 @@ private struct OnboardingVoiceActionsStep: View {
     // Each example uses a verb in ``juno_core_v3/actions/grammar.py`` so a
     // user repeating any of them will trigger the action. Outcomes describe
     // the literal effect:
-    //   - Reminder → row in Apple Reminders
+        //   - Reminder → row in Reminders
     //   - Alarm     → 1-minute Calendar event with an alert (NOT a time block)
-    //   - Note      → entry in a "Juno" folder in Apple Notes
+        //   - Note      → entry in a "Juno" folder in Notes
     //
     // Multi-action capability is real (the grammar parser returns a list of
     // actions from one utterance) and is surfaced honestly in the caption
@@ -1204,19 +1197,19 @@ private struct OnboardingVoiceActionsStep: View {
             utterance: "Hey Juno, remind me to call Sarah at 4pm tomorrow.",
             descriptor: .reminder,
             title: "Call Sarah",
-            detail: "Apple Reminders · Tomorrow, 4:00 PM"
+            detail: "Reminders · Tomorrow, 4:00 PM"
         ),
         ActionExample(
             utterance: "Hey Juno, set an alarm for 7am tomorrow.",
             descriptor: .alarm,
             title: "Alarm",
-            detail: "Calendar alert · Tomorrow, 7:00 AM"
+            detail: "Alarm · Tomorrow, 7:00 AM"
         ),
         ActionExample(
             utterance: "Hey Juno, take a note: revisit the pricing tiers next week.",
             descriptor: .note,
             title: "Revisit pricing tiers",
-            detail: "Saved to Apple Notes"
+            detail: "Saved to Notes"
         )
     ]
 
@@ -1406,10 +1399,7 @@ private struct OnboardingVoiceActionsStep: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(d.accent.opacity(0.14))
                     .frame(width: 44, height: 44)
-                Image(systemName: d.symbolName)
-                    .font(.system(size: 19, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(d.accent)
+                JunoActionNativeIcon(kind: d.kind, size: 36, fallbackColor: d.accent)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(d.displayName.uppercased())
@@ -1472,7 +1462,7 @@ private struct OnboardingVoiceActionsStep: View {
 
     // MARK: Access preview — what each permission is for, in plain language.
     //
-    // The previous inline-chip row ("Reminders | Calendar | Apple Notes")
+    // The previous inline-chip row ("Reminders | Alarm | Notes")
     // told the user WHICH permissions Juno asks for but not WHY each one.
     // A 3-row "why" list answers the question users actually have when a
     // permission dialog about to fire: "what is this for?" Each row also
@@ -1482,17 +1472,15 @@ private struct OnboardingVoiceActionsStep: View {
     private var accessPreview: some View {
         VStack(alignment: .leading, spacing: 0) {
             accessRow(
-                symbol: "bell.badge",
-                accent: JunoActionDescriptor.reminder.accent,
+                actionKind: .reminder,
                 label: "Reminders",
                 why: "Saves a to-do when you say \u{201C}remind me\u{2026}\u{201D}",
                 kind: .reminders
             )
             accessRowDivider
             accessRow(
-                symbol: "alarm",
-                accent: JunoActionDescriptor.alarm.accent,
-                label: "Calendar",
+                actionKind: .alarm,
+                label: "Alarm",
                 // Phrased honestly: Juno creates a 1-minute Calendar event
                 // with an alert — never a multi-hour time block. The
                 // permission is for Calendar because that's what macOS
@@ -1502,9 +1490,8 @@ private struct OnboardingVoiceActionsStep: View {
             )
             accessRowDivider
             accessRow(
-                symbol: "note.text",
-                accent: JunoActionDescriptor.note.accent,
-                label: "Apple Notes",
+                actionKind: .note,
+                label: "Notes",
                 why: "Captures freeform notes when you say \u{201C}take a note\u{2026}\u{201D}",
                 kind: .notesAutomation
             )
@@ -1530,23 +1517,15 @@ private struct OnboardingVoiceActionsStep: View {
     }
 
     private func accessRow(
-        symbol: String,
-        accent: Color,
+        actionKind: JunoActionKind,
         label: String,
         why: String,
         kind: JunoActionPermissionDescriptor
     ) -> some View {
         let granted = actionPerms.status(for: kind) == .granted
+        let descriptor = actionKind.descriptor
         return HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(accent.opacity(0.14))
-                    .frame(width: 26, height: 26)
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(accent)
-            }
+            JunoActionNativeIconTile(kind: actionKind, tileSize: 26, iconSize: 22, fallbackTint: descriptor.accent)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
                     .font(.system(size: 12.5, weight: .semibold, design: .rounded))
@@ -1709,12 +1688,12 @@ private struct OnboardingVoiceActionsStep: View {
                    "Calendar isn't allowed. Change this anytime.")
         case .askingNotes:
             return ("progress", JunoDesignTokens.accent,
-                    "Look for the Apple Notes automation prompt.")
+                    "Look for the Notes automation prompt.")
         case .notesResolved(let granted):
             return granted
-                ? ("checkmark", JunoDesignTokens.meadow, "Apple Notes allowed.")
+                ? ("checkmark", JunoDesignTokens.meadow, "Notes allowed.")
                 : ("xmark", JunoDesignTokens.danger,
-                   "Apple Notes isn't allowed. Change this anytime.")
+                   "Notes isn't allowed. Change this anytime.")
         case .done(let r, let c, let n):
             if r || c || n {
                 return ("checkmark", JunoDesignTokens.meadow,
@@ -2562,7 +2541,7 @@ private struct JunoOnboardingView: View {
 
     /// Picks the next pending permission action for step 1. Mic comes first
     /// (notDetermined → request, denied → open Settings), then Accessibility,
-    /// then advance. Live captions stays optional and never blocks.
+    /// then advance. Visible screen text stays optional and never blocks.
     private var permissionsCascade: PermissionsCascadeAction {
         switch perms.micStatus {
         case .notDetermined: return .requestMic

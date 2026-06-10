@@ -9,7 +9,10 @@ from juno_v2.context.compiler import FormattingPacket
 from juno_v2.contracts.writer import WriterMode, WriterTransformRequest, WriterTransformResult
 from juno_v2.meeting_grammar import MeetingGrammarEngine, MeetingGrammarMode
 from juno_v2.writer.backends.base import WriterBackend
-from juno_v2.writer.deterministic import normalize_dictation_orthography, run_pipeline
+from juno_v2.writer.deterministic import (
+    normalize_dictation_orthography,
+    run_pipeline,
+)
 
 
 class FinalFormatter:
@@ -130,10 +133,12 @@ class FinalFormatter:
             if acquired and self.release is not None:
                 self.release()
         text = (result.text or "").strip()
+        context_terms = _context_terms_for_packet(packet)
         rejection_reason = _formatted_output_rejection_reason(
             packet.corrected_text,
             text,
             required_terms=required_terms,
+            context_terms=context_terms,
         )
         if rejection_reason is not None:
             self.last_rejection = _build_rejection(
@@ -266,6 +271,7 @@ def _formatted_output_rejection_reason(
     formatted: str,
     *,
     required_terms: list[str] | tuple[str, ...] | None = None,
+    context_terms: list[str] | tuple[str, ...] | None = None,
 ) -> str | None:
     if not formatted:
         return "empty_output"
@@ -274,6 +280,8 @@ def _formatted_output_rejection_reason(
         return "assistant_preamble"
     if _contains_unsolicited_markdown_emphasis(source, formatted):
         return "unsupported_markdown_emphasis"
+    if _context_only_terms_added(source, formatted, context_terms):
+        return "context_terms_added"
     src_words = max(1, len((source or "").split()))
     out_words = len(formatted.split())
     if src_words >= 4:
@@ -284,6 +292,8 @@ def _formatted_output_rejection_reason(
         return "content_words_dropped"
     if _missing_required_terms(source, formatted, required_terms):
         return "required_terms_dropped"
+    if _source_required_terms_dropped(source, formatted):
+        return "source_required_terms_dropped"
     return None
 
 
@@ -296,6 +306,10 @@ _FORMATTER_CONTENT_STOPWORDS = frozenset({
     "they", "this", "to", "was", "we", "were", "what", "when", "where",
     "who", "why", "will", "with", "would", "you", "your",
 })
+_SOURCE_REQUIRED_TERM_STOPWORDS = _FORMATTER_CONTENT_STOPWORDS | frozenset({
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+    "eighth", "ninth", "tenth", "hey", "hi", "hello", "note", "please",
+})
 
 
 def _contains_unsolicited_markdown_emphasis(source: str, formatted: str) -> bool:
@@ -305,7 +319,12 @@ def _contains_unsolicited_markdown_emphasis(source: str, formatted: str) -> bool
 
 
 def _content_words_preserved(source: str, formatted: str) -> bool:
-    source_tokens = _formatter_content_tokens(source)
+    ignored_source_tokens = _structural_formatting_instruction_tokens(source)
+    source_tokens = [
+        token
+        for token in _formatter_content_tokens(source)
+        if token not in ignored_source_tokens
+    ]
     if len(source_tokens) < 8:
         return True
     output_tokens = set(_formatter_content_tokens(formatted))
@@ -346,6 +365,9 @@ def _build_rejection(
     missing = _missing_required_terms(source, formatted, required_terms)
     if missing:
         rejection["missing_required_terms"] = missing
+    source_missing = _source_required_terms_dropped(source, formatted)
+    if source_missing:
+        rejection["missing_source_required_terms"] = source_missing
     return rejection
 
 
@@ -370,6 +392,98 @@ def _required_terms_for_packet(packet: FormattingPacket) -> list[str]:
     return terms[:24]
 
 
+def _source_required_terms_dropped(source: str, formatted: str) -> list[str]:
+    missing: list[str] = []
+    for term in _source_required_terms(source):
+        if _term_present_in_text(term, formatted):
+            continue
+        missing.append(term)
+    return missing
+
+
+def _source_required_terms(source: str) -> list[str]:
+    terms: list[str] = []
+    structural_counts = _structural_instruction_count_terms(source)
+    for match in re.finditer(r"\b(?:[A-Z][A-Za-z0-9]{2,}|[A-Z]{2,}(?:\s+[A-Z]{2,})*|\d+(?:[.:/-]\d+)*)\b", source or ""):
+        term = match.group(0).strip()
+        if not term or term.casefold() in _SOURCE_REQUIRED_TERM_STOPWORDS:
+            continue
+        if term in structural_counts:
+            continue
+        if term.casefold() in {item.casefold() for item in terms}:
+            continue
+        terms.append(term)
+    return terms[:24]
+
+
+def _structural_instruction_count_terms(source: str) -> set[str]:
+    text = source or ""
+    counts: set[str] = set()
+    count_nouns = r"(?:points?|items?|bullets?|bullet\s+points?|numbered\s+items?|steps?|todos?|tasks?|takeaways?)"
+    lead_verbs = (
+        r"(?:note\s+down|write\s+down|list|make|create|draft|outline|give\s+me|"
+        r"turn\s+(?:this|that|it)\s+into)"
+    )
+    patterns = (
+        rf"\b{lead_verbs}\s+(?P<count>\d+)\s+{count_nouns}\b",
+        rf"\b(?P<count>\d+)\s+{count_nouns}\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            counts.add(match.group("count"))
+    return counts
+
+
+def _structural_formatting_instruction_tokens(source: str) -> set[str]:
+    if not _looks_like_structural_formatting_request(source):
+        return set()
+    return {
+        "bullet",
+        "bullets",
+        "create",
+        "down",
+        "draft",
+        "eighth",
+        "fifth",
+        "first",
+        "fourth",
+        "give",
+        "items",
+        "list",
+        "make",
+        "ninth",
+        "note",
+        "numbered",
+        "outline",
+        "point",
+        "points",
+        "second",
+        "seventh",
+        "sixth",
+        "steps",
+        "takeaways",
+        "tasks",
+        "tenth",
+        "third",
+        "todos",
+        "write",
+    }
+
+
+def _looks_like_structural_formatting_request(source: str) -> bool:
+    text = source or ""
+    if _structural_instruction_count_terms(text):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:note\s+down|write\s+down|turn\s+(?:this|that|it)\s+into|"
+            r"bullets?|numbered\s+list|checklist|first\b.+\bsecond\b)",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+    )
+
+
 def _missing_required_terms(
     source: str,
     formatted: str,
@@ -386,6 +500,50 @@ def _missing_required_terms(
             continue
         missing.append(t)
     return missing
+
+
+def _context_terms_for_packet(packet: FormattingPacket) -> list[str]:
+    metadata = packet.metadata or {}
+    terms: list[str] = []
+
+    def add(value: object) -> None:
+        text = str(value or "").strip()
+        if not text or len(text) > 120:
+            return
+        if text.casefold() in {item.casefold() for item in terms}:
+            return
+        if _term_present_in_text(text, packet.corrected_text):
+            return
+        if not _high_value_term(text):
+            return
+        terms.append(text)
+
+    add(packet.app_name)
+    add(packet.window_title)
+    for key in ("candidate_entities", "recent_screen_terms", "required_preserved_terms"):
+        value = metadata.get(key)
+        if isinstance(value, (list, tuple)):
+            for item in value[:40]:
+                add(item)
+    return terms[:40]
+
+
+def _context_only_terms_added(
+    source: str,
+    formatted: str,
+    context_terms: list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    added: list[str] = []
+    for term in context_terms or []:
+        t = str(term or "").strip()
+        if not t:
+            continue
+        if _term_present_in_text(t, source):
+            continue
+        if not _term_present_in_text(t, formatted):
+            continue
+        added.append(t)
+    return added
 
 
 def _term_present_in_text(term: str, text: str) -> bool:

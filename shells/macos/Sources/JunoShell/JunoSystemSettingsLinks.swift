@@ -1,7 +1,6 @@
 import AppKit
 import AVFoundation
 import Foundation
-import Speech
 
 /// Opens Privacy & Security sub-panes in **System Settings**.
 ///
@@ -13,9 +12,9 @@ import Speech
 ///    from ``NSWorkspace``).
 /// 4. Finally launch the System Settings app so the user can open **Privacy & Security** manually.
 ///
-/// For **Microphone** / **Speech recognition**, when access is denied we call the matching
-/// ``request*`` API once before opening Settings so this **bundle path** is registered with
-/// TCC — otherwise the Microphone list can look empty until a prompt has been attempted.
+/// For **Microphone**, when access is denied we call the matching request API once
+/// before opening Settings so this **bundle path** is registered with TCC — otherwise
+/// the Microphone list can look empty until a prompt has been attempted.
 enum JunoSystemSettingsLinks {
     private static func openFirstWorking(_ urls: [URL]) -> URL? {
         assert(Thread.isMainThread)
@@ -136,19 +135,12 @@ enum JunoSystemSettingsLinks {
         }
     }
 
-    static func openSpeechRecognitionPrivacy() {
-        let run = { openPrivacyPane(anchor: "Privacy_SpeechRecognition") }
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .denied, .restricted:
-            SFSpeechRecognizer.requestAuthorization { _ in
-                DispatchQueue.main.async(execute: run)
-            }
-        default:
-            if Thread.isMainThread {
-                run()
-            } else {
-                DispatchQueue.main.async(execute: run)
-            }
+    static func openScreenRecordingPrivacy() {
+        let run = { openPrivacyPane(anchor: "Privacy_ScreenCapture") }
+        if Thread.isMainThread {
+            run()
+        } else {
+            DispatchQueue.main.async(execute: run)
         }
     }
 }

@@ -183,12 +183,13 @@ class VadGate:
         now = time.monotonic()
         if self._utterance_started_at == 0.0:
             self._utterance_started_at = now
+        previous_audio_seen_seconds = self._absolute_samples_seen / float(self.sample_rate_hz)
         self._absolute_samples_seen += chunk.size
 
         # Warmup: admit everything for the first ``warmup_seconds`` so VAD
         # has audio to settle and we never clip the user's opening word.
         audio_seen_seconds = self._absolute_samples_seen / float(self.sample_rate_hz)
-        in_warmup = audio_seen_seconds <= self.warmup_seconds
+        in_warmup = previous_audio_seen_seconds < self.warmup_seconds
         if in_warmup:
             # Still feed VADIterator so it builds state during warmup, and
             # honor any start/end events it emits. The previous code ignored

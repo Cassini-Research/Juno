@@ -5,15 +5,13 @@
 // them to ``/api/broker/dictation/preview/chunk`` on the broker. Each
 // response carries the cumulative-utterance partial text the engine's
 // preview backend produced for that chunk; the shell renders it directly
-// in the HUD with no SFSpeech intermediate.
+// in the HUD with no Apple Speech intermediate.
 //
 // Why a dedicated class (and not just a closure inside JunoShellApp):
 //   - The streamer owns the per-utterance ``decode_seq`` counter; spreading
 //     that across the recorder callback path was leak-prone.
-//   - SFSpeech is the documented fallback (see ``onPartial``'s callers).
-//     Encapsulating the network/decode lifecycle here makes the fallback
-//     decision obvious — it's anywhere this class fails or stays silent
-//     past the first-word budget.
+//   - Encapsulating the network/decode lifecycle here makes preview failure
+//     explicit without introducing a second transcription engine.
 //   - One TURN_OFF point at ``cancel()`` so unrelated cleanup doesn't have
 //     to know about partial-decode bookkeeping.
 
@@ -41,8 +39,7 @@ final class JunoPreviewStreamer {
     /// chunks. Resets for each preview segment.
     private var decodeSeq: Int = 0
     /// Wall-clock when the first chunk was sent for the current utterance.
-    /// Used by callers to apply a "first-word budget" before falling back
-    /// to SFSpeech.
+    /// Used by callers to measure first visible local preview latency.
     private(set) var firstChunkSentAt: Date?
     /// Wall-clock when the first non-empty engine partial arrived. ``nil``
     /// while we are still waiting (or never if the budget expired and we
@@ -50,15 +47,13 @@ final class JunoPreviewStreamer {
     private(set) var firstPartialAt: Date?
     /// Set when the streamer has decided to give up on engine output for
     /// the current utterance (network error, timeout, backend unavailable).
-    /// Subsequent partials are dropped so a late engine answer doesn't
-    /// fight the SFSpeech fallback already on screen.
+    /// Subsequent partials are dropped so a late engine answer doesn't fight
+    /// corrected text already on screen.
     private(set) var didGiveUp: Bool = false
     /// Consecutive broker errors on this utterance. Reset on every successful
     /// response. We only give up after several in a row so one slow decode
     /// does not kill the live HUD path mid-utterance.
     private var consecutiveErrorCount: Int = 0
-    private var committedSegmentText: String = ""
-    private var activeSegmentCommittedText: String = ""
     private var activeSegmentText: String = ""
     private var rollingSegmentId: String?
     private var rollTimeoutWork: DispatchWorkItem?
@@ -72,8 +67,7 @@ final class JunoPreviewStreamer {
     /// - `isFinal`: true only on the explicit ``finish()`` chunk at stop time.
     var onPartial: ((_ uid: String, _ committed: String, _ tail: String, _ isFinal: Bool) -> Void)?
     /// Called on the main queue when the engine path is unusable for this
-    /// utterance (decode failure, network error). The shell responds by
-    /// switching the HUD to SFSpeech fallback.
+    /// utterance (decode failure, network error).
     var onGiveUp: ((_ uid: String, _ reason: String) -> Void)?
     /// Called when preview freshness is at risk. Live Qwen correction is
     /// opportunistic; the owner uses this signal to pause correction rather
@@ -135,8 +129,6 @@ final class JunoPreviewStreamer {
         firstPartialAt = nil
         didGiveUp = false
         consecutiveErrorCount = 0
-        committedSegmentText = ""
-        activeSegmentCommittedText = ""
         activeSegmentText = ""
         rollingSegmentId = nil
         rollTimeoutWork?.cancel()
@@ -244,18 +236,15 @@ final class JunoPreviewStreamer {
         }
     }
 
-    /// Abort the in-flight utterance silently — used on cancel/Esc and on
-    /// fallback-to-SFSpeech. We do NOT POST a final chunk: the shell will
-    /// either rerun the full utterance through ``ingest_wav`` (cancel) or
-    /// just abandon engine output (fallback).
+    /// Abort the in-flight utterance silently — used on cancel/Esc. We do NOT
+    /// POST a final chunk: the shell will rerun the full utterance through
+    /// ``ingest_wav`` on cancel when needed.
     func cancel(reason: String) {
         let uid = utteranceId
         utteranceId = nil
         activeSegmentId = nil
         didGiveUp = true
         consecutiveErrorCount = 0
-        committedSegmentText = ""
-        activeSegmentCommittedText = ""
         activeSegmentText = ""
         rollingSegmentId = nil
         rollTimeoutWork?.cancel()
@@ -404,6 +393,9 @@ final class JunoPreviewStreamer {
                 let tailDisplaySuppressReason = ((obj["tail_display_suppress_reason"] as? String)
                     ?? (previewMetadata?["tail_display_suppress_reason"] as? String)
                     ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                // Do not render unstable ASR tail text in production. The
+                // backend may keep tail internally for final-word promotion,
+                // but user-visible HUD text is committed text only.
                 let visibleTail = ""
                 let effectiveCommitted = committed.isEmpty && tail.isEmpty
                     ? combined
@@ -424,14 +416,7 @@ final class JunoPreviewStreamer {
                 if !text.isEmpty {
                     self.activeSegmentText = text
                 }
-                if !effectiveCommitted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.activeSegmentCommittedText = effectiveCommitted
-                }
-                let rootCommitted = Self.rootCommittedText(
-                    existingRoot: self.committedSegmentText,
-                    segmentCommitted: effectiveCommitted
-                )
-                self.onPartial?(rootUid, rootCommitted, visibleTail, final && self.isFinishing)
+                self.onPartial?(rootUid, effectiveCommitted, visibleTail, final && self.isFinishing)
                 if final && self.rollingSegmentId == segmentUid && !self.isFinishing {
                     self.completeSegmentRoll(reason: "final_response")
                 } else if final {
@@ -464,8 +449,6 @@ final class JunoPreviewStreamer {
         isFinishing = false
         rollingSegmentId = nil
         consecutiveErrorCount = 0
-        committedSegmentText = ""
-        activeSegmentCommittedText = ""
         activeSegmentText = ""
         pendingDecode = nil
         pendingPCM.removeAll(keepingCapacity: true)
@@ -476,11 +459,6 @@ final class JunoPreviewStreamer {
         guard let root = utteranceId, rollingSegmentId != nil, !isFinishing else { return }
         rollTimeoutWork?.cancel()
         rollTimeoutWork = nil
-        committedSegmentText = Self.rootCommittedText(
-            existingRoot: committedSegmentText,
-            segmentCommitted: activeSegmentCommittedText
-        )
-        activeSegmentCommittedText = ""
         activeSegmentText = ""
         segmentIndex += 1
         activeSegmentId = Self.segmentId(root: root, index: segmentIndex)
@@ -515,14 +493,4 @@ final class JunoPreviewStreamer {
         return "\(a) \(b)"
     }
 
-    private static func rootCommittedText(existingRoot: String, segmentCommitted: String) -> String {
-        let root = existingRoot.trimmingCharacters(in: .whitespacesAndNewlines)
-        let segment = segmentCommitted.trimmingCharacters(in: .whitespacesAndNewlines)
-        if root.isEmpty { return segment }
-        if segment.isEmpty { return root }
-        if let merged = LivePreviewTextMerger.merge(existingVisible: root, engineText: segment) {
-            return merged
-        }
-        return joinedText(root, segment)
-    }
 }

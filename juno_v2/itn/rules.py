@@ -191,13 +191,50 @@ def _try_convert_number_phrase(match: re.Match) -> str:
     return str(val)
 
 
+_NUMERIC_CONTEXT_BEFORE_RE = re.compile(
+    r"(?:chapter|page|version|number|item|step|section|room|gate|level|line|"
+    r"track|seat|grade|round|phase|part|option|figure|table|no\.?|#)\s*$",
+    re.IGNORECASE,
+)
+_NUMERIC_CONTEXT_AFTER_RE = re.compile(
+    r"^\s*(?:%|percent|am\b|pm\b|a\.m|p\.m|o'?clock|dollars?\b|bucks?\b|euros?\b|"
+    r"pounds?\b|cents?\b|hundred\b|thousand\b|million\b|x\b|times\b|\d)",
+    re.IGNORECASE,
+)
+
+
 def apply_numeric(text: str) -> tuple[str, list[str]]:
-    """Convert spoken number words to digits."""
+    """Convert spoken number words to digits — prose-aware.
+
+    Multi-word numbers ("twenty five") and values ≥ 10 always convert.
+    Standalone one–nine stay words in prose ("in this one also" must never
+    become "in this 1 also") and convert only with numeric context around
+    them ("chapter one", "one pm").
+    """
     applied: list[str] = []
-    out = _NUMBER_WORD_PAT.sub(lambda m: _try_convert_number_phrase(m), text)
-    if out != text:
+    out: list[str] = []
+    last = 0
+    for m in _NUMBER_WORD_PAT.finditer(text):
+        phrase = m.group(0)
+        tokens = phrase.split()
+        val = _parse_number_words(tokens)
+        repl = phrase
+        if val is not None:
+            convert = len(tokens) > 1 or val >= 10
+            if not convert:
+                convert = bool(_NUMERIC_CONTEXT_BEFORE_RE.search(text[: m.start()])) or bool(
+                    _NUMERIC_CONTEXT_AFTER_RE.match(text[m.end():])
+                )
+            if convert:
+                repl = str(val)
+        out.append(text[last : m.start()])
+        out.append(repl)
+        last = m.end()
+    out.append(text[last:])
+    result = "".join(out)
+    if result != text:
         applied.append("numeric_words_to_digits")
-    return out, applied
+    return result, applied
 
 
 # ---------------------------------------------------------------------- #
@@ -531,13 +568,16 @@ def apply_code_identifiers(text: str) -> tuple[str, list[str]]:
 # Rule: terminal operators ("pipe" → "|", "greater than" → ">", etc.)
 # ---------------------------------------------------------------------- #
 
+# Longest phrases first — a bare "pipe"/"ampersand" rule would otherwise
+# consume the tail of "double pipe"/"double ampersand" and make the double
+# forms unreachable.
 _TERMINAL_OPS = [
+    (re.compile(r"\bdouble\s+ampersand\b", re.IGNORECASE), "&&"),
+    (re.compile(r"\bdouble\s+pipe\b", re.IGNORECASE), "||"),
     (re.compile(r"\bpipe\b", re.IGNORECASE), "|"),
     (re.compile(r"\bgreater\s+than\b", re.IGNORECASE), ">"),
     (re.compile(r"\bless\s+than\b", re.IGNORECASE), "<"),
     (re.compile(r"\bampersand\b", re.IGNORECASE), "&"),
-    (re.compile(r"\bdouble\s+ampersand\b", re.IGNORECASE), "&&"),
-    (re.compile(r"\bdouble\s+pipe\b", re.IGNORECASE), "||"),
 ]
 
 
@@ -611,6 +651,17 @@ def _classify_spoken_punct(token: str) -> tuple[str, str]:
 def _spoken_punct_is_literal_mention(source: str, start: int, end: int) -> bool:
     before = (source or "")[max(0, start - 96):start].casefold()
     after = (source or "")[end:end + 64].casefold()
+    # Determiner immediately before the cue ⇒ noun mention, not a spoken
+    # command ("the new paragraph is short", "a comma goes here"). Inline
+    # cues are spoken bare between content words; imperative phrasings like
+    # "add a new paragraph" are writer commands and are not owned by this
+    # inline rule either way.
+    if re.search(
+        r"\b(?:the|a|an|this|that|these|those|each|every|any|no|my|your|our|"
+        r"his|her|its|their|one|first|second|third|last|next|previous|another|same)\s+$",
+        before,
+    ):
+        return True
     if re.search(
         r"\b(?:word|words|phrase|literal|text)\s+(?:called\s+|named\s+|as\s+)?$",
         before,
@@ -633,6 +684,94 @@ def _spoken_punct_is_literal_mention(source: str, start: int, end: int) -> bool:
     return False
 
 
+_SPOKEN_QUOTE_CUE_RE = re.compile(
+    r"(?<!\w)(?:"
+    r"(?P<open>(?:open|begin|start)\s+quotes?)"
+    r"|(?P<close>(?:close|end)\s+(?:of\s+)?quotes?|un\s*quote)"
+    r"|(?P<bare>quotes?)"
+    r")(?!\w)",
+    re.IGNORECASE,
+)
+# A spoken quote pair spanning more than this many chars is more likely two
+# unrelated mentions than one quotation.
+_MAX_QUOTE_PAIR_SPAN = 240
+
+
+def _spoken_quote_cue_is_literal(text: str, start: int, end: int) -> bool:
+    """Noun/verb usage of bare "quote" — not a spoken quotation mark.
+
+    Determiner or auxiliary before ("the quote", "I'll quote") and noun-ish
+    continuations after ("quote from the article") read as content. The
+    pairing requirement in the caller provides the second safety layer.
+    """
+    before = (text or "")[max(0, start - 48):start].casefold()
+    after = (text or "")[end:end + 24].casefold()
+    if re.search(
+        r"\b(?:the|a|an|this|that|these|those|each|every|any|no|my|your|our|"
+        r"his|her|its|their|one|another|same|to|will|would|can|could|cannot|"
+        r"can't|won't|i'll|we'll|they'll|i|we|you|they)\s+$",
+        before,
+    ):
+        return True
+    if re.match(r"\s*(?:from|of|is|was|are|were|reads|says|in|on)\b", after):
+        return True
+    return False
+
+
+def _apply_spoken_quote_pairs(text: str) -> tuple[str, list[str]]:
+    """Convert paired spoken quote cues into straight quotes.
+
+    "say quote we ship Friday unquote" → 'say "we ship Friday"'. Bare
+    "quote" converts only when it pairs (an opener with a downstream
+    closer); lone mentions ("I'll quote the answer", "the quote is long")
+    stay literal. Explicit open/close forms still require a partner.
+    """
+    if not text:
+        return text, []
+    events: list[tuple[re.Match[str], str]] = []
+    for m in _SPOKEN_QUOTE_CUE_RE.finditer(text):
+        role = "open" if m.group("open") else ("close" if m.group("close") else "bare")
+        # Bare "quote" gets a quote-specific literal guard. The generic
+        # mention guard is wrong here: "He said quote we ship Friday
+        # unquote" is the quotation idiom, yet the generic guard treats a
+        # preceding "said" as a word-mention signal.
+        if role == "bare" and _spoken_quote_cue_is_literal(text, m.start(), m.end()):
+            continue
+        events.append((m, role))
+    if not events:
+        return text, []
+
+    pairs: list[tuple[re.Match[str], re.Match[str]]] = []
+    pending: re.Match[str] | None = None
+    for m, role in events:
+        if role == "open":
+            pending = pending or m
+        elif role == "close":
+            if pending is not None and (m.start() - pending.end()) <= _MAX_QUOTE_PAIR_SPAN:
+                pairs.append((pending, m))
+            pending = None
+        else:  # bare — opener when nothing is pending, closer otherwise
+            if pending is None:
+                pending = m
+            else:
+                if (m.start() - pending.end()) <= _MAX_QUOTE_PAIR_SPAN:
+                    pairs.append((pending, m))
+                pending = None
+    if not pairs:
+        return text, []
+
+    out = text
+    for open_m, close_m in reversed(pairs):
+        suffix = out[close_m.end():]
+        if suffix and not suffix.startswith((" ", ",", ".", ";", ":", "!", "?", ")", "]", "\n")):
+            suffix = " " + suffix
+        out = out[: close_m.start()].rstrip() + '"' + suffix
+        prefix = out[: open_m.start()].rstrip()
+        body = out[open_m.end():].lstrip()
+        out = (prefix + ' "' if prefix else '"') + body
+    return out, ["spoken_quotes"]
+
+
 def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
     """Convert in-line spoken-punctuation tokens into glyphs.
 
@@ -643,6 +782,8 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
     applied: list[str] = []
     if not text:
         return text, applied
+    text, quote_rules = _apply_spoken_quote_pairs(text)
+    applied.extend(quote_rules)
 
     # First pass: substitute matches with sentinel-marked glyphs so we can
     # re-flow whitespace deterministically.
@@ -677,6 +818,15 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
             if kind in ("punct", "close", "newline", "tight", "loose"):
                 while out and out[-1] == " ":
                     out.pop()
+            # ASR glues clause punctuation onto spoken cues ("…people, new
+            # paragraph" / "wait, period"). A paragraph break must not leave a
+            # dangling comma, and a spoken terminal mark replaces a comma the
+            # ASR put in front of it.
+            if kind == "newline" or (kind == "punct" and glyph not in {",", ";"}):
+                while out and out[-1] in ",;":
+                    out.pop()
+                    while out and out[-1] == " ":
+                        out.pop()
             # De-dup: if previous non-space char is the same glyph, skip insertion.
             tail = "".join(out)
             prev_nonspace = tail.rstrip()
@@ -720,6 +870,14 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
             else:
                 while j < n and interim[j] == " ":
                     j += 1
+                if kind == "newline":
+                    # Consume punctuation the ASR attached to the spoken cue
+                    # ("New paragraph, text…" → the comma belongs to the cue,
+                    # not the new paragraph).
+                    while j < n and interim[j] in ".,;:!?":
+                        j += 1
+                        while j < n and interim[j] == " ":
+                            j += 1
             i = j
             continue
         out.append(interim[i])

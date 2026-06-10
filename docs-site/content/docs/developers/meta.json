@@ -1,0 +1,14 @@
+{
+  "title": "Developers",
+  "pages": [
+    "repo-overview",
+    "local-setup",
+    "run-the-engine",
+    "run-the-macos-app",
+    "tests-and-qa",
+    "package-the-app",
+    "signing-and-notarization",
+    "developer-mode",
+    "debugging"
+  ]
+}

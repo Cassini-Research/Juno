@@ -1,0 +1,86 @@
+---
+title: "Settings Reference"
+description: "Settings fields and behavior."
+---
+
+# Settings Reference
+
+Reference for each Settings section.
+
+## General
+
+| Setting | What it controls |
+| --- | --- |
+| Appearance | Choose a fixed look or match your Mac appearance. |
+| Show in Dock | Keep Juno visible in the Dock or run it from the menu bar only. |
+| Keep recordings for | Controls retained audio used for replay, re-run, and recovery. |
+| Live transcriptions | Shows or hides live speech inside the HUD. |
+| HUD position | Places the HUD at the top or bottom of the screen. |
+
+## Dictation
+
+| Setting | What it controls |
+| --- | --- |
+| Shortcut | The key press that starts and finishes dictation. |
+| HUD sounds | Soft audio cues when the HUD opens and closes. |
+| Show word count after dictation | Briefly shows how many words were inserted. |
+| Pause sensitivity | Controls how quickly a pause can finalize a chunk. Shorter is faster; longer gives more breathing room. |
+| Home greeting | Optional name shown on Home. |
+
+## Audio input
+
+| Setting | What it controls |
+| --- | --- |
+| Mic processing | **Off by default.** Turn on if your raw mic signal is noisy. Turn off if output sounds clipped, hollow, or over-processed. |
+
+## Writing and Language
+
+| Setting | What it controls |
+| --- | --- |
+| Language | Five options: Auto-detect, English, Spanish, Mandarin Chinese, Hindi + English (code-switching pair). |
+| Keep original | Separate toggle — skip translation, keep what was spoken in its original language. |
+
+## Storage
+
+| Setting | What it controls |
+| --- | --- |
+| Keep history for | How long transcript history appears in History on this Mac. |
+| Clear history | Removes saved dictation history from this Mac. |
+| Delete recordings | Removes retained audio recordings used for replay and troubleshooting. |
+| Clean up now | Applies the current retention settings immediately. |
+| Reveal storage folder | Opens `~/Library/Application Support/com.juno.shell/` in Finder. |
+
+## Privacy and Learning
+
+| Setting | Default behavior |
+| --- | --- |
+| Smart Context | On. Lets Juno use safe local context while writing. |
+| Use selected text | On. Lets Juno edit highlighted text. |
+| Use current app/field | On. Uses the focused writing surface when available. |
+| Use app/window title | On. Helps Juno choose writing behavior. |
+| Use recent clipboard | Off by default. |
+| Learn from corrections | On. Improves words you manually fix. |
+
+## Permissions
+
+| Permission | Required? | Why it matters |
+| --- | --- | --- |
+| Microphone | Required | Captures your voice while dictation is active. |
+| Accessibility | Required for insertion | Lets Juno read the focused field and insert text safely. |
+| Live captions | Optional | Enables Apple on-device live captions in the HUD. |
+
+## Models
+
+The Models card shows whether the local voice engine is ready. If a required model is missing, Juno offers Install or Repair from the app.
+
+If the writing model is still downloading, core dictation can continue, but writing styles may use simpler formatting until it is ready.
+
+## Updates and App
+
+| Setting | What it controls |
+| --- | --- |
+| Software updates | Checks for new Juno releases. |
+| Check automatically | Lets Juno look for updates in the background. |
+| Download updates automatically | Prepares updates in the background, then asks before relaunching. |
+| Launch on login | Starts Juno quietly after you sign in. |
+| Developer mode | Shows extra diagnostics for troubleshooting. Keep this off unless support asks for it. |

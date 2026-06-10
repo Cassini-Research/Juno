@@ -1,0 +1,22 @@
+{
+  "title": "Use Juno",
+  "pages": [
+    "home",
+    "history",
+    "actions",
+    "voice-commands",
+    "styles",
+    "transformations",
+    "custom-styles",
+    "dictionary-and-memory",
+    "per-app-writing",
+    "privacy",
+    "settings",
+    "writing-workflows",
+    "speak-and-insert",
+    "hud-states",
+    "safe-insertion-and-copy-ready-output",
+    "app-integrations",
+    "recordings"
+  ]
+}

@@ -1,0 +1,74 @@
+---
+title: "Transformations"
+description: "Rewrite, restructure, and translate text."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Writing Transformations
+
+Use transformations to rewrite selected text, change tone, create bullets, or translate.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/styles-real.png"
+  alt="Juno Styles screen showing built-in writing styles such as Verbatim, Casual chat, Formal email, Structured notes, and Polished rewrite."
+  caption="Styles and commands turn speech or selected text into the format you need."
+/>
+
+## Transformation paths
+
+| Path | Best for | How to use it |
+| --- | --- | --- |
+| **Choose a Style** | predictable output such as email, notes, messages, and polished prose | Open Styles, pick the style, then dictate normally. |
+| **Use a Voice Command** | editing while you speak or rewriting selected text | Say commands like `scratch that`, `make that shorter`, `turn that into bullets`, or `rewrite this as a formal reply`. |
+| **Pin per-app behavior** | different defaults in Mail, Slack, Notes, Cursor, and browsers | Open Per-app writing and assign the right style and privacy posture to each app. |
+
+## Built-in transformations
+
+| Transformation | What it does | Example input | Output shape |
+| --- | --- | --- | --- |
+| Verbatim | Keeps the words close to what you said | "send the docs today no need to overthink it" | Light punctuation, minimal rewrite |
+| Casual chat | Produces a short conversational message | "tell Rahul I can review after lunch" | "I can review this after lunch." |
+| Formal email | Adds email structure and a professional register | "Maya, following up on the proposal..." | Greeting, paragraphs, clear close |
+| Structured notes | Turns spoken items into bullets or sections | "Sarah approved budget next James owns outreach" | Clean notes with bullets |
+| Polished rewrite | Improves grammar, flow, and clarity | a draft paragraph or selected sentence | Finished prose |
+| Commands | Treats phrases as editing instructions | "make that shorter" | Rewrites the current selection or recent text |
+
+## Selected-text rewrites
+
+Use selected-text rewrites when existing text needs a different tone, format, or length:
+
+1. Highlight the sentence or paragraph you want to change.
+2. Press Fn / Globe.
+3. Say the instruction: `make this more direct`, `turn this into bullets`, `write this as a product update`, or `make it less formal`.
+4. Press Fn / Globe again.
+
+Juno replaces the selected text after the final result is ready. It does not stream partial text into the selection while you are still talking.
+
+## App-specific transformations
+
+The same spoken input may need different output depending on the target app. A Slack update, Mail reply, Cursor prompt, and Apple Notes entry each benefit from different structure and tone.
+
+| App | Recommended transformation | Why |
+| --- | --- | --- |
+| Mail | Formal email | Converts spoken context into readable email paragraphs. |
+| Slack / Messages | Casual chat | Keeps replies short and direct. |
+| Notes / Notion / Obsidian | Structured notes | Captures ideas, decisions, and bullets without heavy polish. |
+| Cursor / VS Code | Custom style | Produces comments, docstrings, prompts, or commit messages in your repo's tone. |
+| Linear / GitHub Issues | Polished rewrite or custom issue style | Turns bug reports into reproducible steps and expected behavior. |
+
+For app-specific setup, see [Per-app writing](/docs/use-juno/per-app-writing) and [App Integrations](/docs/use-juno/app-integrations).
+
+## Voice Commands versus Styles
+
+Use Voice Commands when the transformation is part of a live dictation session:
+
+| Say | Result |
+| --- | --- |
+| `scratch that` | Removes the current phrase or sentence. |
+| `new paragraph` | Starts a new paragraph. |
+| `make that shorter` | Condenses the recent sentence or selected text. |
+| `turn that into bullets` | Rewrites the recent text as bullets. |
+| `remove the hedge` | Makes the selected text more direct. |
+
+Use Styles when the whole session should follow a format. Use Voice Commands when only the recent sentence, current selection, or current passage needs to change.

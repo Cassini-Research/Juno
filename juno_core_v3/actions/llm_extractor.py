@@ -872,7 +872,7 @@ def _ground_or_repair_action_body(
     )
     if not needs_grounding:
         return body
-    if body and _body_grounded_in_span(body, raw_span):
+    if body and _span_present(body, raw_span):
         return body
     derived = _derive_body_from_action_span(
         raw_span=raw_span,
@@ -882,6 +882,8 @@ def _ground_or_repair_action_body(
     )
     if derived and _body_grounded_in_span(derived, raw_span):
         return derived
+    if body and _body_grounded_in_span(body, raw_span):
+        return body
     if not body and operation in (ActionOperation.QUERY, ActionOperation.DELETE, ActionOperation.COMPLETE):
         return body
     return None

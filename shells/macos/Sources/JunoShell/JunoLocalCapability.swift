@@ -12,6 +12,8 @@ import Foundation
 /// auto-paste.
 enum JunoLocalCapability {
     private static let maxContextFieldLen = 1600
+    private static let maxVisibleContextLen = 1600
+    private static let maxVisibleCandidateCount = 24
 
     static func processHasAccessibilityTrust() -> Bool {
         AXIsProcessTrusted()
@@ -175,6 +177,31 @@ enum JunoLocalCapability {
             // these apps as paste-friendly when we are AX-trusted but the
             // app refuses to expose its focus tree.
             out["can_paste_at_focus"] = true
+        }
+
+        if (out["focused_is_secure"] as? Bool) != true,
+           let visibleContext = visibleWindowContext(focusedWindow: focusedWindow, mainWindow: mainWindow) {
+            out["field_text_excerpt"] = visibleContext.text
+            if !visibleContext.candidates.isEmpty {
+                out["candidate_entities"] = visibleContext.candidates
+            }
+        }
+
+        // OCR-harvested screen vocabulary is optional. It is included only
+        // after the user has opted in and macOS access is already granted.
+        if (out["focused_is_secure"] as? Bool) != true,
+           JunoScreenContextAccess.isEnabledAndGranted {
+            let screenTerms = JunoScreenTermHarvester.shared.currentTerms()
+            if !screenTerms.isEmpty {
+                var candidates = (out["candidate_entities"] as? [String]) ?? []
+                var seen = Set(candidates.map { $0.lowercased() })
+                for term in screenTerms where !seen.contains(term.lowercased()) {
+                    candidates.append(term)
+                    seen.insert(term.lowercased())
+                }
+                out["candidate_entities"] = Array(candidates.prefix(48))
+                out["recent_screen_terms"] = Array(screenTerms.prefix(40))
+            }
         }
 
         if (out["focused_is_secure"] as? Bool) != true,
@@ -557,5 +584,208 @@ enum JunoLocalCapability {
         )
         guard err == .success, let s = value as? String else { return nil }
         return s
+    }
+
+    private struct VisibleWindowContext {
+        let text: String
+        let candidates: [String]
+    }
+
+    private static func visibleWindowContext(
+        focusedWindow: AXUIElement?,
+        mainWindow: AXUIElement?
+    ) -> VisibleWindowContext? {
+        var windows: [AXUIElement] = []
+        if let focusedWindow { windows.append(focusedWindow) }
+        if let mainWindow { windows.append(mainWindow) }
+        guard !windows.isEmpty else { return nil }
+
+        var chunks: [String] = []
+        var seenChunks: Set<String> = []
+        for window in windows.prefix(2) {
+            collectVisibleStrings(from: window, into: &chunks, seen: &seenChunks)
+            if joinedVisibleText(chunks).count >= maxVisibleContextLen {
+                break
+            }
+        }
+        let text = joinedVisibleText(chunks)
+        guard !text.isEmpty else { return nil }
+        return VisibleWindowContext(
+            text: text,
+            candidates: screenCandidateEntities(from: text)
+        )
+    }
+
+    private static func collectVisibleStrings(
+        from root: AXUIElement,
+        into chunks: inout [String],
+        seen: inout Set<String>,
+        maxDepth: Int = 7,
+        maxVisited: Int = 700
+    ) {
+        var queue: [(AXUIElement, Int)] = [(root, 0)]
+        var visited = 0
+        while !queue.isEmpty && visited < maxVisited && joinedVisibleText(chunks).count < maxVisibleContextLen {
+            let (element, depth) = queue.removeFirst()
+            visited += 1
+            let role = axString(element, kAXRoleAttribute as CFString) ?? ""
+            let subrole = axString(element, kAXSubroleAttribute as CFString) ?? ""
+            if subrole == "AXSecureTextField" { continue }
+
+            for attr in [
+                kAXValueAttribute as CFString,
+                kAXTitleAttribute as CFString,
+                kAXDescriptionAttribute as CFString,
+                "AXPlaceholderValue" as CFString,
+            ] {
+                guard let value = axString(element, attr) else { continue }
+                appendVisibleChunk(value, role: role, into: &chunks, seen: &seen)
+            }
+
+            guard depth < maxDepth else { continue }
+            for child in axElements(element, kAXChildrenAttribute as CFString) {
+                queue.append((child, depth + 1))
+            }
+        }
+    }
+
+    private static func appendVisibleChunk(
+        _ value: String,
+        role: String,
+        into chunks: inout [String],
+        seen: inout Set<String>
+    ) {
+        let collapsed = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count >= 2 else { return }
+        guard collapsed.count <= 500 else {
+            let clipped = String(collapsed.prefix(500))
+            appendVisibleChunk(clipped, role: role, into: &chunks, seen: &seen)
+            return
+        }
+        if role == "AXWindow", chunks.contains(collapsed) {
+            return
+        }
+        let key = collapsed.lowercased()
+        guard !seen.contains(key) else { return }
+        seen.insert(key)
+        chunks.append(collapsed)
+    }
+
+    private static func joinedVisibleText(_ chunks: [String]) -> String {
+        var out = ""
+        for chunk in chunks {
+            if out.isEmpty {
+                out = chunk
+            } else {
+                out += " " + chunk
+            }
+            if out.count >= maxVisibleContextLen {
+                return String(out.prefix(maxVisibleContextLen))
+            }
+        }
+        return out
+    }
+
+    private static func screenCandidateEntities(from text: String) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+        var phrase: [String] = []
+
+        func add(_ raw: String) {
+            let value = raw.trimmingCharacters(in: candidateTrimCharacters)
+            guard value.count >= 3, value.count <= 80 else { return }
+            let key = value.lowercased()
+            guard !seen.contains(key) else { return }
+            seen.insert(key)
+            out.append(value)
+        }
+
+        func flushPhrase() {
+            defer { phrase.removeAll(keepingCapacity: true) }
+            guard !phrase.isEmpty else { return }
+            if phrase.count >= 2 {
+                let phraseValue = phrase.joined(separator: " ")
+                if phrase.contains(where: { isSingleScreenCandidateToken($0) }) {
+                    add(phraseValue)
+                }
+            }
+            for token in phrase where isSingleScreenCandidateToken(token) {
+                add(token)
+            }
+        }
+
+        for raw in text.components(separatedBy: .whitespacesAndNewlines) {
+            let token = raw.trimmingCharacters(in: candidateTrimCharacters)
+            guard !token.isEmpty else {
+                flushPhrase()
+                continue
+            }
+            if isTitleOrMixedCaseToken(token) {
+                phrase.append(token)
+            } else {
+                flushPhrase()
+                if isTechnicalScreenCandidateToken(token) {
+                    add(token)
+                }
+            }
+            if out.count >= maxVisibleCandidateCount { break }
+        }
+        flushPhrase()
+        if out.count > maxVisibleCandidateCount {
+            return Array(out.prefix(maxVisibleCandidateCount))
+        }
+        return out
+    }
+
+    private static let candidateTrimCharacters = CharacterSet(charactersIn: " ,.!?;:()[]{}<>\"'`“”‘’")
+
+    private static let commonScreenCandidateWords: Set<String> = [
+        "First", "Second", "Third", "Fourth", "Fifth", "Point", "Text",
+        "Start", "End", "Today", "Tomorrow", "Yesterday",
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+        "The", "This", "That", "These", "Those", "There", "Here", "Okay", "Ok",
+        "Reminder", "Calendar", "Message", "Messages",
+    ]
+
+    private static func isTitleOrMixedCaseToken(_ token: String) -> Bool {
+        guard token.rangeOfCharacter(from: .letters) != nil else { return false }
+        let letters = token.filter { $0.isLetter }
+        guard !letters.isEmpty else { return false }
+        if let first = letters.first, first.isUppercase { return true }
+        return letters.dropFirst().contains { $0.isUppercase }
+    }
+
+    private static func isSingleScreenCandidateToken(_ token: String) -> Bool {
+        guard token.count >= 4 else { return false }
+        guard !commonScreenCandidateWords.contains(token) else { return false }
+        guard token.rangeOfCharacter(from: .letters) != nil else { return false }
+        let letters = token.filter { $0.isLetter }
+        guard !letters.isEmpty else { return false }
+        if letters.dropFirst().contains(where: { $0.isUppercase }) { return true }
+        if letters.allSatisfy({ $0.isUppercase }) && (2...10).contains(letters.count) { return true }
+        return letters.first?.isUppercase == true
+    }
+
+    private static func isTechnicalScreenCandidateToken(_ token: String) -> Bool {
+        let clean = token.trimmingCharacters(in: candidateTrimCharacters)
+        guard (4...80).contains(clean.count) else { return false }
+        if clean.contains("_") || clean.contains("-") {
+            return clean.rangeOfCharacter(from: .letters) != nil
+        }
+        if clean.contains(".") {
+            let ext = clean.split(separator: ".").last.map(String.init)?.lowercased() ?? ""
+            return ["py", "swift", "ts", "tsx", "js", "jsx", "json", "md", "yml", "yaml"].contains(ext)
+        }
+        let hasLetter = clean.contains { $0.isLetter }
+        let hasDigit = clean.contains { $0.isNumber }
+        return hasLetter && hasDigit
     }
 }

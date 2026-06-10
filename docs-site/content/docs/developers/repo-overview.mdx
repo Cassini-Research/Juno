@@ -1,0 +1,39 @@
+---
+title: "Repo Overview"
+description: "Source tree and runtime modules."
+audience: ["developer"]
+pageType: "reference"
+---
+
+# Repo Overview
+
+The Juno repo is organized around the local runtime, macOS shell, tests, scripts, and docs.
+
+## Primary directories
+
+| Path | Role |
+| --- | --- |
+| `juno_v2/` | Local voice engine package: runtime services, memory, writing, ASR, context, notes, observability, and developer tools. |
+| `juno_core_v3/` | Core runtime spine, action extraction, dictation pipeline, model registry, and governance components used by newer architecture layers. |
+| `shells/macos/` | Native macOS app, helper binaries, entitlements, package configuration, and Swift product UI. |
+| `scripts/` | Maintained bootstrap, run, test, package, smoke, repair, and verification commands. |
+| `tests_v2/` | Main v2 test suite for engine, runtime, context, insertion, history, privacy, language, and recovery behavior. |
+| `tests_v3/` | Runtime governance and v3 contract tests. |
+| `eval/` | Benchmark suites, gates, and package metrics. |
+| `juno_seed_data_v3_final/` | Seed dictionaries and personalization policy data. |
+| `docs/` | Internal architecture, evaluation, rebuild, and manual QA notes. |
+
+## Truth files
+
+Start every implementation pass with:
+
+- `CURRENT_PRODUCT_TRUTH.md`
+- `MAC_RUNTIME_TRUTH.md`
+- `PRODUCTION_SHIPPING_PLAN.md`
+- `RELEASE_QA_CHECKLIST.md`
+
+These files define the product contract more directly than older planning files.
+
+## Naming rule
+
+Use **Juno** in public product and docs copy. Internal package paths may appear in developer documentation only when required for exact commands or file references. Historical package names should not appear in current production docs unless the page is explicitly documenting a migration.

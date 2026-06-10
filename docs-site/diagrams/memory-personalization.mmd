@@ -1,0 +1,11 @@
+flowchart LR
+    Context["Context packet"] --> Gate{"Privacy allows context?"}
+    Gate -- "Yes" --> Seeds["Seed bundles and saved memory"]
+    Gate -- "No" --> Suppress["Suppress context and learning"]
+    Seeds --> Stores["Vocabulary, replacements, snippets, styles, corrections"]
+    Stores --> Policy["Promotion and suppression policy"]
+    Policy --> Bias["ASR and writer bias"]
+    Bias --> Output["Final transcript"]
+    Output --> Learn{"Learning allowed?"}
+    Learn -- "Yes" --> Corrections["Observed to corrected updates"]
+    Learn -- "No" --> Suppress

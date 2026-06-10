@@ -1,0 +1,9 @@
+flowchart LR
+    User["User"] --> App["Juno.app"]
+    App --> Helpers["Helper binaries"]
+    Helpers --> Engine["Local voice engine"]
+    Engine --> Storage["Local storage"]
+    Storage --> Runtime["Runtime token and socket"]
+    App --> Target["Target app insertion"]
+    Runtime --> App
+    Engine --> App

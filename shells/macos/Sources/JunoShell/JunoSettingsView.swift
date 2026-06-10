@@ -64,11 +64,12 @@ struct JunoSettingsView: View {
     @State private var micProcessing = JunoUserDefaults.micVoiceProcessingEnabled
     @State private var hudPosition = JunoUserDefaults.hudPosition
     @State private var hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
-    @State private var previewEligibility = JunoPreviewEligibility.current
     @State private var hudSounds = JunoUserDefaults.hudOpenSoundEnabled
     @State private var hudShowDoneRow = JunoUserDefaults.hudShowDoneRowEnabled
     @State private var pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
     @State private var languageMode = JunoUserDefaults.languageMode
+    @State private var screenContextEnabled = JunoUserDefaults.screenContextEnabled
+    @State private var screenContextPermissionGranted = JunoScreenContextAccess.permissionGranted
     @State private var showModelDetails = false
     @State private var developerMode = JunoUserDefaults.developerModeEnabled
     @State private var pendingStorageAction: JunoPendingStorageAction?
@@ -96,6 +97,7 @@ struct JunoSettingsView: View {
                     // a slim pointer here so users coming to Settings
                     // looking for Voice Actions still find them.
                     JunoSettingsActionsPointer()
+                    screenContextSettingsCard
 
                     settingsCard(
                         title: "General",
@@ -145,38 +147,18 @@ struct JunoSettingsView: View {
 
                             Divider().opacity(0.25)
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                settingsRow(
-                                    title: "Live transcription preview",
-                                    subtitle: "Show preview text in the HUD while you speak. When off, Juno listens and transcribes after you finish.",
-                                    trailing: {
-                                        Toggle("", isOn: Binding(
-                                            get: { hudLiveTranscriptions },
-                                            set: { newValue in
-                                                setLiveTranscriptionPreview(newValue)
-                                            }
-                                        ))
+                            settingsRow(
+                                title: "Live transcriptions",
+                                subtitle: "Show what you're saying inside the HUD as you speak. When off, the HUD collapses to a tiny waveform.",
+                                trailing: {
+                                    Toggle("", isOn: $hudLiveTranscriptions)
                                         .labelsHidden()
-                                        .disabled(!previewEligibility.isEligible)
-                                    }
-                                )
-
-                                if let message = livePreviewResourceMessage {
-                                    Label(
-                                        message,
-                                        systemImage: previewEligibility.isEligible
-                                            ? "exclamationmark.triangle.fill"
-                                            : "lock.fill"
-                                    )
-                                    .font(.caption2)
-                                    .foregroundStyle(
-                                        previewEligibility.isEligible
-                                            ? JunoDesignTokens.danger
-                                            : JunoTheme.secondaryText(scheme)
-                                    )
-                                    .fixedSize(horizontal: false, vertical: true)
+                                        .onChange(of: hudLiveTranscriptions) { newValue in
+                                            JunoUserDefaults.hudLiveTranscriptionsEnabled = newValue
+                                            persistLiveCaptionEnabled(newValue)
+                                        }
                                 }
-                            }
+                            )
 
                             Divider().opacity(0.25)
 
@@ -408,6 +390,8 @@ struct JunoSettingsView: View {
                         VStack(spacing: 10) {
                             privacyToggle("Smart Context", "Use safe local app context while writing", $privacy.smartContext)
                             Divider().opacity(0.25)
+                            screenContextSettingsRow
+                            Divider().opacity(0.25)
                             privacyToggle("Use selected text", "Let Juno edit highlighted text", $privacy.useSelectedText)
                             Divider().opacity(0.25)
                             privacyToggle("Use current app/field", "Use focused field context when available", $privacy.useFocusedText)
@@ -458,14 +442,14 @@ struct JunoSettingsView: View {
                                 settingsAction: { perms.openAXSettings() }
                             )
                             permCard(
-                                icon: "text.bubble",
-                                label: "Live captions",
-                                detail: perms.speechStatusLabel + " — Optional on-screen captions while you speak.",
-                                ok: perms.speechStatus == .authorized,
-                                primaryTitle: speechPrimaryTitle,
-                                primaryAction: speechPrimaryAction,
+                                icon: "viewfinder",
+                                label: "Visible screen text",
+                                detail: perms.screenRecordingStatusLabel + " — Optional local OCR for names and code terms.",
+                                ok: perms.screenContextEnabled && perms.screenRecordingGranted,
+                                primaryTitle: screenRecordingPrimaryTitle,
+                                primaryAction: screenRecordingPrimaryAction,
                                 showSecondarySettings: false,
-                                settingsAction: { perms.openSpeechRecognitionSettings() }
+                                settingsAction: { perms.openScreenRecordingSettings() }
                             )
                         }
 
@@ -614,9 +598,10 @@ struct JunoSettingsView: View {
             }
         }
         .onAppear {
-            refreshPreviewEligibility()
             displayNameDraft = JunoUserDefaults.preferredDisplayName ?? ""
             pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
+            screenContextEnabled = JunoUserDefaults.screenContextEnabled
+            refreshScreenContextPermission()
             perms.refresh()
             retention.refresh()
             privacy.refresh()
@@ -787,19 +772,18 @@ struct JunoSettingsView: View {
         }
     }
 
-    private var speechPrimaryTitle: String {
-        switch perms.speechStatus {
-        case .notDetermined: return "Allow speech recognition"
-        case .denied, .restricted: return "Open Speech Recognition privacy"
-        case .authorized: return "Granted"
-        @unknown default: return "Open Speech Recognition privacy"
+    private var screenRecordingPrimaryTitle: String {
+        if perms.screenContextEnabled && perms.screenRecordingGranted {
+            return "Granted"
         }
+        return "Open Screen Recording"
     }
 
-    private func speechPrimaryAction() {
-        switch perms.speechStatus {
-        case .notDetermined: perms.requestSpeechRecognition()
-        default: perms.openSpeechRecognitionSettings()
+    private func screenRecordingPrimaryAction() {
+        if perms.screenContextEnabled && perms.screenRecordingGranted {
+            perms.openScreenRecordingSettings()
+        } else {
+            perms.requestScreenRecording()
         }
     }
 
@@ -869,6 +853,134 @@ struct JunoSettingsView: View {
         }
     }
 
+    private var screenContextSettingsRow: some View {
+        settingsRow(
+            title: "Visible screen text",
+            subtitle: screenContextSubtitle,
+            trailing: {
+                if screenContextEnabled && screenContextPermissionGranted {
+                    Button("Turn off") {
+                        setScreenContextEnabled(false)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Button("Open Screen Recording") {
+                        setScreenContextEnabled(true)
+                    }
+                    .junoPrimaryActionButton()
+                }
+            }
+        )
+    }
+
+    private var screenContextSettingsCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "viewfinder")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.accent)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text("Visible screen text")
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .foregroundStyle(JunoTheme.primaryText(scheme))
+                    Text(screenContextStatusLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(screenContextStatusColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(screenContextStatusColor.opacity(scheme == .dark ? 0.18 : 0.11))
+                        )
+                }
+                Text(screenContextTopCardSubtitle)
+                    .font(.system(.footnote, design: .rounded))
+                    .foregroundStyle(JunoTheme.secondaryText(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            if screenContextEnabled && screenContextPermissionGranted {
+                Button("Turn off") {
+                    setScreenContextEnabled(false)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Button("Open Screen Recording") {
+                    requestScreenContextPermission()
+                }
+                .junoPrimaryActionButton()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard()
+        .onAppear {
+            refreshScreenContextPermission()
+        }
+    }
+
+    private var screenContextStatusLabel: String {
+        if !screenContextEnabled { return "Off" }
+        return screenContextPermissionGranted ? "On" : "Needs approval"
+    }
+
+    private var screenContextStatusColor: Color {
+        if !screenContextEnabled { return JunoTheme.secondaryText(scheme) }
+        return screenContextPermissionGranted ? JunoDesignTokens.meadow : Color.orange
+    }
+
+    private var screenContextTopCardSubtitle: String {
+        if !screenContextEnabled {
+            return "Optional local OCR for names, code terms, and product words already visible while you dictate."
+        }
+        if screenContextPermissionGranted {
+            return "Juno can prioritize visible terms while dictating. Text is not stored and does not leave this Mac."
+        }
+        return "Juno is ready to be turned on in macOS Screen Recording so visible terms can be read locally while dictating."
+    }
+
+    private var screenContextSubtitle: String {
+        if !screenContextEnabled {
+            return "Optional. Off by default; enable it here when you want visible names and code terms prioritized."
+        }
+        if screenContextPermissionGranted {
+            return "Reads visible names and code terms with on-device OCR while you dictate. Never stored, never leaves this Mac."
+        }
+        return "Turn on Juno in macOS Screen Recording. Used only for on-device OCR while dictating; never stored or sent."
+    }
+
+    private func setScreenContextEnabled(_ enabled: Bool) {
+        screenContextEnabled = enabled
+        JunoUserDefaults.screenContextEnabled = enabled
+        if enabled {
+            refreshScreenContextPermission()
+            if !screenContextPermissionGranted {
+                requestScreenContextPermission()
+            }
+        } else {
+            JunoScreenTermHarvester.shared.deactivate()
+            refreshScreenContextPermission()
+        }
+    }
+
+    private func refreshScreenContextPermission() {
+        screenContextPermissionGranted = JunoScreenContextAccess.permissionGranted
+    }
+
+    private func requestScreenContextPermission() {
+        screenContextEnabled = true
+        JunoUserDefaults.screenContextEnabled = true
+        JunoScreenContextAccess.requestFromExplicitUserAction { granted in
+            screenContextPermissionGranted = granted
+        }
+    }
+
     private func privacyToggle(_ title: String, _ subtitle: String, _ binding: Binding<Bool>) -> some View {
         settingsRow(
             title: title,
@@ -882,46 +994,6 @@ struct JunoSettingsView: View {
                     }
             }
         )
-    }
-
-    private var livePreviewResourceMessage: String? {
-        if !previewEligibility.isEligible {
-            return previewEligibility.unavailableMessage
-        }
-        if hudLiveTranscriptions {
-            return previewEligibility.warningMessage
-        }
-        return nil
-    }
-
-    private func refreshPreviewEligibility() {
-        previewEligibility = JunoPreviewEligibility.current
-        hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
-        if !previewEligibility.isEligible {
-            persistLiveCaptionEnabled(false, reportFailures: false)
-        }
-    }
-
-    private func setLiveTranscriptionPreview(_ enabled: Bool) {
-        if enabled && !previewEligibility.isEligible {
-            hudLiveTranscriptions = false
-            JunoUserDefaults.hudLiveTranscriptionsEnabled = false
-            persistLiveCaptionEnabled(false)
-            if let message = previewEligibility.unavailableMessage {
-                JunoSettingsToastCenter.shared.report(message)
-            }
-            return
-        }
-
-        hudLiveTranscriptions = enabled
-        JunoUserDefaults.hudLiveTranscriptionsEnabled = enabled
-        persistLiveCaptionEnabled(enabled)
-
-        if enabled {
-            if let warning = previewEligibility.warningMessage {
-                JunoSettingsToastCenter.shared.report(warning, severity: .info, autoDismissAfter: 8)
-            }
-        }
     }
 
     private func persistLanguageEnvironment() {
@@ -941,30 +1013,15 @@ struct JunoSettingsView: View {
     /// per-utterance preview-lane decoding on the next dictation session. The
     /// macOS HUD layout flips immediately off `JunoUserDefaults`; the engine
     /// gate is read at session start.
-    private func persistLiveCaptionEnabled(_ enabled: Bool, reportFailures: Bool = true) {
+    private func persistLiveCaptionEnabled(_ enabled: Bool) {
         JunoBroker.postJSON(
             path: "api/broker/settings/live_caption",
             payload: ["enabled": enabled]
         ) { obj in
             let ok = (obj["ok"] as? Bool) ?? false
             if !ok {
-                if reportFailures {
-                    let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
-                    JunoSettingsToastCenter.shared.report(msg)
-                }
-                return
-            }
-            if let brokerEnabled = obj["live_caption_enabled"] as? Bool, brokerEnabled != enabled {
-                hudLiveTranscriptions = brokerEnabled
-                JunoUserDefaults.hudLiveTranscriptionsEnabled = brokerEnabled
-                if reportFailures {
-                    let msg = (obj["disabled_reason"] as? String) ?? "Live preview is not available on this Mac"
-                    JunoSettingsToastCenter.shared.report(msg.replacingOccurrences(of: "_", with: " ").capitalized)
-                }
-                return
-            }
-            if enabled {
-                JunoBroker.getJSON(path: "api/broker/preview/warm") { _ in }
+                let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
+                JunoSettingsToastCenter.shared.report(msg)
             }
         }
     }
@@ -1291,17 +1348,11 @@ final class JunoPrivacySettingsModel: ObservableObject {
 /// the same scroll surface as the rest of Settings instead.
 struct JunoAdvancedSettingsView: View {
     @ObservedObject private var perms = JunoPermissionMonitor.shared
-    @ObservedObject private var windowNav = JunoMainWindowNavigator.shared
     @Environment(\.colorScheme) private var scheme
 
     @State private var saveLogsToFile = JunoUserDefaults.saveLogsToFileEnabled
     @State private var lastBundleURL: URL?
     @State private var bundleStatus: String?
-    @State private var pendingClearMemory = false
-    @State private var isClearingMemory = false
-    @State private var clearMemoryStatus: String?
-    @State private var memoryCounts: [String: Int] = [:]
-    @State private var isRefreshingMemory = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1325,55 +1376,6 @@ struct JunoAdvancedSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                    }
-                }
-
-                advancedCard(title: "Memory") {
-                    Text(
-                        "Review and edit learned vocabulary, corrections, replacements, and snippets. Bulk clear also removes session entities. Dictation history and retained recordings stay intact."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(JunoTheme.secondaryText(scheme))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    Text(memorySummaryLine)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(JunoTheme.secondaryText(scheme))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 10) {
-                        Button("View and edit…") {
-                            windowNav.openDictionaryAndMemory(categoryRaw: "vocab")
-                        }
-                        .junoPrimaryActionButton()
-
-                        Button(isRefreshingMemory ? "Refreshing…" : "Refresh") {
-                            refreshMemorySnapshot()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isRefreshingMemory)
-
-                        Button(isClearingMemory ? "Clearing…" : "Clear learned memory…") {
-                            pendingClearMemory = true
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isClearingMemory)
-
-                        if isClearingMemory {
-                            ProgressView()
-                                .controlSize(.small)
-                                .scaleEffect(0.75)
-                        }
-                    }
-
-                    if let clearMemoryStatus {
-                        Text(clearMemoryStatus)
-                            .font(.caption)
-                            .foregroundStyle(JunoTheme.secondaryText(scheme))
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -1452,68 +1454,7 @@ struct JunoAdvancedSettingsView: View {
                     }
                 }
         }
-        .onAppear {
-            perms.refresh()
-            refreshMemorySnapshot()
-        }
-        .confirmationDialog(
-            "Clear learned memory?",
-            isPresented: $pendingClearMemory,
-            titleVisibility: .visible
-        ) {
-            Button("Clear Learned Memory", role: .destructive) { clearLearnedMemory() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This keeps dictation history and recordings, but removes learned transcription memory. Use it when Juno keeps biasing toward the wrong words.")
-        }
-    }
-
-    private func clearLearnedMemory() {
-        guard !isClearingMemory else { return }
-        isClearingMemory = true
-        clearMemoryStatus = nil
-        JunoBroker.postJSON(path: "api/broker/memory/clear_all", payload: [:]) { obj in
-            let ok = (obj["ok"] as? Bool) ?? false
-            isClearingMemory = false
-            if ok {
-                let removedCounts = (obj["removed"] as? [String: Any]) ?? [:]
-                let removed = removedCounts.values.reduce(0) { total, value in
-                    total + ((value as? Int) ?? 0)
-                }
-                clearMemoryStatus = removed > 0
-                    ? "Cleared \(removed) learned memory item\(removed == 1 ? "" : "s"). History was not changed."
-                    : "Learned memory was already clear. History was not changed."
-                refreshMemorySnapshot()
-            } else {
-                let msg = (obj["error"] as? String) ?? "Could not clear learned memory"
-                clearMemoryStatus = msg
-                JunoSettingsToastCenter.shared.report(msg)
-            }
-        }
-    }
-
-    private var memorySummaryLine: String {
-        guard !memoryCounts.isEmpty else { return "Memory: loading…" }
-        let vocab = memoryCounts["lexicon"] ?? 0
-        let corrections = memoryCounts["corrections"] ?? 0
-        let replacements = memoryCounts["replacements"] ?? 0
-        let snippets = memoryCounts["snippets"] ?? 0
-        let entities = memoryCounts["session_entities"] ?? 0
-        return "Memory: \(vocab) vocab, \(corrections) corrections, \(replacements) replacements, \(snippets) snippets, \(entities) session entities"
-    }
-
-    private func refreshMemorySnapshot() {
-        guard !isRefreshingMemory else { return }
-        isRefreshingMemory = true
-        JunoBroker.getJSON(path: "api/broker/memory/snapshot") { obj in
-            isRefreshingMemory = false
-            let ok = (obj["ok"] as? Bool) ?? false
-            if ok, let counts = obj["counts"] as? [String: Any] {
-                memoryCounts = counts.reduce(into: [String: Int]()) { partial, pair in
-                    partial[pair.key] = (pair.value as? Int) ?? 0
-                }
-            }
-        }
+        .onAppear { perms.refresh() }
     }
 
     private func advancedCard(title: String, @ViewBuilder content: () -> some View) -> some View {

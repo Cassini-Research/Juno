@@ -1,0 +1,50 @@
+---
+title: "Tests and QA"
+description: "Automated tests and Mac QA."
+audience: ["developer", "maintainer"]
+pageType: "how-to"
+---
+
+# Tests and QA
+
+Juno needs automated runtime tests and manual Mac GUI QA.
+
+## Main automated suite
+
+```bash
+./scripts/run_tests_v2.sh
+```
+
+This is the main runtime suite. It covers runtime, context, dictation, writing, insertion adapters, product history, privacy/style settings, language policy, replay, recovery, and internal app-to-engine behavior.
+
+## Full maintained test command
+
+```bash
+./scripts/run_tests_all.sh
+```
+
+Use this before release candidates or large architecture changes.
+
+## Smoke the packaged app
+
+```bash
+./scripts/smoke_juno_macos_app.sh
+```
+
+The package smoke should verify the bundle path and helper wiring. It does not replace live GUI QA.
+
+## Benchmark and gate checks
+
+Use benchmark and phase-gate scripts when comparing model routes or runtime profiles:
+
+```bash
+./scripts/run_benchmark_suite_v2.sh --summary-json .juno_v2_runtime/summary.json --builtin-suites multilingual,memory
+```
+
+```bash
+./scripts/run_phase_gate_v2.sh --summary-json .juno_v2_runtime/summary.json --gate-json eval/gates/m3_pro_product_eval.json
+```
+
+## Manual QA minimum
+
+Before a public release, verify clean install, permissions, shortcut, HUD behavior, normal insertion, copy-ready fallback, secure-field suppression, history retention, recording retention, support bundle, app switching, and update/uninstall behavior on a clean macOS profile.

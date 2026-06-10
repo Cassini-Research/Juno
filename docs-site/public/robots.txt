@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.usejuno.co/sitemap.xml
+
+# LLM entry points
+# https://docs.usejuno.co/llms.txt
+# https://docs.usejuno.co/llms-full.txt

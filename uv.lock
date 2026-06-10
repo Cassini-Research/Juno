@@ -493,7 +493,6 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "huggingface-hub" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "mlx-qwen3-asr", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -509,7 +508,6 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.0.0" },
     { name = "huggingface-hub", specifier = ">=1.9.0" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.22.0" },
-    { name = "mlx-qwen3-asr", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.3.2" },
     { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.4.0" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "silero-vad", specifier = ">=5.1.2" },
@@ -690,22 +688,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/39/66/2313497fdbc7fbadf8e026c09366e3f049f9114e65ca4edc23cdb8699186/mlx_metal-0.31.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:70741174131dbf7fdd479cb730e06e08c358eac3bf7905d9e884e7960cfdd5b8", size = 38624074, upload-time = "2026-03-12T02:15:48.036Z" },
     { url = "https://files.pythonhosted.org/packages/c7/34/4c3c6890ce6095b2ab2ba2f5f15c9a7ba17208d47f8cacb572885a2dc0eb/mlx_metal-0.31.1-py3-none-macosx_15_0_arm64.whl", hash = "sha256:6c56bd8cd27743e635f5a90a22535af7c31bd22b4b126d46b6da2da52d72e413", size = 38618950, upload-time = "2026-03-12T02:15:51.908Z" },
     { url = "https://files.pythonhosted.org/packages/51/bc/987cb99e3aafb296aa11ce5133838a10eae8447edd53168d0804d4fb3a14/mlx_metal-0.31.1-py3-none-macosx_26_0_arm64.whl", hash = "sha256:e7324b7c56b519ae67c025d3ced07e5d35bc3a9f19d4c45fe4927f385148c59e", size = 49256543, upload-time = "2026-03-12T02:15:54.851Z" },
-]
-
-[[package]]
-name = "mlx-qwen3-asr"
-version = "0.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "mlx" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "regex" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/12/fade92cc4d1d3dbff88d6e11c0a8b69d9dca3b0d86078d43ade873a09679/mlx_qwen3_asr-0.3.3.tar.gz", hash = "sha256:b682c7c1b0101fe86d40ec50a9e9324ad1cd99169f0c0d57b41521ba7099082b", size = 240341, upload-time = "2026-04-26T16:27:30.332Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/fb/4b193208db9bae2890de3a7b1bd33756df829da40573c006832de7c57627/mlx_qwen3_asr-0.3.3-py3-none-any.whl", hash = "sha256:e385beb0fee95a94283c4e2f5ac5b00edfaa0904322ff136306be0832fc1af68", size = 166330, upload-time = "2026-04-26T16:27:28.654Z" },
 ]
 
 [[package]]

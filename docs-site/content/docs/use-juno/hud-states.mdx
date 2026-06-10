@@ -1,0 +1,56 @@
+---
+title: "HUD States"
+description: "HUD states and recovery paths."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# HUD States
+
+The HUD shows the current dictation state. If a state stalls, use the matching recovery path.
+
+<ScreenshotFrame
+  src="/images/screenshots/hud-state-grid.svg"
+  alt="Grid of Juno HUD states: Checking, Checking microphone, Waiting for speech, Listening, Refining, Partial commit, Inserted, Copy Ready, Blocked, Error"
+  caption="HUD states in the order a normal dictation session moves through them."
+/>
+
+## State reference
+
+| State | Phase | If it stalls here |
+| --- | --- | --- |
+| **Checking** | Session opened. Verifying engine + surface readiness. | Usually &lt;1s. Repeated stalls → [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected). |
+| **Checking microphone** | Waiting for the OS to deliver real audio frames. | Microphone permission, device selection, or driver issue. → [Microphone](/docs/troubleshooting/microphone). |
+| **Waiting for speech** | Frames are arriving; no speech energy detected yet. | Speak louder, speak closer, reduce background noise, confirm the right input device. |
+| **Listening** | Speech energy detected. Capturing dictation. | Normal — keep going. |
+| **Refining** | Engine is processing the segment to produce polished text. | Normal; resolves in 1–2s. Longer stalls → [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected). |
+| **Partial commit** | Polished partial is being placed into the field. | Normal pause-driven commit. |
+| **Inserted** | Final text placed in the focused field. | Done. |
+| **Copy Ready** | Text exists but insertion was skipped. | Copy from HUD and paste manually. → [Insertion and Copy Ready](/docs/troubleshooting/insertion-and-copy-ready-output). |
+| **Blocked** | Secure / password field detected. Capture, context, history, audio, and paste all skipped. | Move to a normal text field. Intentional behavior. |
+| **Error** | Permission, engine, or microphone failure. | The HUD message names the failure and links to the right page. |
+
+The HUD labels correspond to the active state in the dictation pipeline.
+
+## Refining vs Partial commit
+
+These two are close together in time but mean different things:
+
+**Refining** appears while the engine processes audio into finalized text. You can continue speaking while processing runs.
+
+**Partial commit** appears the moment the polished result is placed into the field. It's brief — usually a flash — and is your visual confirmation that something just landed.
+
+If you see **Refining** stay stuck for more than 2–3 seconds, the engine is struggling. Open Settings → Models and check whether the writing engine shows as ready.
+
+## Diagnosing a stall from the state name
+
+- **Stuck on Checking microphone** → frames not arriving → permission or device
+- **Stuck on Waiting for speech** → frames arriving, no voice → mic placement, background noise, or speaking too quietly
+- **Stuck on Refining** → engine slow or not responding → Settings → Models → Repair
+- **Repeated Copy Ready in a normal app** → Accessibility issue or app rejects paste → [Insertion and Copy Ready](/docs/troubleshooting/insertion-and-copy-ready-output)
+
+## Copy Ready
+
+When the destination cannot safely accept paste, Juno holds the finalized text in the HUD instead of inserting it. Copy from the HUD and paste manually.
+
+See [Safe Insertion and Copy Ready](/docs/use-juno/safe-insertion-and-copy-ready-output) for the insertion rules and app-specific mitigations.

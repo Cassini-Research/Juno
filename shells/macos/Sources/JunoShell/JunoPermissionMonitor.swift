@@ -1,12 +1,11 @@
 import ApplicationServices
 import AVFoundation
 import Combine
-import Speech
 import AppKit
 
 // MARK: - Permission monitor
 
-/// Shared observable that tracks microphone, Accessibility, and speech-recognition
+/// Shared observable that tracks microphone, Accessibility, and visible-screen text
 /// auth status. Polls occasionally and refreshes on app-activation events so views
 /// auto-update without requiring explicit user action after visiting System Settings.
 @MainActor
@@ -15,7 +14,8 @@ final class JunoPermissionMonitor: ObservableObject {
 
     @Published private(set) var micStatus: AVAuthorizationStatus = .notDetermined
     @Published private(set) var axGranted: Bool = false
-    @Published private(set) var speechStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    @Published private(set) var screenContextEnabled: Bool = JunoUserDefaults.screenContextEnabled
+    @Published private(set) var screenRecordingGranted: Bool = false
 
     /// True when the minimum set of permissions for dictation is in place.
     var canDictate: Bool { micStatus == .authorized && axGranted }
@@ -79,7 +79,8 @@ final class JunoPermissionMonitor: ObservableObject {
         // Cmd+V injection still fail, which made the UI report "granted" while
         // paste was actually blocked.
         axGranted = AXIsProcessTrusted()
-        speechStatus = SFSpeechRecognizer.authorizationStatus()
+        screenContextEnabled = JunoUserDefaults.screenContextEnabled
+        screenRecordingGranted = JunoScreenContextAccess.permissionGranted
         // Wake the lifecycle when canDictate flips. Without this, a user
         // stuck on the "Finish setup" gate at .needsPermissions stays
         // there indefinitely after granting perms in System Settings,
@@ -101,12 +102,11 @@ final class JunoPermissionMonitor: ObservableObject {
         }
     }
 
-    func requestSpeechRecognition(completion: @escaping (Bool) -> Void = { _ in }) {
-        SFSpeechRecognizer.requestAuthorization { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.refresh()
-                completion(self?.speechStatus == .authorized)
-            }
+    func requestScreenRecording(completion: @escaping (Bool) -> Void = { _ in }) {
+        JunoUserDefaults.screenContextEnabled = true
+        JunoScreenContextAccess.requestFromExplicitUserAction { [weak self] granted in
+            self?.refresh()
+            completion(granted)
         }
     }
 
@@ -143,8 +143,8 @@ final class JunoPermissionMonitor: ObservableObject {
         JunoSystemSettingsLinks.openAccessibilityPrivacy()
     }
 
-    func openSpeechRecognitionSettings() {
-        JunoSystemSettingsLinks.openSpeechRecognitionPrivacy()
+    func openScreenRecordingSettings() {
+        JunoScreenContextAccess.openSystemSettings()
     }
 
     // MARK: - Display helpers
@@ -159,13 +159,10 @@ final class JunoPermissionMonitor: ObservableObject {
         }
     }
 
-    var speechStatusLabel: String {
-        switch speechStatus {
-        case .authorized: return "Granted"
-        case .denied: return "Denied — open System Settings to grant."
-        case .notDetermined: return "Not yet requested."
-        case .restricted: return "Restricted by system policy."
-        @unknown default: return "Unknown"
+    var screenRecordingStatusLabel: String {
+        if !screenContextEnabled {
+            return "Off"
         }
+        return screenRecordingGranted ? "Granted" : "Needs Screen Recording approval."
     }
 }

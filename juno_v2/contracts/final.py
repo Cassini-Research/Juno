@@ -35,8 +35,8 @@ class FinalSegment:
     # non-speech (>= 0.6 is the model's own silence threshold).
     # ``avg_logprob`` is the average token logprob for the segment
     # (< -1.0 is whisper's own low-confidence threshold). Both are
-    # optional because non-whisper backends (qwen_asr, local_http_json)
-    # don't surface them. Used by the commit-side
+    # optional because non-whisper backends do not always surface them.
+    # Used by the commit-side
     # trailing-silence-hallucination guard to corroborate per-segment
     # stock-phrase matches with the audio signals from the *same*
     # segment, so a real "thank you" with confident decode is preserved

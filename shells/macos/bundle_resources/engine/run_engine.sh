@@ -98,11 +98,16 @@ export JUNO_V2_MEMORY_DIR="${MEMORY_DIR}"
 # Full runtime.service mode with an isolated resident preview service.
 # Live preview is driven by MLX Whisper large-v3-turbo on checkpointed
 # utterance windows. The shell streams audio to the broker, the broker forwards
-# preview chunks to this local preview process. Qwen remains on the final
-# writer/action path by default; the live HUD stream should not be rewritten
-# by Qwen while the user is still speaking.
+# preview chunks to this local preview process. The writer/action model remains
+# on the final path by default; the live HUD stream should not be rewritten
+# by a language model while the user is still speaking.
 export JUNO_V2_MODE=live
 export JUNO_V2_PREVIEW_BACKEND=streaming_local_http_json
+# Hold back HUD commits for words ending inside the last 600ms of buffered
+# audio — Whisper's truncated-decode zone, where stable hallucinated
+# continuations come from ("…hey Juno" + cut speech → "I don't know.").
+# Demoted words re-commit one decode later once more audio confirms them.
+export JUNO_V2_PREVIEW_COMMIT_DRAFT_HORIZON_MS="${JUNO_V2_PREVIEW_COMMIT_DRAFT_HORIZON_MS:-600}"
 export JUNO_V2_PREVIEW_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 export JUNO_V2_PREVIEW_HF_REPO_ID=mlx-community/whisper-large-v3-turbo
 export JUNO_V2_PREVIEW_SERVICE_BACKEND=mlx_whisper
@@ -111,17 +116,20 @@ export JUNO_V2_FINAL_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 export JUNO_V2_FINAL_HF_REPO_ID=mlx-community/whisper-large-v3-turbo
 export JUNO_V2_WRITER_BACKEND=mlx_lm
 export JUNO_V2_WRITER_MODEL_PATH=mlx-community/Qwen3-4B-Instruct-2507-4bit
-export JUNO_V2_LIVE_CORRECTOR_ENABLED="${JUNO_V2_LIVE_CORRECTOR_ENABLED:-0}"
+export JUNO_V2_TURN_PLANNER_ENABLED="${JUNO_V2_TURN_PLANNER_ENABLED:-1}"
+export JUNO_V2_LIVE_CORRECTOR_ENABLED="${JUNO_V2_LIVE_CORRECTOR_ENABLED:-1}"
 export JUNO_V2_LIVE_CORRECTOR_BACKEND=mlx_lm
 export JUNO_V2_LIVE_CORRECTOR_MODEL_PATH=mlx-community/Qwen3-0.6B-4bit
 export JUNO_V2_LIVE_CORRECTOR_MAX_TOKENS=160
 export JUNO_V2_LIVE_CORRECTOR_TEMPERATURE=0.0
 export JUNO_V2_LIVE_CORRECTOR_TOP_P=1.0
 export JUNO_V2_LIVE_CORRECTOR_RESIDENCY_POLICY=resident
-# Writer stays on-demand in the packaged app. It remains warm for the idle TTL
-# after use, but releases under sustained background idle so the menu-bar app
-# does not pin multi-GB MLX memory all day.
-export JUNO_V2_WRITER_RESIDENCY_POLICY=on_demand
+# Writer is resident in the packaged app. The Qwen3-4B writer/planner pays a
+# 3-5s MLX cold start on every reload; with on_demand residency that cost
+# landed on nearly every utterance because real pauses between dictations
+# exceed any reasonable idle TTL. Resident is the documented production
+# decision (2026-05-11) for an interactive dictation product on 16GB+ Macs.
+export JUNO_V2_WRITER_RESIDENCY_POLICY=resident
 # Old live-WAV adjudication is disabled. Final stop still uses Whisper + the
 # 4B writer/action lane.
 export JUNO_V2_LIVE_QWEN_ADJUDICATION=0
@@ -132,23 +140,27 @@ export JUNO_V2_LIVE_QWEN_ADJUDICATION=0
 # envelopes still validate unconditionally so older code paths are
 # unaffected; flip to 0 to bisect any v3-specific regression.
 export JUNO_ACTIONS_SCHEMA_V3="${JUNO_ACTIONS_SCHEMA_V3:-1}"
-# Phase 2 of the Juno actions rehaul. The actions index records every
-# executed action under a stable Juno id, and operations enables
-# update/complete/snooze/delete/query validation + dispatch against that id.
+# The actions index records every executed action under a stable Juno id.
+# Launch scope (2026-06-10): CREATION ONLY — operations on existing actions
+# (update/complete/snooze/delete) and the followup correction window are OFF
+# for go-live and tracked in docs/JUNO_TODO_POST_LAUNCH.md.
 export JUNO_ACTIONS_INDEX="${JUNO_ACTIONS_INDEX:-1}"
-export JUNO_ACTIONS_OPERATIONS="${JUNO_ACTIONS_OPERATIONS:-1}"
-# Phase 3 of the Juno actions rehaul. Vague time resolves spoken buckets
-# like "later" to concrete defaults, and followup enables the narrow
-# correction window for the most recent confirmed action.
+export JUNO_ACTIONS_OPERATIONS="${JUNO_ACTIONS_OPERATIONS:-0}"
 export JUNO_ACTIONS_VAGUE_TIME="${JUNO_ACTIONS_VAGUE_TIME:-1}"
-export JUNO_ACTIONS_FOLLOWUP="${JUNO_ACTIONS_FOLLOWUP:-1}"
+export JUNO_ACTIONS_FOLLOWUP="${JUNO_ACTIONS_FOLLOWUP:-0}"
+# Dictation editor: the AI lane for every non-wake dictation turn — one
+# cached-prefix Qwen pass emitting an anchored edit script (corrections,
+# restarts/fillers, spoken structure), applied deterministically. Floor on
+# parse/deadline failure is the deterministic pipeline text, logged.
+export JUNO_V2_DICTATION_EDITOR="${JUNO_V2_DICTATION_EDITOR:-1}"
+export JUNO_V2_DICTATION_EDITOR_DEADLINE_MS="${JUNO_V2_DICTATION_EDITOR_DEADLINE_MS:-12000}"
 export JUNO_ACTIONS_CONTAINERS="${JUNO_ACTIONS_CONTAINERS:-1}"
 export JUNO_ACTIONS_COMPOUND="${JUNO_ACTIONS_COMPOUND:-1}"
 export JUNO_V2_GPU_MEMORY_BUDGET_MB=12000
 export JUNO_V2_PREVIEW_GPU_MEMORY_MB=4200
 export JUNO_V2_FINAL_GPU_MEMORY_MB=4200
 export JUNO_V2_WRITER_GPU_MEMORY_MB=2600
-export JUNO_V2_LIVE_CORRECTOR_GPU_MEMORY_MB="${JUNO_V2_LIVE_CORRECTOR_GPU_MEMORY_MB:-0}"
+export JUNO_V2_LIVE_CORRECTOR_GPU_MEMORY_MB="${JUNO_V2_LIVE_CORRECTOR_GPU_MEMORY_MB:-800}"
 export JUNO_V2_LANGUAGE=en
 export JUNO_V2_LANGUAGE_POLICY=fixed
 export JUNO_V2_SPEECH_PROFILE=standard
@@ -230,7 +242,7 @@ PY
     --preview-gpu-memory-mb 4200 \
     --final-gpu-memory-mb 4200 \
     --writer-gpu-memory-mb 2600 \
-    --writer-residency-policy on_demand \
+    --writer-residency-policy resident \
     --language en \
     --language-policy fixed \
     --speech-profile standard \

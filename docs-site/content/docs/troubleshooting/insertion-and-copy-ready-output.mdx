@@ -1,0 +1,143 @@
+---
+title: "Insertion and Copy Ready"
+description: "Fix insertion fallback."
+---
+
+# Insertion and Copy Ready Output
+
+Copy Ready means Juno produced text but skipped direct insertion.
+
+---
+
+## Step 1 — Check Accessibility permission
+
+Accessibility is the single most common cause of unexpected Copy Ready. Without it, Juno cannot safely inspect or write to any app.
+
+1. Open **System Settings → Privacy & Security → Accessibility**
+2. Confirm Juno appears in the list and is toggled on
+3. If it is missing, add it manually using the `+` button and navigate to `/Applications/Juno.app`
+4. **Quit and reopen Juno** — a permission change does not take effect until Juno restarts
+
+If Accessibility is already on but Copy Ready still appears, continue below.
+
+---
+
+## Step 2 — Run the clean isolation test
+
+Open **Apple Notes or Mail**, click into a blank text field, and dictate a sentence.
+
+| Result | What it means |
+| --- | --- |
+| Text inserts normally | The core Juno insertion path is working. Continue to Step 3 for app-specific checks. |
+| Copy Ready again | The problem is global — Accessibility may not have taken effect, or there is a microphone / permission issue. Continue to Step 4. |
+
+---
+
+## Step 3 — Identify the app-specific cause
+
+If Juno inserts in Notes but not in the original app, one of these applies:
+
+### The app does not accept programmatic paste
+
+Some apps transform, block, or silently discard pasted text. This is the app's behavior, not a Juno bug. Common examples:
+
+- **Electron apps** (Notion, Linear, Slack desktop) — some input fields reject paste from the pasteboard. Try clicking into a simple text field inside the app rather than a rich editor.
+- **Web inputs in Chrome or Safari** — browser security policies can block certain paste operations. Juno falls back to Copy Ready when this happens.
+- **Remote desktop clients** (Jump, Royal TSX, Microsoft Remote Desktop, Parallels) — Juno cannot insert into a remote session. Copy from the HUD and paste manually inside the remote window.
+- **Virtual machines** — same as remote desktops. Copy Ready is the correct and expected outcome.
+- **Password managers** — Juno detects these as secure fields and blocks paste intentionally. This cannot be overridden.
+
+**What to do:** Accept Copy Ready for these apps. After Juno shows Copy Ready, press ⌘V in the remote or problematic field.
+
+### The app changed focus mid-dictation
+
+If you switch apps or windows while dictating, Juno cancels the insertion to avoid pasting into the wrong place. Juno shows Copy Ready rather than risk a stray paste.
+
+**What to do:** Keep the target field focused for the full session. Start with the cursor already placed where you want the text.
+
+### The field is a secure or password-type input
+
+If the field visually resembles a password input — masked characters, biometric unlock, any secure entry field — Juno blocks capture, context, history, audio save, and paste entirely. Copy Ready does not appear; the **Blocked** state appears instead.
+
+**What to do:** This is intentional behavior. Move to a normal text field.
+
+### The app's insertion method is unreliable
+
+Some apps accept keyboard injection better than pasteboard paste, or vice versa. Juno tries the most reliable method for each app. If you have a persistent issue with one app:
+
+1. Open **Per-app writing**
+2. Find the app (or add it if it is not listed)
+3. Review whether any behavior overrides might be affecting the session
+
+---
+
+## Step 4 — Global permission or engine issues
+
+If Copy Ready appears in every app including Notes:
+
+### Accessibility not taking effect
+
+macOS sometimes requires a full restart of the permissioned app after granting Accessibility. If you toggled Accessibility on but did not fully quit and reopen Juno:
+
+1. Quit Juno from the menu bar icon → Quit
+2. Reopen Juno
+3. Test again in Notes
+
+### Accessibility stuck in a broken state
+
+If Juno appears granted in System Settings but still cannot insert:
+
+1. Open **System Settings → Privacy & Security → Accessibility**
+2. Toggle Juno **off**, wait 3 seconds, toggle back **on**
+3. Quit and reopen Juno
+
+If that does not resolve it, follow the [full Accessibility troubleshooting guide](/docs/troubleshooting/accessibility).
+
+### Permission reset after a macOS or Juno update
+
+macOS can revoke Accessibility permissions after a system update, a re-sign of the app, or installation of a new Juno version. If Copy Ready appeared suddenly after an update:
+
+1. Check Accessibility in System Settings — it may show Juno as off or missing
+2. Re-grant the permission and restart Juno
+
+---
+
+## Step 5 — Undo an unwanted insertion
+
+If insertion happened but placed the wrong text, use the target app's undo command immediately (**⌘Z**). Juno's selected-text replacement is designed to wait for the final result before replacing your selection, so partial results should not corrupt in-progress text.
+
+---
+
+## Quick reference: Copy Ready vs Blocked
+
+| HUD shows | Cause | What to do |
+| --- | --- | --- |
+| **Copy Ready** | Insertion was skipped — accessibility, app, or surface issue | Copy from HUD and paste manually |
+| **Blocked** | Secure/password field detected | Move to a normal text field |
+| **Error** | Engine or microphone failure | Read the HUD error message and follow the linked guide |
+
+---
+
+## Known apps that always use Copy Ready
+
+These apps consistently reject programmatic paste on macOS. Copy Ready is the expected outcome — this is not a bug:
+
+- Remote desktop clients (any)
+- Password manager entry fields (1Password, Bitwarden, Keychain prompts)
+- System dialogs and modal sheets (Finder rename, Save As prompts)
+- macOS screensaver unlock and login window
+- Some game clients and full-screen exclusive apps
+
+For all of these: let Juno transcribe, copy from the HUD, and paste manually.
+
+---
+
+## Still not working?
+
+If you have gone through all steps and insertion still does not work in normal apps:
+
+1. Open **Juno → Settings → Advanced → Logs**
+2. Click **Generate support bundle…** — the bundle captures the session log including the insertion attempt and its outcome
+3. Open a support ticket and attach the bundle
+
+See [Support Bundle](/docs/troubleshooting/support-bundle) for what the bundle contains and how to share it.

@@ -1,0 +1,160 @@
+---
+title: "Voice Actions"
+description: "Create reminders, notes, and Calendar alerts."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Voice Actions
+
+Voice Actions turn supported phrases into Apple Reminders, Apple Notes, and Calendar alerts.
+
+> *"Juno, note tomorrow's 7 AM flight — passport renewed, packing list almost done. Remind me at 5 to charge the AirPods, and wake me at 4:30 so I make it."*
+>
+> → **1 note** in Apple Notes, **1 reminder** at 5:00 PM, and **1 Calendar-backed alarm** at 4:30 AM.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/actions-real.png"
+  alt="Juno Voice Actions page. Header: Voice Actions, All set. Three rows for Reminders, Notes, and Alarms, each with an example phrase and the target Apple service. Reminders shows Allowed; Notes shows Allowed; Alarms shows Allowed."
+  caption="Enable the Apple apps Juno can use for reminders, notes, and Calendar alerts."
+/>
+
+## Compound utterances
+
+Juno scans the sentence after the action prefix and detects supported action verbs. Each verb anchors a new action; the surrounding text becomes that action's body. Separators such as `and`, `also`, `then`, `plus`, and `next` are removed from the saved item.
+
+| Say | What gets created |
+| --- | --- |
+| *"Hey Juno, take a note about the Q3 plan and remind me to send it tomorrow at 9am."* | A Note ("the Q3 plan") + a Reminder ("send it" at tomorrow 9 AM) |
+| *"Juno, remind me to call Sam at 3pm and remind me to email Lily tomorrow."* | Two Reminders, each with its own time |
+| *"Hey Juno, set an alarm for 7am, remind me to send the deck by 9, also note: prep the board meeting."* | An Alarm + a Reminder + a Note |
+| *"Juno take a note book ideas — memoir told in voicemails, then also remind me to draft the outline next weekend."* | A Note + a Reminder for next Saturday morning |
+| *"Juno note this: vendor outreach by Friday, and remind me Wednesday to follow up if Sarah has not replied."* | A Note + a Reminder on Wednesday |
+
+After a compound utterance, Home shows a summary such as *"Saved 1 reminder, 2 notes, and 1 alarm."*
+
+## Relative time
+
+Juno resolves common relative time phrases to concrete defaults:
+
+| You say | Juno schedules it for |
+| --- | --- |
+| `later` | +2 hours from now (snapped to the next 5-minute boundary) |
+| `soon` | +30 minutes |
+| `tonight` | 8:00 PM today (or tomorrow if it's already past 8 PM) |
+| `morning` | 8:00 AM today or tomorrow |
+| `afternoon` | 2:00 PM today or tomorrow |
+| `evening` | 7:00 PM today or tomorrow |
+| `weekend` | Next Saturday at 9:00 AM |
+| `next week` | Next Monday at 9:00 AM |
+
+For example, *"Hey Juno, remind me to send the proposal tonight"* schedules a reminder for 8:00 PM. *"Hey Juno, remind me to call mom this weekend"* schedules a reminder for the next Saturday at 9:00 AM.
+
+Concrete times work too: *"at 4:30," "in 25 minutes," "tomorrow at 9," "on the 15th," "next Tuesday at 2,"* "*on March 3rd at 11."*
+
+## Recurring reminders
+
+| Say | Schedule |
+| --- | --- |
+| *"Hey Juno, remind me every weekday at 9 to start the standup."* | Mon–Fri, 9:00 AM |
+| *"Juno, remind me every Tuesday at 4 to send the weekly update."* | Tuesdays, 4:00 PM |
+| *"Hey Juno, remind me every morning to take vitamins."* | Daily, 8:00 AM (the "morning" default) |
+| *"Juno, remind me on the first of every month to file expenses."* | Monthly, the 1st |
+
+The recurrence rule becomes a real `EKRecurrenceRule` in Apple Reminders, so the schedule lives in your Reminders app, not just inside Juno.
+
+## Linked actions
+
+When two actions in the same sentence reference each other, Juno preserves the relationship. The second action's body can refer back to the first item with phrases such as "check it," "follow up on that," or "review it."
+
+| Say | What happens |
+| --- | --- |
+| *"Hey Juno, take a note about the venue options and remind me Thursday to pick one."* | The reminder links back to the note — opening the reminder shows which note it refers to |
+| *"Juno, set an alarm for 7am and remind me at 8 to leave for the airport."* | The reminder's body knows the alarm came first |
+
+## Follow-up corrections
+
+After Juno saves an action, you get a brief confirmation window. In that window, you can correct, confirm, or cancel without starting a new session.
+
+| Say | What happens |
+| --- | --- |
+| *"Yes."* / *"Yep."* / *"Looks good."* | Confirms the action as saved |
+| *"Make it 4 pm instead."* | Updates the time |
+| *"Cancel that."* / *"Never mind."* | Removes the just-created action |
+| *"Add tomorrow morning."* | Adds a missing time field |
+
+Use this when the item is correct but a time, date, or detail needs to change.
+
+## Supported verbs
+
+Juno supports the following action phrases:
+
+**Reminders:** `remind me`, `reminder`, `set a reminder`, `remember to`, `remember that`
+
+**Notes:** `take a note`, `make a note`, `take note`, `note this`, `note that`, `save this note`, `save a note`, `save this`, `jot this down`, `jot down`, `write this down`, `write that down`
+
+**Alarms (Calendar-backed):** `set an alarm`, `alarm`, `alarm at`, `wake me`, `wake me up`, `set a timer for`, `set a timer`, `ping me at`, `ping me`
+
+The action prefix is either **"Hey Juno"** or **"Juno,"** at the start of the sentence. Mid-sentence mentions of "Juno" remain plain dictation. The prefix is a content cue, not a passive wake word; the microphone opens only when you press the shortcut.
+
+## Comparison with single-action assistants
+
+Single-action assistants usually process one intent per utterance. Juno Actions are designed for writing workflows where several follow-up items need to be captured from the same spoken sentence.
+
+| Capability | Apple Siri | **Juno Actions** |
+| --- | --- | --- |
+| **One sentence, multiple things created** | One intent per utterance | **Compound — say a reminder, a note, and an alarm together; all three are created in the right Apple apps** |
+| **Relative-time defaults** | Partial — varies by intent | **"later", "soon", "tonight", "morning", and "weekend" resolve to documented defaults** |
+| **Linked actions across one utterance** | No equivalent | **"Take a note about the venue and remind me Thursday to pick one" — the reminder back-references the note** |
+| **Run inside your current app** | Pulls focus to Siri | **Available from supported text fields without leaving the current app** |
+| **Where transcription happens** | Cloud | **This Mac** |
+| **Listens only when you ask** | Always-on when enabled | **Mic opens on shortcut press; "Hey Juno" is a content cue, not a passive listener** |
+| **Follow-up corrections** | Limited | **"Make it 4pm instead" / "Cancel that" in the confirmation window without restarting the session** |
+
+Use Actions when a dictation session includes follow-up work that should become saved items rather than inserted prose.
+
+## Where things land
+
+| Action | Target app | Where exactly |
+| --- | --- | --- |
+| Reminder | Apple Reminders | Your default list (or a list you name in the sentence) |
+| Note | Apple Notes | A folder called **Juno** |
+| Alarm | Apple Calendar | A one-shot calendar event with an alert, so it rings even with Juno closed |
+
+Alarms are backed by Calendar events with alerts. Calendar alerts work when Juno is not running, sync to your iPhone if iCloud Calendar is on, and survive a Mac restart. Apple does not expose a first-class voice timer API for this workflow.
+
+## Permissions
+
+Each integration asks for its own permission the first time you enable it:
+
+| Integration | macOS permission |
+| --- | --- |
+| Reminders | Reminders Automation |
+| Notes | Notes Automation |
+| Alarms | Calendar Automation |
+
+You can enable just one or all three; each integration is independent. If the permission prompt does not appear, the row's Settings button deep-links to the right macOS pane.
+
+## Settings on the Actions page
+
+- **Voice Actions master toggle** — turns the entire system on/off
+- Per-integration **Allowed / Set up / Restricted / Not installed** status
+- **Add a footer to saved notes** — appends a brief Juno attribution to each note
+- **Refresh** — re-checks macOS permission state
+
+## What enabling Voice Actions changes
+
+- "Hey Juno" / "Juno," at the start of a sentence becomes an action prefix instead of literal text
+- The first time you hit a new action verb, macOS prompts for the matching Automation permission
+- Saved items show as a toast on Home for a few seconds with what landed
+
+With Voice Actions **off**, dictation, Styles, Voice Commands, Per-app writing, and Dictionary all keep working. "Hey Juno, remind me to…" is dictated as ordinary text instead of creating a reminder.
+
+## Inline editing vs Actions
+
+Two different systems, often confused:
+
+- **[Voice Commands](/docs/use-juno/voice-commands)** — said *during* dictation. They edit the text you are writing: `scratch that`, `make that shorter`, `turn that into bullets`. No action prefix.
+- **Actions** — said *after* "Hey Juno." They create items in Apple Reminders / Notes / Calendar instead of writing text.
+
+You can mix them in one workflow. Dictate an email, edit it with Voice Commands as you go, then end with "Hey Juno, remind me to follow up on this on Thursday" to create the reminder without leaving Mail.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 import json
 import math
 import struct
@@ -10,21 +11,32 @@ import wave
 from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
+    _final_adjudication_fast_skip_reason,
     _mode_policy_for_final_delivery,
+    _reconcile_explicit_candidate_term_confusions,
+    _reconcile_proper_nouns_from_live_hint,
     _reconcile_protected_term_near_misses,
     _reconcile_split_candidate_term,
 )
-from juno_core_v3.dictation.transcriber import TranscribeResult
+from juno_core_v3.dictation.transcriber import FinalBackendTranscriber, TranscribeResult
+from juno_core_v3.actions.llm_extractor import validate_envelope
 from juno_v2.commands.grammar import parse_deterministic_command
 from juno_v2.context.compiler import FormattingPacket, TranscriptAdjudicationPacket, compile_context
+from juno_v2.context.frozen_merge import merge_frozen_capability_into_bundle
 from juno_v2.contracts.context import TypedContextBundle
-from juno_v2.contracts.memory import LexiconEntry, MemorySnapshot
+from juno_v2.contracts.final import FinalDecodeResult
+from juno_v2.contracts.memory import LexiconEntry, MemorySnapshot, SessionEntity
 from juno_v2.contracts.modes import ModeSelection, ModeSource
 from juno_v2.contracts.workbench import ClientSelection, CommitMode
-from juno_v2.contracts.writer import WriterActionKind, WriterMode, WriterTransformRequest, WriterTransformResult
+from juno_v2.contracts.writer import WriterActionKind, WriterIntentKind, WriterMode, WriterTransformRequest, WriterTransformResult
+from juno_v2.final.config import FinalAsrConfig
 from juno_v2.itn.rules import apply_spoken_punctuation
 from juno_v2.memory.bias import RecognitionBiasEngine
+from juno_v2.memory.ai_dictionary import AI_GLOSSARY
+from juno_v2.memory.entity_policy import commit_session_entity_allowed, session_entity_allowed
 from juno_v2.memory.ranking import rank_memory_for_context
+from juno_v2.memory.store import JsonMemoryStore
+from juno_v2.memory.stores.corrections import is_safe_correction_pair
 from juno_v2.modes.defaults import BUILTIN_MODES
 from juno_v2.preview.live_agreement import Word
 from juno_v2.preview.personalization_repair import repair_preview_word_dicts
@@ -37,10 +49,15 @@ from juno_v2.transcript.adjudicator import TranscriptAdjudicator
 from juno_v2.transcript.validators import validate_adjudication_result
 from juno_v2.writer.backends.mlx_lm import _build_writer_prompt, _system_prompt
 from juno_v2.writer.config import WriterConfig
-from juno_v2.writer.deterministic import run_pipeline
 from juno_v2.writer.final_formatter import FinalFormatter
+from juno_v2.writer.parser import WriterIntentParser
 from juno_v2.writer.service import WriterService
-from juno_v2.workbench.server import _preview_candidates_from_session_context_tape
+from juno_v2.workbench.server import (
+    _action_preview_display_text,
+    _merge_action_preview_display_text,
+    _preview_candidates_from_session_context_tape,
+)
+from juno_v2.context.provider import _extract_candidates
 
 
 class _Recorder:
@@ -71,6 +88,50 @@ def test_preview_repair_still_canonicalizes_exact_named_terms() -> None:
     assert meta["preview_repair_applied"] == 1
 
 
+def test_preview_repair_allows_explicit_screen_phrase_single_token_confusion() -> None:
+    repaired, meta = repair_preview_word_dicts(
+        [
+            {"word": "off", "start": 0.0, "end": 0.1},
+            {"word": "callback", "start": 0.1, "end": 0.2},
+            {"word": "flow", "start": 0.2, "end": 0.3},
+        ],
+        context_payload={"candidate_entities": ["auth callback flow"]},
+    )
+
+    assert [w["word"] for w in repaired] == ["auth", "callback", "flow"]
+    assert meta["preview_repair_applied"] == 1
+
+
+def test_preview_repair_does_not_rewrite_single_common_word_to_screen_term() -> None:
+    repaired, meta = repair_preview_word_dicts(
+        [{"word": "dogs", "start": 0.0, "end": 0.2}],
+        context_payload={"candidate_entities": ["docs"]},
+    )
+
+    assert repaired[0]["word"] == "dogs"
+    assert meta["preview_repair_applied"] == 0
+
+
+def test_screen_candidate_extractor_filters_editor_chrome_terms() -> None:
+    candidates = _extract_candidates(
+        [
+            (
+                "Untitled paragraph style rgb 0 0 0 text colour Helvetica "
+                "typeface Regular style 48 font size Edited document TextEdit "
+                "Visible page mentions SilviaGamachi and Project Atlas."
+            )
+        ]
+    )
+
+    assert "SilviaGamachi" in candidates
+    assert "Project" in candidates
+    assert "Atlas" in candidates
+    assert "Helvetica" not in candidates
+    assert "Regular" not in candidates
+    assert "Edited" not in candidates
+    assert "TextEdit" not in candidates
+
+
 def test_preview_candidates_include_session_context_tape_screen_terms() -> None:
     candidates = _preview_candidates_from_session_context_tape(
         {
@@ -88,6 +149,135 @@ def test_preview_candidates_include_session_context_tape_screen_terms() -> None:
 
     assert "SilviaGamachi" in candidates
     assert "Project Atlas" in candidates
+
+
+def test_final_transcript_packet_keeps_screen_terms_but_filters_unrelated_memory() -> None:
+    compiled = compile_context(
+        utterance_id="utt-context-filter",
+        context=TypedContextBundle(
+            app_name="Chrome",
+            app_category="email",
+            window_title="Gmail - Compose",
+            candidate_entities=["auth callback flow", "Jordan", "Chrome", "Gmail"],
+            metadata={"explicit_candidate_entities": ["auth callback flow", "Jordan", "Chrome", "Gmail"]},
+        ),
+        memory_snapshot=MemorySnapshot(
+            schema_version=1,
+            lexicon=[
+                LexiconEntry(term="Luma Ray", canonical_form="LumaRay", aliases=["Luma Ray"]),
+                LexiconEntry(term="Discord", canonical_form="Discord"),
+                LexiconEntry(term="BitsAndBytes", canonical_form="BitsAndBytes"),
+            ],
+        ),
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        mode_policy=BUILTIN_MODES["default_surface"],
+        transcript_hint="",
+        session_terms=[],
+        language="en",
+        stage="final_delivery",
+        final_transcript_text="Ask the CLI to review the off callback flow for Luma Ray.",
+    )
+    packet = compiled.transcript_packet(
+        stage="final",
+        whisper_text="Ask the CLI to review the off callback flow for Luma Ray.",
+        memory_candidate_text="Ask the CLI to review the off callback flow for LumaRay.",
+        raw_text="Ask the CLI to review the off callback flow for Luma Ray.",
+    )
+    terms = {term.text for term in packet.context_terms}
+
+    assert "auth callback flow" in terms
+    assert "LumaRay" in terms
+    assert "Discord" not in terms
+    assert "BitsAndBytes" not in terms
+    assert "LumaRay" in packet.protected_terms
+    assert "Discord" not in packet.protected_terms
+    assert "Chrome" not in packet.protected_terms
+
+
+def test_action_preview_display_collapses_wake_gated_action_fragments_only() -> None:
+    display = _action_preview_display_text(
+        "Hey Juno, take a note. Jordan wants the proposal by Friday morning.",
+        "Remind me tomorrow at 9 to send the draft. Set an alarm for 3pm.",
+    )
+    normal = _action_preview_display_text(
+        "Please take a note that Jordan wants the proposal.",
+        "",
+    )
+
+    assert display == "Hey Juno: note, reminder, alarm"
+    assert normal is None
+
+
+def test_action_preview_display_merge_does_not_shrink_labels() -> None:
+    assert _merge_action_preview_display_text(
+        "Hey Juno: note, reminder",
+        "Hey Juno: note",
+    ) == "Hey Juno: note, reminder"
+    assert _merge_action_preview_display_text(
+        "Hey Juno: note",
+        "Hey Juno: note, alarm",
+    ) == "Hey Juno: note, alarm"
+
+
+def test_preview_candidates_include_visible_field_excerpt_terms() -> None:
+    candidates = _preview_candidates_from_session_context_tape(
+        {
+            "snapshots": [
+                {
+                    "app_name": "Editor",
+                    "window_title": "Editor",
+                    "selected_text": "",
+                    "focused_text_before": "",
+                    "focused_text_after": "",
+                    "field_text_excerpt": "Visible page mentions Nilofar and SilviaGamachi for Project Atlas.",
+                    "candidate_entities": ["Nilofar", "SilviaGamachi", "Project Atlas"],
+                }
+            ]
+        }
+    )
+
+    assert "Nilofar" in candidates
+    assert "SilviaGamachi" in candidates
+    assert "Project Atlas" in candidates
+
+
+def test_frozen_context_merges_visible_field_excerpt_terms() -> None:
+    context = TypedContextBundle(app_name="Editor", window_title="Editor")
+
+    changed = merge_frozen_capability_into_bundle(
+        context,
+        {
+            "field_text_excerpt": "Visible page mentions Nilofar and SilviaGamachi.",
+            "candidate_entities": ["Nilofar", "SilviaGamachi"],
+        },
+    )
+
+    assert changed is True
+    assert "Nilofar" in context.field_text_excerpt
+    assert context.candidate_entities == ["Nilofar", "SilviaGamachi"]
+    assert "explicit_candidate_entities" not in context.metadata
+
+
+def test_frozen_context_keeps_explicit_repair_terms_separate_from_screen_candidates() -> None:
+    context = TypedContextBundle(app_name="Editor", window_title="Editor")
+
+    changed = merge_frozen_capability_into_bundle(
+        context,
+        {
+            "candidate_entities": ["Maia", "Nilofar"],
+            "explicit_candidate_entities": ["Nilofar"],
+        },
+    )
+
+    assert changed is True
+    assert context.candidate_entities == ["Maia", "Nilofar"]
+    assert context.metadata["explicit_candidate_entities"] == ["Nilofar"]
 
 
 def test_preview_repair_uses_explicit_memory_aliases_without_fuzzy_matching() -> None:
@@ -193,9 +383,9 @@ def test_final_formatting_prompt_carries_preservation_terms_to_qwen() -> None:
 
     payload = json.loads(_build_writer_prompt(req))
 
-    assert payload["context"]["required_preserved_terms"] == ["SilviaGamachi", "Project Atlas"]
-    assert payload["context"]["candidate_entities"] == ["SilviaGamachi"]
-    assert payload["context"]["recent_screen_terms"] == ["Project Atlas"]
+    assert payload["reference_only_context"]["required_preserved_terms"] == ["SilviaGamachi", "Project Atlas"]
+    assert payload["reference_only_context"]["candidate_entities"] == ["SilviaGamachi"]
+    assert payload["reference_only_context"]["recent_screen_terms"] == ["Project Atlas"]
 
 
 def test_final_formatter_required_terms_are_sent_to_backend() -> None:
@@ -235,7 +425,177 @@ def test_final_formatter_required_terms_are_sent_to_backend() -> None:
     assert result is not None
     prompt = captured["prompt"]
     assert isinstance(prompt, dict)
-    assert "SilviaGamachi" in prompt["context"]["required_preserved_terms"]
+    assert "SilviaGamachi" in prompt["reference_only_context"]["required_preserved_terms"]
+
+
+def test_final_formatter_rejects_context_only_metadata_leak() -> None:
+    class Backend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text=(
+                    "- Task: Review the off-callback flow\n"
+                    "- Focus: Identify edge cases around expired sessions\n"
+                    "- Document title: Untitled\n"
+                    "- Font: Helvetica\n"
+                    "- Status: Edited\n"
+                    "- App: TextEdit"
+                ),
+                backend_name="fake-qwen",
+            )
+
+    packet = FormattingPacket(
+        utterance_id="utt-leak",
+        corrected_text="Review the off-callback flow and find edge cases around expired sessions.",
+        app_name="TextEdit",
+        app_category="docs",
+        window_title="Untitled",
+        mode_name="structured_notes",
+        final_formatting_policy="structured_notes",
+        style_card=None,
+        focused_text_before="",
+        focused_text_after="",
+        selected_text_excerpt="",
+        writer_tone_addon=None,
+        metadata={"candidate_entities": ["Untitled", "Helvetica", "Regular", "Edited", "TextEdit"]},
+    )
+
+    formatter = FinalFormatter(backend=Backend())
+
+    assert formatter.format(packet) is None
+    assert formatter.last_rejection is not None
+    assert formatter.last_rejection["reason"] == "context_terms_added"
+
+
+def test_final_formatter_rejects_dropping_source_required_terms() -> None:
+    class Backend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text="- Product name should be written in this sentence.",
+                backend_name="fake-qwen",
+            )
+
+    packet = FormattingPacket(
+        utterance_id="utt-source-term-drop",
+        corrected_text="Juno should write the product name in this sentence.",
+        app_name="Notes",
+        app_category="docs",
+        window_title=None,
+        mode_name="structured_notes",
+        final_formatting_policy="structured_notes",
+        style_card=None,
+        focused_text_before="",
+        focused_text_after="",
+        selected_text_excerpt="",
+        writer_tone_addon=None,
+        metadata={},
+    )
+
+    formatter = FinalFormatter(backend=Backend())
+
+    assert formatter.format(packet) is None
+    assert formatter.last_rejection is not None
+    assert formatter.last_rejection["reason"] == "source_required_terms_dropped"
+    assert formatter.last_rejection["missing_source_required_terms"] == ["Juno"]
+
+
+def test_final_formatter_allows_structural_count_to_be_removed_from_list_output() -> None:
+    class Backend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text="- Remove patches\n- Make Qwen plan\n- Validate spans",
+                backend_name="fake-qwen",
+            )
+
+    packet = FormattingPacket(
+        utterance_id="utt-structural-count",
+        corrected_text="Note down 3 points. First remove patches. Second make Qwen plan. Third validate spans.",
+        app_name="Notes",
+        app_category="docs",
+        window_title=None,
+        mode_name="structured_notes",
+        final_formatting_policy="structured_notes",
+        style_card=None,
+        focused_text_before="",
+        focused_text_after="",
+        selected_text_excerpt="",
+        writer_tone_addon=None,
+        metadata={},
+    )
+
+    formatter = FinalFormatter(backend=Backend())
+    result = formatter.format(packet)
+
+    assert result is not None
+    assert result.text == "- Remove patches\n- Make Qwen plan\n- Validate spans"
+    assert formatter.last_rejection is None
+
+
+def test_memory_serving_filters_lowercase_kebab_session_artifacts() -> None:
+    snapshot = MemorySnapshot(
+        schema_version=1,
+        session_entities=[
+            SessionEntity(value="off-callback", count=3, source="oneshot_commit"),
+            SessionEntity(value="Best", count=3, source="oneshot_commit"),
+            SessionEntity(value="After", count=2, source="oneshot_commit"),
+            SessionEntity(value="Putting", count=1, source="oneshot_commit"),
+            SessionEntity(value="Nilofar", count=1, source="oneshot_commit"),
+            SessionEntity(value="Nemotron", count=1, source="oneshot_commit"),
+        ]
+    )
+
+    packet = RecognitionBiasEngine().build_serving_packet(snapshot=snapshot)
+    ranked = rank_memory_for_context(snapshot, context=TypedContextBundle(app_name="Notes"))
+
+    assert "off-callback" not in packet.session_entities
+    assert "off-callback" not in ranked.session_entities
+    assert "Best" not in packet.session_entities
+    assert "Best" not in ranked.session_entities
+    assert "After" not in packet.session_entities
+    assert "Putting" not in packet.session_entities
+    assert "Nilofar" in packet.session_entities
+    assert "Nilofar" in ranked.session_entities
+    assert "Nemotron" in packet.session_entities
+
+
+def test_session_entity_policy_keeps_rare_terms_not_common_words() -> None:
+    for term in ("Best", "After", "Some", "Putting", "Finally", "Check", "Now"):
+        assert not session_entity_allowed(term)
+
+    for term in ("Nilofar", "Ishida", "Nemotron", "Qwen", "ASR", "E2E", "LumaRay"):
+        assert session_entity_allowed(term)
+
+
+def test_context_backed_common_names_can_enter_session_memory() -> None:
+    assert commit_session_entity_allowed(
+        "Tara",
+        committed_text="Tell Tara I am running late.",
+        spoken_evidence_text="Tell Tara I am running late.",
+        context_text="WhatsApp chat with Tara, Noah, and Riya",
+        context_backed=True,
+    )
+    assert not commit_session_entity_allowed(
+        "Tara",
+        committed_text="Tell Tara I am running late.",
+        spoken_evidence_text="Tell Tara I am running late.",
+        context_text="",
+        context_backed=False,
+    )
+    assert not commit_session_entity_allowed(
+        "May",
+        committed_text="May is busy tomorrow.",
+        spoken_evidence_text="May is busy tomorrow.",
+        context_text="May",
+        context_backed=True,
+    )
+
+
+def test_correction_memory_rejects_case_only_common_word_changes() -> None:
+    assert not is_safe_correction_pair("best", "Best")
+    assert not is_safe_correction_pair("finally", "Finally")
+    assert is_safe_correction_pair("qwen", "Qwen")
 
 
 def test_transcript_adjudicator_preserves_ai_first_resolution_metadata() -> None:
@@ -246,16 +606,16 @@ def test_transcript_adjudicator_preserves_ai_first_resolution_metadata() -> None
                 text=json.dumps(
                     {
                         "schema_version": "transcript_adjudication_v1",
-                        "corrected_text": "Japan, no actually Korea, is the customer meeting location.",
+                        "corrected_text": "Paris, no actually Prague, is the customer meeting location.",
                         "ops": [],
                         "confidence": 0.91,
-                        "protected_terms_used": ["Korea"],
+                        "protected_terms_used": ["Prague"],
                         "intent": {"kind": "dictation"},
                         "formatting_plan": {"kind": "no_formatting"},
                         "self_corrections": [
-                            {"cue": "no actually", "from": "Japan", "to": "Korea"}
+                            {"cue": "no actually", "from": "Paris", "to": "Prague"}
                         ],
-                        "terms_used": [{"term": "Korea", "source": "screen"}],
+                        "terms_used": [{"term": "Prague", "source": "screen"}],
                     }
                 ),
                 backend_name="fake-qwen",
@@ -267,11 +627,11 @@ def test_transcript_adjudicator_preserves_ai_first_resolution_metadata() -> None
         base_visible_text="",
         base_visible_revision=None,
         live_preview_text="",
-        whisper_text="Japan, no actually Korea, is the customer meeting location.",
-        memory_candidate_text="Japan, no actually Korea, is the customer meeting location.",
-        raw_text="Japan, no actually Korea, is the customer meeting location.",
+        whisper_text="Paris, no actually Prague, is the customer meeting location.",
+        memory_candidate_text="Paris, no actually Prague, is the customer meeting location.",
+        raw_text="Paris, no actually Prague, is the customer meeting location.",
         context_terms=(),
-        protected_terms=("Korea",),
+        protected_terms=("Prague",),
         selected_text_excerpt="",
         focused_text_before="",
         focused_text_after="",
@@ -295,7 +655,7 @@ def test_transcript_adjudicator_preserves_ai_first_resolution_metadata() -> None
     assert not result.rejected
     assert result.metadata["intent"] == {"kind": "dictation"}
     assert result.metadata["formatting_plan"] == {"kind": "no_formatting"}
-    assert result.metadata["self_corrections"][0]["to"] == "Korea"
+    assert result.metadata["self_corrections"][0]["to"] == "Prague"
 
 
 def test_transcript_adjudicator_repairs_low_signal_mid_sentence_caps_before_validation() -> None:
@@ -346,12 +706,12 @@ def test_transcript_validation_allows_duplicate_protected_term_cleanup() -> None
 
 def test_transcript_validation_rejects_inverted_no_actually_cue() -> None:
     packet = _adjudication_packet(
-        raw_text="No actually write LumaRay as one product word.",
-        protected_terms=("LumaRay",),
+        raw_text="No actually write WidgetName as one word.",
+        protected_terms=("WidgetName",),
     )
     result = _adjudication_result(
-        "Do not write LumaRay as one product word.",
-        protected_terms_used=("LumaRay",),
+        "Do not write WidgetName as one word.",
+        protected_terms_used=("WidgetName",),
     )
 
     ok, reason = validate_adjudication_result(packet, result)
@@ -364,7 +724,7 @@ def test_transcript_validation_rejects_lost_final_tail_even_with_self_correction
     packet = _adjudication_packet(
         raw_text=(
             "First section is risks scratch that make it open risks. "
-            "At the end say the final word is complete."
+            "Closing sentence must remain."
         ),
         protected_terms=("open risks",),
     )
@@ -394,6 +754,64 @@ def test_transcript_validation_allows_no_actually_noun_correction() -> None:
     assert ok, reason
 
 
+def test_transcript_validation_allows_actually_prefix_cleanup_when_target_survives() -> None:
+    packet = _adjudication_packet(
+        raw_text="We'll send the proposal by Thursday, actually Friday morning.",
+    )
+    result = _adjudication_result(
+        "We'll send the proposal by Friday morning.",
+    )
+
+    ok, reason = validate_adjudication_result(packet, result)
+
+    assert ok, reason
+
+
+def test_transcript_validation_rejects_dropped_scratch_that_target() -> None:
+    packet = _adjudication_packet(
+        raw_text="The owner is Neil scratch that Nilofer.",
+    )
+    result = _adjudication_result(
+        "The owner is Neil.",
+        protected_terms_used=(),
+    )
+
+    ok, reason = validate_adjudication_result(packet, result)
+
+    assert not ok
+    assert reason.startswith("source_words_dropped:")
+
+
+def test_transcript_validation_allows_scratch_that_target_replacement() -> None:
+    packet = _adjudication_packet(
+        raw_text="The owner is Neil scratch that Nilofer.",
+        protected_terms=("Nilofer",),
+    )
+    result = _adjudication_result(
+        "The owner is Nilofer.",
+        protected_terms_used=("Nilofer",),
+    )
+
+    ok, reason = validate_adjudication_result(packet, result)
+
+    assert ok, reason
+
+
+def test_transcript_validation_rejects_dropped_no_actually_target() -> None:
+    packet = _adjudication_packet(
+        raw_text="The customer meeting is in Paris, no actually Prague.",
+    )
+    result = _adjudication_result(
+        "The customer meeting is in Paris.",
+        protected_terms_used=(),
+    )
+
+    ok, reason = validate_adjudication_result(packet, result)
+
+    assert not ok
+    assert reason.startswith("source_words_dropped:")
+
+
 def test_transcript_validation_allows_repeated_question_hallucination_drop() -> None:
     packet = _adjudication_packet(
         raw_text="Question Question Decision log includes keeping Cwen useful.",
@@ -407,74 +825,6 @@ def test_transcript_validation_allows_repeated_question_hallucination_drop() -> 
     ok, reason = validate_adjudication_result(packet, result)
 
     assert ok, reason
-
-
-def test_transcript_adjudicator_restores_explicit_final_word_tail() -> None:
-    class Backend:
-        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
-            return WriterTransformResult(
-                utterance_id=req.utterance_id,
-                text=json.dumps(
-                    {
-                        "schema_version": "transcript_adjudication_v1",
-                        "corrected_text": "First section is open risks.",
-                        "ops": [],
-                        "confidence": 0.91,
-                        "protected_terms_used": ["open risks"],
-                    }
-                ),
-                backend_name="fake-qwen",
-            )
-
-    packet = _adjudication_packet(
-        raw_text="First section is risks scratch that make it open risks. At the end say the final word is complete.",
-        protected_terms=("open risks",),
-    )
-
-    result = TranscriptAdjudicator(backend=Backend(), recorder=_Recorder()).adjudicate(packet)
-
-    assert not result.rejected
-    assert result.corrected_text.endswith("At the end say the final word is complete.")
-    assert result.metadata["explicit_final_word_tail_restore"]["restored"] == (
-        "At the end say the final word is complete."
-    )
-
-
-def test_transcript_adjudicator_removes_scratch_that_exclusion_instruction() -> None:
-    class Backend:
-        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
-            return WriterTransformResult(
-                utterance_id=req.utterance_id,
-                text=json.dumps(
-                    {
-                        "schema_version": "transcript_adjudication_v1",
-                        "corrected_text": (
-                            "Start a planning note. Add bullets under each section, but do not include "
-                            "the words scratch that in the final note unless I explicitly say quote scratch that quote. "
-                            "Open risks include tail words."
-                        ),
-                        "ops": [],
-                        "confidence": 0.91,
-                        "protected_terms_used": ["Open risks"],
-                    }
-                ),
-                backend_name="fake-qwen",
-            )
-
-    packet = _adjudication_packet(
-        raw_text=(
-            "Start a planning note. Add bullets under each section, but do not include "
-            "the words scratch that in the final note unless I explicitly say quote scratch that quote. "
-            "Open risks include tail words."
-        ),
-        protected_terms=("Open risks",),
-    )
-
-    result = TranscriptAdjudicator(backend=Backend(), recorder=_Recorder()).adjudicate(packet)
-
-    assert not result.rejected
-    assert "scratch that" not in result.corrected_text.casefold()
-    assert result.metadata["instructional_exclusion_repairs"]
 
 
 def test_seed_canonicalization_does_not_expand_generic_alias_without_context() -> None:
@@ -520,70 +870,6 @@ def test_post_asr_memory_subterm_does_not_match_plain_prefix_word() -> None:
     ]
 
     assert hinted_terms == []
-
-
-def test_spoken_structure_promotes_default_docs_to_structured_notes() -> None:
-    policy = BUILTIN_MODES["default_surface"]
-    context = TypedContextBundle(app_name="Notes", app_category="docs")
-
-    promoted = _mode_policy_for_final_delivery(
-        policy,
-        context=context,
-        raw_text="Start research notes. We need four sections. First battery risk. Second rollout. Third launch metric.",
-        adjudicated_text="Start research notes. We need four sections. First battery risk. Second rollout. Third launch metric.",
-        adjudication_result=None,
-    )
-
-    assert promoted.final_formatting_policy == "structured_notes"
-
-
-def test_spoken_bullet_points_strip_ordinal_item_labels() -> None:
-    rendered = run_pipeline(
-        (
-            "Create three bullets. First point is Passport. Second point is Charger. "
-            "Third point is Korea, customer meeting location."
-        ),
-        app_category="docs",
-    )
-
-    assert rendered.strip() == (
-        "Create three bullets:\n"
-        "1. Passport.\n"
-        "2. Charger.\n"
-        "3. Korea, customer meeting location."
-    )
-
-
-def test_unpunctuated_spoken_bullets_render_from_real_audio_shape() -> None:
-    rendered = run_pipeline(
-        (
-            "Create 3 bullets first point is Passport Second point is Charger "
-            "Third point is Korea customer meeting location"
-        ),
-        app_category="docs",
-    )
-
-    assert rendered.strip() == (
-        "Create 3 bullets:\n"
-        "1. Passport.\n"
-        "2. Charger.\n"
-        "3. Korea customer meeting location."
-    )
-
-
-def test_explicit_rewrite_promotes_default_docs_without_selection_transform() -> None:
-    policy = BUILTIN_MODES["default_surface"]
-    context = TypedContextBundle(app_name="Notes", app_category="docs")
-
-    promoted = _mode_policy_for_final_delivery(
-        policy,
-        context=context,
-        raw_text="Write this as a concise status update. The launch is on track and the risk owner is Nilofar.",
-        adjudicated_text="Write this as a concise status update. The launch is on track and the risk owner is Nilofar.",
-        adjudication_result=None,
-    )
-
-    assert promoted.final_formatting_policy == "explicit_rewrite"
 
 
 def test_spoken_structure_does_not_promote_terminal_or_explicit_no_formatting() -> None:
@@ -661,6 +947,54 @@ def test_split_candidate_repair_does_not_absorb_function_words() -> None:
     assert replacements == [{"from": "Luma Ray", "to": "LumaRay", "source": "explicit_candidate_split_phrase"}]
 
 
+def test_live_hint_repair_does_not_rewrite_valid_word_to_context_app_name() -> None:
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Hey Juno, add a reminder to go to disco with Ishita next week.",
+        final_text="Hey Juno, add a reminder to go to Disco with Ishita next week.",
+        protected_terms=("Discord",),
+    )
+
+    assert text == "Hey Juno, add a reminder to go to Disco with Ishita next week."
+    assert replacements == []
+
+
+def test_live_hint_repair_only_preserves_case_for_same_word() -> None:
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Ishita owns the follow-up.",
+        final_text="ISHITA owns the follow-up.",
+        protected_terms=(),
+    )
+
+    assert text == "Ishita owns the follow-up."
+    assert replacements == [{"from": "ISHITA", "to": "Ishita", "source": "live_hint_case"}]
+
+
+def test_action_llm_body_prefers_spoken_evidence_over_model_word_substitution() -> None:
+    source = "set an alarm for 5 pm tomorrow and add a reminder to go to Disco with Ishita next week."
+    actions = validate_envelope(
+        {
+            "intent": "execute_action",
+            "should_execute": True,
+            "confidence": 0.94,
+            "decision_evidence_span": source,
+            "actions": [
+                {
+                    "kind": "reminder",
+                    "body": "go to Discord with Ishita next week",
+                    "evidence_span": "add a reminder to go to Disco with Ishita next week",
+                    "when_text": "next week",
+                    "confidence": 0.9,
+                }
+            ],
+        },
+        raw_span_fallback=source,
+        now=datetime(2026, 6, 2, 12, 0, 0),
+    )
+
+    assert actions is not None
+    assert actions[0].body == "go to Disco with Ishita"
+
+
 def test_protected_phrase_token_repair_handles_screen_name_near_miss() -> None:
     repaired, replacements = _reconcile_protected_term_near_misses(
         text="The visible screen says Sylvia Gamache.",
@@ -671,6 +1005,61 @@ def test_protected_phrase_token_repair_handles_screen_name_near_miss() -> None:
     assert replacements == [{"from": "Sylvia", "to": "Silvia", "source": "protected_term_near_miss"}]
 
 
+def test_explicit_candidate_repair_does_not_rewrite_common_words_to_screen_names() -> None:
+    repaired, replacements = _reconcile_explicit_candidate_term_confusions(
+        text="Please remind me to send the draft.",
+        explicit_candidate_terms=("Maia",),
+        protected_terms=("Maia",),
+    )
+
+    assert repaired == "Please remind me to send the draft."
+    assert replacements == []
+
+
+def test_static_ai_glossary_does_not_rewrite_plain_common_words_by_default() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="First alpha, second beta, third gamma.",
+        protected_terms=(),
+    )
+
+    assert repaired == "First alpha, second beta, third gamma."
+    assert replacements == []
+
+
+def test_static_ai_glossary_does_not_include_person_names() -> None:
+    assert "Marco" not in AI_GLOSSARY
+
+
+def test_protected_context_can_repair_common_word_to_glossary_term() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Use gamma for the local model layer.",
+        protected_terms=("Gemma",),
+    )
+
+    assert repaired == "Use Gemma for the local model layer."
+    assert replacements == [{"from": "gamma", "to": "Gemma", "source": "protected_term_near_miss"}]
+
+
+def test_protected_context_does_not_rewrite_proper_term_to_common_word() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Please send the Solara investor brief.",
+        protected_terms=("Solar",),
+    )
+
+    assert repaired == "Please send the Solara investor brief."
+    assert replacements == []
+
+
+def test_static_ai_glossary_repairs_non_common_near_misses_without_app_gate() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Use Quen for the local model layer.",
+        protected_terms=(),
+    )
+
+    assert repaired == "Use Qwen for the local model layer."
+    assert replacements == [{"from": "Quen", "to": "Qwen", "source": "protected_term_near_miss"}]
+
+
 def test_oneshot_salvages_qwen_self_correction_after_protected_phrase_repair() -> None:
     class FakeTranscriber:
         backend_name = "fake_asr"
@@ -679,7 +1068,7 @@ def test_oneshot_salvages_qwen_self_correction_after_protected_phrase_repair() -
             return TranscribeResult(
                 transcript=(
                     "Start a note. The visible screen says Sylvia Gamache. "
-                    "Japan, no actually Korea, is the customer meeting location."
+                    "Paris, no actually Prague, is the customer meeting location."
                 ),
                 language="en",
                 backend_name="fake_asr",
@@ -706,13 +1095,13 @@ def test_oneshot_salvages_qwen_self_correction_after_protected_phrase_repair() -
                         "schema_version": "transcript_adjudication_v1",
                         "corrected_text": (
                             "Start a note. The visible screen says Sylvia Gamache. "
-                            "Korea is the customer meeting location."
+                            "Prague is the customer meeting location."
                         ),
                         "ops": [],
                         "confidence": 0.91,
                         "protected_terms_used": ["Silvia Gamache"],
                         "self_corrections": [
-                            {"cue": "no actually", "from": "Japan", "to": "Korea"}
+                            {"cue": "no actually", "from": "Paris", "to": "Prague"}
                         ],
                     }
                 ),
@@ -742,9 +1131,9 @@ def test_oneshot_salvages_qwen_self_correction_after_protected_phrase_repair() -
     assert result.ok
     assert result.transcript == (
         "Start a note. The visible screen says Silvia Gamache. "
-        "Korea is the customer meeting location."
+        "Prague is the customer meeting location."
     )
-    assert "Japan, no actually Korea" not in result.transcript
+    assert "Paris, no actually Prague" not in result.transcript
     assert any(item["rule"] == "adjudication_validation_repair" for item in result.normalization_applied)
 
 
@@ -885,7 +1274,7 @@ def test_seed_memory_observes_context_terms_only_after_successful_commit() -> No
             return TypedContextBundle(
                 app_name="Notes",
                 app_category="docs",
-                candidate_entities=["LumaRay", "Okay"],
+                candidate_entities=["LumaRay", "Okay", "Best", "After", "Some", "Putting"],
             )
 
     class FakeMemoryStore:
@@ -961,12 +1350,16 @@ def test_seed_memory_observes_context_terms_only_after_successful_commit() -> No
 
     learned = pipeline.record_insertion(
         utterance_id="utt-seed-after-commit",
-        committed_text="LumaRay battery risk is assigned.",
+        committed_text="LumaRay battery risk is assigned. Best After Some Putting.",
     )
 
     assert learned["learned"] is True
     assert "LumaRay" in memory.entities
     assert "Okay" not in memory.entities
+    assert "Best" not in memory.entities
+    assert "After" not in memory.entities
+    assert "Some" not in memory.entities
+    assert "Putting" not in memory.entities
     assert seed.learned_store.observations == ["LumaRay"]
     assert seed.learned_store.acceptances == ["LumaRay"]
 
@@ -991,19 +1384,42 @@ def test_voice_action_prompt_includes_now_iso() -> None:
     assert "Current local time (now_iso): 2026-06-01T09:30:00+07:00" in prompt
 
 
-def test_transcript_adjudication_prompt_includes_slot_correction_example() -> None:
+def test_wake_action_transcript_adjudication_still_runs_before_turn_planning() -> None:
+    reason = _final_adjudication_fast_skip_reason(
+        live_adjudication=False,
+        transcript_hint=None,
+        raw_text="Hey Juno, remind me tomorrow at 9 to send the draft.",
+        normalized_text="Hey Juno, remind me tomorrow at 9 to send the draft.",
+        normalization_applied=[],
+        audio_duration_ms=3000.0,
+    )
+    ordinary = _final_adjudication_fast_skip_reason(
+        live_adjudication=False,
+        transcript_hint=None,
+        raw_text="Remind me to send the draft, but write it as a note.",
+        normalized_text="Remind me to send the draft, but write it as a note.",
+        normalization_applied=[],
+        audio_duration_ms=3000.0,
+    )
+
+    assert reason is None
+    assert ordinary is None
+
+
+def test_transcript_adjudication_prompt_omits_hardcoded_slot_examples() -> None:
     req = WriterTransformRequest(
         utterance_id="utt-adj-prompt",
         instruction="Resolve final transcript.",
-        source_text="Japan, no actually Korea, is the customer meeting location.",
+        source_text="The speaker revised part of the sentence.",
         mode=WriterMode.DEFAULT_SURFACE,
         context_payload={"task": "transcript_adjudication_v1"},
     )
 
     prompt = _system_prompt(req)
 
-    assert "'Japan, no actually Korea, is the customer meeting location'" in prompt
-    assert "'Korea is the customer meeting location.'" in prompt
+    assert "Do not invert the meaning of an explicit correction." in prompt
+    assert "Paris, no actually Prague" not in prompt
+    assert "LumaRay" not in prompt
 
 
 def test_selected_transform_command_does_not_fall_into_final_formatting() -> None:
@@ -1057,6 +1473,90 @@ def test_selected_transform_command_does_not_fall_into_final_formatting() -> Non
     assert result.action == WriterActionKind.TRANSFORM_COMMIT
     assert result.commit_mode == CommitMode.REPLACE_SELECTION
     assert result.output_text == "Shorter selected text."
+
+
+def test_writer_parser_does_not_misclassify_reply_dictation_as_transform() -> None:
+    text = (
+        "Reply to Jordan Quick recap from today, we'll send the Proposal by Friday morning, "
+        "include pricing, rollout plan, and open questions, "
+        "end with I'll keep it short."
+    )
+
+    intent = WriterIntentParser().parse(
+        text,
+        selection_present=False,
+        active_mode=WriterMode.FORMAL_EMAIL,
+        mode_policy=BUILTIN_MODES["formal_email"],
+    )
+
+    assert intent.kind == WriterIntentKind.DICTATE
+
+
+def test_writer_parser_still_accepts_real_unscoped_transform_command() -> None:
+    intent = WriterIntentParser().parse(
+        "Make this shorter.",
+        selection_present=False,
+        active_mode=WriterMode.DEFAULT_SURFACE,
+        mode_policy=BUILTIN_MODES["default_surface"],
+    )
+
+    assert intent.kind != WriterIntentKind.DICTATE
+
+
+def test_selection_transform_prompt_preserves_paragraph_shape_without_structure_request() -> None:
+    req = WriterTransformRequest(
+        utterance_id="utt-selection-prompt",
+        instruction="Make this shorter and more direct.",
+        source_text="Customer interested in rollout plan, security notes, and open questions.",
+        mode=WriterMode.DEFAULT_SURFACE,
+        target_selection=ClientSelection(start=0, end=10),
+        context_payload={"task": "selection_transform_v1"},
+    )
+
+    prompt = _system_prompt(req)
+
+    assert "return a paragraph, not bullets" in prompt.lower()
+    assert "explicitly requests a list" in prompt.lower()
+
+
+def test_explicit_snippet_insert_commits_body_without_final_formatting() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="customer follow up snippet",
+            body="Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+        mode_policy = replace(BUILTIN_MODES["default_surface"], final_formatting_policy="structured_notes")
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet",
+            final_text="Insert customer follow-up snippet.",
+            raw_text="Insert customer follow-up snippet.",
+            context=TypedContextBundle(app_name="Notes", app_category="docs"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=mode_policy,
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
 
 
 def test_recent_transform_command_uses_recent_clipboard_in_default_mode() -> None:
@@ -1139,6 +1639,45 @@ def _loud_wav_bytes() -> bytes:
         wav.setframerate(sample_rate)
         wav.writeframes(bytes(frames))
     return buf.getvalue()
+
+
+def test_auto_language_policy_reaches_backend_without_english_fallback() -> None:
+    class CapturingBackend:
+        backend_name = "fake_asr"
+        config = FinalAsrConfig(model_path="fake", backend_name="fake_asr", language="en")
+
+        def __init__(self) -> None:
+            self.language_seen: str | None = "unset"
+            self.policy_seen: str | None = None
+
+        def warm(self) -> None:
+            return None
+
+        def decode(self, req: object) -> FinalDecodeResult:
+            self.language_seen = getattr(req, "language", None)
+            self.policy_seen = getattr(req, "language_policy", None)
+            return FinalDecodeResult(
+                utterance_id="utt-language",
+                text="नमस्ते",
+                start_ms=0.0,
+                end_ms=1000.0,
+                audio_duration_ms=1000.0,
+                backend_name="fake_asr",
+                language="hi",
+            )
+
+    backend = CapturingBackend()
+    transcriber = FinalBackendTranscriber(backend=backend, language="en")
+
+    result = transcriber.transcribe_wav(
+        _loud_wav_bytes(),
+        language=None,
+        language_policy="auto_supported",
+    )
+
+    assert backend.language_seen is None
+    assert backend.policy_seen == "auto_supported"
+    assert result.language == "hi"
 
 
 def _adjudication_packet(

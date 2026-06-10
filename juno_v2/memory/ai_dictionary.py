@@ -42,7 +42,6 @@ AI_GLOSSARY: frozenset[str] = frozenset(
         "Zephyr",
         "Orca",
         "Hermes",
-        "Marco",
         # Anthropic + OpenAI model surface (the rare-spelling ones)
         "Sonnet",
         "Opus",

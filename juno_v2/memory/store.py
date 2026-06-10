@@ -25,6 +25,7 @@ from juno_v2.memory.hallucination import (
     HALLUCINATION_CONFIDENCE_FLOOR,
     looks_like_hallucination,
 )
+from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.ranking import _low_signal_lexicon_pair
 from juno_v2.memory.stores import (
     CorrectionStore,
@@ -158,6 +159,7 @@ class JsonMemoryStore:
                 replacements=self.replacements.list(),
                 corrections=self.corrections.list(),
                 session_entities=self.entities.list(),
+                snippets=[item.to_dict() for item in self.snippets.list()],
                 metadata=self._manifest.read({"schema_version": SCHEMA_VERSION}),
             )
 
@@ -191,7 +193,7 @@ class JsonMemoryStore:
             ),
         )
         entities = sorted(
-            snapshot.session_entities,
+            (item for item in snapshot.session_entities if session_entity_allowed(item.value)),
             key=lambda item: (-int(item.count), item.value.casefold()),
         )
 
@@ -214,61 +216,30 @@ class JsonMemoryStore:
                 for item in corrections[:max_corrections]
             ],
             session_entities=[item.value for item in entities[:max_entities]],
+            snippets=[
+                {
+                    "trigger": str(item.get("trigger") or ""),
+                    "scope": str(item.get("scope") or "global"),
+                    "body_preview": str(item.get("body") or "")[:500],
+                    "body_chars": len(str(item.get("body") or "")),
+                    "case_sensitive": bool(item.get("case_sensitive", False)),
+                }
+                for item in list(snapshot.snippets or [])[:8]
+                if str(item.get("trigger") or "").strip() and str(item.get("body") or "")
+            ],
             metadata={
                 "lexicon_total": len(snapshot.lexicon),
                 "replacement_total": len(snapshot.replacements),
                 "correction_total": len(snapshot.corrections),
                 "correction_served_total": len(corrections),
                 "session_entity_total": len(snapshot.session_entities),
+                "snippet_total": len(snapshot.snippets),
                 "lexicon_truncated": len(snapshot.lexicon) > max_lexicon,
                 "replacement_truncated": len(snapshot.replacements) > max_replacements,
                 "correction_truncated": len(corrections) > max_corrections,
                 "session_entity_truncated": len(snapshot.session_entities) > max_entities,
             },
         )
-
-    def clear_all(self) -> dict[str, dict[str, int]]:
-        """Clear user-learned memory without touching product history/audio.
-
-        The protected built-in vocabulary seed is restored so the core wake word
-        remains available to the bias planner after a reset.
-        """
-        with self.lock:
-            before_snapshot = self.snapshot()
-            before = {
-                "lexicon": len(before_snapshot.lexicon),
-                "replacements": len(before_snapshot.replacements),
-                "corrections": len(before_snapshot.corrections),
-                "session_entities": len(before_snapshot.session_entities),
-                "snippets": len(self.snippets.raw()),
-            }
-
-            self.vocabulary._fs.write([])
-            self.replacements._fs.write([])
-            self.corrections._fs.write([])
-            self.entities._fs.write([])
-            self.snippets._fs.write([])
-            self._manifest.write({"schema_version": SCHEMA_VERSION})
-            from juno_v2.personalization.seed.learned_state import (
-                JunoPersonalizationLearnedStore,
-            )
-
-            JunoPersonalizationLearnedStore(self.memory_dir).clear()
-            self._seed_protected_vocabulary()
-
-            after_snapshot = self.snapshot()
-            after = {
-                "lexicon": len(after_snapshot.lexicon),
-                "replacements": len(after_snapshot.replacements),
-                "corrections": len(after_snapshot.corrections),
-                "session_entities": len(after_snapshot.session_entities),
-                "snippets": len(self.snippets.raw()),
-            }
-            removed = {
-                key: max(0, int(before.get(key, 0)) - int(after.get(key, 0)))
-                for key in before
-            }
-            return {"before": before, "after": after, "removed": removed}
 
     # ---------------------------------------------------------------- #
     # Legacy pass-through API (preserved for existing v2 callers)

@@ -61,6 +61,10 @@ def merge_frozen_capability_into_bundle(
     if "clipboard_text" in frozen:
         context.clipboard_text = clip
         applied = True
+    field_excerpt = _red(_str("field_text_excerpt"))
+    if "field_text_excerpt" in frozen:
+        context.field_text_excerpt = field_excerpt
+        applied = True
 
     bid = (_str("frontmost_app_bundle_id") or _str("app_bundle_id")).strip()
     if bid:
@@ -95,25 +99,34 @@ def merge_frozen_capability_into_bundle(
     if isinstance(raw_entities, list):
         merged = list(context.candidate_entities or [])
         seen = {item.casefold() for item in merged if isinstance(item, str)}
-        explicit_entities = list(context.metadata.get("explicit_candidate_entities") or [])
-        explicit_seen = {item.casefold() for item in explicit_entities if isinstance(item, str)}
         for raw in raw_entities[:24]:
             value = _clip(str(raw or "").strip())
             if not value:
                 continue
             key = value.casefold()
-            if key not in explicit_seen:
-                explicit_seen.add(key)
-                explicit_entities.append(value)
             if key in seen:
                 continue
             seen.add(key)
             merged.append(value)
-        if explicit_entities:
-            context.metadata["explicit_candidate_entities"] = explicit_entities[:40]
         if merged != list(context.candidate_entities or []):
             context.candidate_entities = merged[:40]
             applied = True
+
+    raw_explicit_entities = frozen.get("explicit_candidate_entities")
+    if isinstance(raw_explicit_entities, list):
+        explicit_entities = list(context.metadata.get("explicit_candidate_entities") or [])
+        explicit_seen = {item.casefold() for item in explicit_entities if isinstance(item, str)}
+        for raw in raw_explicit_entities[:24]:
+            value = _clip(str(raw or "").strip())
+            if not value:
+                continue
+            key = value.casefold()
+            if key in explicit_seen:
+                continue
+            explicit_seen.add(key)
+            explicit_entities.append(value)
+        context.metadata["explicit_candidate_entities"] = explicit_entities[:40]
+        applied = True
 
     if applied and (context.app_name or context.metadata.get("app_bundle_id")):
         context.app_category = classify_app_category(

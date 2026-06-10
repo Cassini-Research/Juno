@@ -1,0 +1,13 @@
+{
+  "title": "Architecture",
+  "pages": [
+    "overview",
+    "dictation-lifecycle",
+    "macos-app-and-helpers",
+    "local-voice-engine",
+    "privacy-data-flow",
+    "storage-lifecycle",
+    "memory-and-personalization",
+    "failure-and-recovery-model"
+  ]
+}

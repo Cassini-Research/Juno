@@ -1,0 +1,213 @@
+---
+title: "App Integrations"
+description: "Recommended settings by app."
+---
+
+# App Integrations
+
+Juno works in any app with a text field. Set style, context, and insertion expectations by app.
+
+---
+
+## Apple Notes
+
+**Insertion:** Works cleanly. Accessibility has full access to the Notes text engine.
+
+**Best style:** Structured notes for capture and drafts. Default for quick thoughts.
+
+**What Smart Context sees:** The note title, the text before and after your cursor, any selected text.
+
+**Recommended workflow:** Use Notes as a default dictation surface when the final destination is unclear. Dictate the draft, review it, then move it to the destination app.
+
+**Tip:** Set Notes as your default in Per-app writing and pin it to Structured notes. Your Apple Notes becomes a voice-first capture inbox — every thought you speak lands in a structured, copyable note within seconds.
+
+---
+
+## Apple Mail
+
+**Insertion:** Works cleanly in both the compose window and reply fields.
+
+**Best style:** Formal email. Juno ships a Per-app writing preset for Mail that activates this automatically.
+
+**What Smart Context sees:** The window title (usually the thread subject), the text in the compose field, and any selected text.
+
+**Recommended workflow:**
+
+1. Start a reply — leave the compose window open
+2. Click into the body
+3. Press Fn/Globe and speak the reply conversationally: *"Hey Rachel just following up on the proposal from last week we can do Thursday at 3 if that still works for you"*
+4. Juno places a properly punctuated, appropriately formal version of what you said
+
+Speak the substance in your normal voice. Formal email style translates spoken thoughts into professional register.
+
+**Tip:** Say `make that shorter` after placing a long email draft to cut it to the essentials before sending.
+
+---
+
+## Slack
+
+**Insertion:** Works in message compose fields. Juno uses pasteboard insertion.
+
+**Best style:** Casual chat.
+
+**What Smart Context sees:** The channel or DM name from the window title. Useful — keeps Juno aware it is writing a message, not an essay.
+
+**Recommended workflow:** Place cursor in Slack compose → press Fn/Globe → speak your message → press Fn/Globe again. Slack's compose field accepts paste directly. For Slack replies in a thread, click into the thread reply field first.
+
+**Known behavior:** If Slack's compose field loses focus while Juno is processing (e.g., a notification pops the window), Copy Ready appears. This is correct — Juno will not paste into an ambiguous target.
+
+**Tip:** Create a custom style "Slack reply" with instructions like "Direct, under 80 words, no greeting, no sign-off." Pin it to Slack in Per-app writing.
+
+---
+
+## Notion
+
+**Insertion:** Works in text blocks. Juno inserts via pasteboard.
+
+**Best style:** Default or Structured notes depending on whether you are capturing free prose or structured content.
+
+**What Smart Context sees:** The page title and any selected text. Field content before the cursor may be limited depending on Notion's Accessibility exposure.
+
+**Known behavior:** Notion uses a rich-text editor that can occasionally transform pasted content — particularly inline code, bold/italic markup, or special characters. If output consistently arrives malformed, Juno will surface it as Copy Ready automatically; paste manually from there.
+
+**Recommended workflow for database entries:** Click into a Notion text property or page body, dictate, review the result. For template filling — dictating into specific fields — place the cursor in each field and dictate one field at a time.
+
+**Tip:** Notion pages with long content can make context heavy. If Smart Context in Notion feels intrusive or slows the session, disable "Current field context" for Notion in Per-app writing.
+
+---
+
+## Obsidian
+
+**Insertion:** Works in editor fields. Obsidian uses CodeMirror, which accepts pasteboard input cleanly.
+
+**Best style:** Default or Structured notes.
+
+**What Smart Context sees:** The note title, selected text, and field surroundings.
+
+**Recommended workflow for Zettelkasten:** Place cursor in a new note → speak your thought stream → let Juno clean it up. Use `turn that into bullets` to structure key ideas. Then link manually. Juno handles the capture; you handle the connection.
+
+**Recommended workflow for daily notes:** Open today's daily note → click into the log section → speak every update, thought, or task by voice. Use `next bullet` between items instead of reaching for the keyboard.
+
+**Tip:** Obsidian frontmatter fields (YAML blocks) behave like normal text — Juno inserts into them. Be aware that pasting content with certain characters (colons, hashes, brackets) may need manual escaping.
+
+---
+
+## Cursor / VS Code
+
+**Insertion:** Works in the editor. Also works in the Cursor AI chat panel and prompt fields.
+
+**Best style:**
+- For comments and docstrings: use a custom style with code-comment instructions
+- For AI prompt fields: Explicit rewrite or Default
+- For commit messages: Default with custom "Changelog" style
+
+**What Smart Context sees:** The file name and path (from window title), selected code, surrounding code before/after cursor.
+
+**Recommended workflow — writing comments:**
+Select the function or block → speak what it does → Juno rewrites it as a clean comment. You get inline documentation without switching context.
+
+**Recommended workflow — prompt engineering:**
+In Cursor's composer or any AI chat field, speak your prompt naturally. Juno cleans up filler and structures the request, which is useful for complex multi-step instructions.
+
+**Recommended workflow — commit messages:**
+Place cursor in the git commit message field -> speak what changed and why -> Juno produces a clean, properly formatted commit message. Add a custom "Commit message" style with instructions like "Past tense verb, imperative mood, under 72 characters for subject line."
+
+**Known behavior:** Terminal input inside VS Code's integrated terminal may not accept paste correctly. If dictation into the terminal panel gives unexpected results, use Copy Ready and paste manually.
+
+---
+
+## Bear / Craft / iA Writer
+
+**Insertion:** All three accept pasteboard cleanly. Juno works in all of them.
+
+**Best style:** Default or Structured notes.
+
+**Tip for Bear:** Bear's editor is Accessibility-friendly. Smart Context captures the note body around your cursor accurately. For long documents, the context window truncates after 240 characters on each side of the cursor, so select the exact passage when rewriting a specific section.
+
+**Tip for Craft:** Craft's block-based editor allows voice input into individual content blocks. Click into a specific block, then dictate into it. Juno treats each block as its own field.
+
+**Tip for iA Writer:** iA Writer's focus mode and fullscreen can cause the window title to change. If Smart Context seems off, check that App/window title is enabled in Smart Context settings for iA Writer.
+
+---
+
+## Day One
+
+**Insertion:** Works cleanly via pasteboard.
+
+**Best style:** Default. Day One's journal entries benefit from natural prose, not heavy structure.
+
+**Recommended workflow:** Keep Day One open on any day → press Fn/Globe → speak your journal entry conversationally. Say `make that more personal` or `make that shorter` after placing a long entry if needed.
+
+**Tip:** Pair Actions with Day One. Speak your main journal entry into Day One via direct insertion, and use a clear note phrase to capture additional ideas as Apple Notes — a live "thought queue" you process later.
+
+---
+
+## Google Docs / Pages / Word
+
+**Insertion:** Works via pasteboard in all three.
+
+**Best style:** Formal email for polished prose, Structured notes for documents with sections.
+
+**What Smart Context sees:** Document title (usually from window title), selected text. Surrounding paragraph context may be limited.
+
+**Known behavior:** Google Docs runs in Chrome or a browser. Browser text fields generally accept pasteboard insertion cleanly. If insertion fails in Google Docs, ensure Accessibility is granted for Chrome, not just for Juno.
+
+**Tip for long documents:** For a 1,000-word section, dictate in chunks of 2-3 paragraphs, review each, then continue. Juno handles the connection between chunks by reading the field context before your cursor.
+
+---
+
+## Linear / GitHub Issues
+
+**Insertion:** Both accept pasteboard in their text fields.
+
+**Best style:** Default for issue descriptions, Structured notes for detailed specs or reproduction steps.
+
+**Recommended workflow — issue descriptions:**
+Speak the issue naturally: *"When a user uploads a file larger than 10 megabytes the upload fails silently with no error message in the console"*. Juno produces a clean, properly capitalized sentence. Add reproduction steps using `next bullet` between each step.
+
+**Recommended workflow — PR descriptions:**
+Select key code changed → speak "this change does X because Y" → use `turn that into bullets` to produce a clean structured diff summary.
+
+---
+
+## Remote desktops, VMs, and screen sharing
+
+**Insertion:** Use Copy Ready. Do not rely on direct insertion into remote sessions.
+
+**Why:** Juno inserts via the local pasteboard, which does not propagate into remote desktop sessions (Citrix, RDP, VMware Horizon, AWS WorkSpaces, Screen Sharing). The remote session's paste handling is independent of the local Mac.
+
+**Safe workflow:** Dictate normally — Juno will either insert locally if a local field was focused, or fall back to Copy Ready. Then switch focus to the remote session and paste manually.
+
+**Tip:** In Per-app writing, disable Smart Context for your remote desktop app. Juno will fall back to Copy Ready automatically when the remote surface is not safe to write into.
+
+---
+
+## Terminal / iTerm2
+
+**Insertion:** Unreliable for direct insertion. Use Copy Ready.
+
+**Why:** Terminal applications handle paste differently from text fields. Newlines, special characters, and escape sequences can behave unexpectedly when pasted programmatically.
+
+**Safe workflow:** Press Fn/Globe → speak your command → if Juno places it, review it before pressing Return. If insertion behaves unexpectedly, Juno will surface the result as Copy Ready — you can then paste manually after reviewing it.
+
+**Tip:** For commands you type often, create a snippet. Add it to your vocabulary as a snippet with the code scope, triggered by a short spoken phrase.
+
+---
+
+## Password managers (1Password, Bitwarden, etc.)
+
+**Insertion:** Blocked automatically. Juno detects secure fields and will not paste into them.
+
+Password-manager fields are detected as secure inputs. Context, learning, history, recording retention, and paste are forced off for those sessions. This is enforced regardless of any setting.
+
+If you need to capture text to paste into a non-credential field in a password manager (notes, URLs, etc.), dictate into Notes or another app first, then copy and paste manually.
+
+---
+
+## Apps with unusual paste behavior
+
+Some apps transform pasted text: they strip whitespace, add markup, convert quotes to HTML entities, or interpret certain characters as commands. If output looks wrong in only one app, that app is transforming the paste.
+
+**Diagnosis:** Check Copy Ready — the text in Copy Ready is exactly what Juno produced. If that looks correct but what landed in the app is different, the transformation happened on paste.
+
+**Fix:** Juno will automatically fall back to Copy Ready when insertion into a specific app fails or produces wrong output — use that as your signal to paste manually in those apps.

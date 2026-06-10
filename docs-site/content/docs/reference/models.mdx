@@ -1,0 +1,88 @@
+---
+title: "Models"
+description: "Local model lanes and storage."
+---
+
+# Models
+
+Juno uses three local model lanes. None calls a server during normal operation.
+
+## The three lanes
+
+| Lane | What it produces | When it runs | Hardware floor |
+| --- | --- | --- | --- |
+| **Fast preview** | Live caption you see in the HUD while speaking | Continuously during a session | Apple Silicon, ≥8 GB RAM |
+| **Final dictation** | The polished final transcript that lands in the field | Once per session, when you finalize | Apple Silicon, ≥8 GB RAM |
+| **Writing engine** | Rewrites for style transformations (Formal email, Structured notes, Polished rewrite, Commands) and writer voice commands (`make that shorter`, `turn that into bullets`, `translate that to …`) | On-demand only — unloaded after each transform | Apple Silicon, ≥16 GB RAM recommended |
+
+The two ASR lanes (Fast preview, Final dictation) work even when the Writing engine is not loaded. The Writing engine loads on demand and unloads after each use, so it does not remain in memory between transforms.
+
+## Shipping Apple Silicon configuration
+
+The actual model identifiers Juno ships against today on Apple Silicon:
+
+| Lane | Model identifier | Backend | Approx. file size |
+| --- | --- | --- | --- |
+| **Fast preview** | `mlx-community/whisper-large-v3-turbo` | MLX | ~1.6 GB |
+| **Final dictation** | `mlx-community/whisper-large-v3-turbo` | MLX | (shared with preview — same weights) |
+| **Writing engine** | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | MLX LM (quantized to 4-bit) | ~2.5 GB |
+
+Total cold install: about 4 GB on disk. The two ASR lanes share weights, so disk usage does not double.
+
+Both backends are Apple's **MLX** family, optimized for Apple Silicon's unified memory architecture. There is no CUDA path; Juno is designed for Apple Silicon Macs.
+
+## Why these models
+
+**Why Whisper Large v3 Turbo for both ASR lanes.** Turbo is the Whisper distillation tuned for low-latency decoding at near-large-v3 quality. Using it for both preview and final keeps the live caption aligned with the committed transcript. The preview pass uses streaming decoding for sub-second first-token latency; the final pass re-decodes the full session for the final output.
+
+**Why Qwen3-4B Instruct for the writing engine.** Qwen3-4B (4-bit quantized) is small enough to load fast on demand, instruction-tuned for rewriting tasks, and competent at the prose transformations Juno's styles need (formal/casual register shifts, bullet restructure, translation). It runs locally on every M-series Mac with enough headroom.
+
+## Hallucination and repetition guards
+
+Whisper-family models occasionally hallucinate on uncertain audio — common failure modes are CJK glyph repetition on silence and word-ratio anomalies (the model emits more words per second than human speech can produce). Juno applies two on-device post-filters before the final transcript is committed:
+
+- **Hallucination guard** — confidence-gated check for CJK repetition and word-ratio outliers. Suppresses implausible output runs.
+- **Anti-repetition post-filter** — collapses periodic tail repetitions when words-per-second exceeds a natural-speech threshold.
+
+Both are deterministic, fast, and run entirely locally. They run after the final ASR pass and before the writing engine, so the writer never sees the unfiltered output.
+
+## Where models live on disk
+
+`~/Library/Application Support/com.juno.shell/models/`
+
+Models are downloaded once on first launch (or on Repair). They stay on disk indefinitely until you uninstall Juno or click Repair to re-fetch. The Models section of Settings shows current status, last-updated time, and Install / Repair actions.
+
+A new Juno release may bump a model version — that triggers a one-time re-download of just the lane that changed.
+
+## What Juno does not have
+
+- **No cloud LLM option.** Juno's architecture has no path that routes user content through a remote model.
+- **No model swap UI for general users.** The lane assignments are fixed in the shipping app. The underlying engine supports additional backends, but the consumer picker does not expose them.
+- **No usage meter on inference.** Models run on your hardware; you pay no per-token or per-minute cost.
+
+## How to check current model status
+
+Settings → Models shows each lane with:
+
+- Identifier (the `mlx-community/...` slug)
+- Status (Installed, Installing, Ready, Failed)
+- Last updated time
+- Action buttons (Repair, Reveal in Finder)
+
+A failed lane shows the error message inline. **Repair** re-fetches the lane's weights. If repair fails too, see [Voice Engine Not Connected](/docs/troubleshooting/voice-engine-not-connected).
+
+## Comparison with cloud dictation tools
+
+Juno's model lane decisions are deliberate trade-offs against the cloud-first competitors:
+
+| Concern | Cloud dictation tools | Juno |
+| --- | --- | --- |
+| Where audio is sent for transcription | Vendor servers | This Mac |
+| Where audio is sent for rewriting | Vendor servers (often a separate LLM call) | This Mac |
+| Need internet for normal use | Yes | No (after one-time model download) |
+| Per-token / per-minute usage cost | Often yes | No |
+| Vendor can change model behavior remotely | Yes | No — your installed version is yours |
+| Sensitive content sent to a third party during normal use | Always (unless explicit opt-out) | Never |
+| Quality ceiling | Whatever the vendor's biggest current model is | Whatever the shipped MLX models can produce on your Mac |
+
+The trade-off: cloud tools can offer larger models than fit on a laptop. Juno trades that ceiling for never-leaves-this-Mac processing, no usage meter, and no vendor-side behavior changes.

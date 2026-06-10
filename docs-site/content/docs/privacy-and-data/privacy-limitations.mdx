@@ -1,0 +1,60 @@
+---
+title: "Privacy Boundaries"
+description: "What local processing does and does not cover."
+---
+
+# Privacy Boundaries
+
+Local processing keeps Juno data on this Mac. It does not replace account security, encrypted backups, or destination-app privacy.
+
+## Audio and transcripts are never used for training
+
+No audio, no transcript, no correction, no memory entry, no Dictionary content is ever used to train AI models. The shipped models are pre-trained checkpoints used read-only.
+
+## Limits that come from being local
+
+**Anyone with access to this Mac can read your data.** Local-first means data lives on disk, not behind an account login. If your Mac is unlocked and someone opens Juno or reads the storage paths, they see what you have dictated. Lock your Mac when you step away.
+
+- `~/Library/Application Support/com.juno.shell/Workbench/` — transcripts + recordings
+- `~/Library/Application Support/com.juno.shell/Memory/` — vocabulary, snippets, replacements
+
+**Time Machine and other backup tools include Juno data.** Anything in Application Support gets backed up by default. If you back up to an unencrypted drive, transcripts may be copied off the device.
+
+**APFS snapshots can include Juno data.** macOS may keep snapshots after history is cleared. Snapshot retention is outside Juno's control.
+
+**Spotlight indexes transcript content placed elsewhere.** If you paste a transcript into Notes or save a History export anywhere outside the SQLite database, Spotlight may index it. The SQLite database itself is not indexed by default.
+
+## Limits at the field edge
+
+**Once text lands in the destination app, Juno's privacy model ends.** If Juno inserts into a Slack message, that message follows Slack's privacy model, not Juno's. Same for Mail, Google Docs, any web form.
+
+**Copy Ready places text on the system clipboard if you copy it.** When you press Command-C in the HUD, the finalized text goes to the system clipboard. Clipboard managers may keep their own copy.
+
+**Screen mirroring exposes visible text.** If you dictate sensitive text while the Mac is mirrored or screen-shared, that text may be visible on the remote display.
+
+## Limits on what Juno can detect
+
+**"Secure field" is a macOS-level signal.** Juno relies on the Accessibility API reporting a field as a secure text input. Most password inputs identify themselves correctly. Some non-standard custom inputs may not — especially in Electron apps, browser-embedded editors, and remote desktop windows. For non-standard sensitive fields, assume secure-field protection may not apply and avoid dictating secrets there.
+
+**Juno cannot classify every destination.** It cannot reliably distinguish a private Slack channel from a public one, a confidential document from a public document, or a draft from a sent message. Review the destination before dictating sensitive content.
+
+**Voice Actions create real items in Apple apps.** "Hey Juno, remind me…" creates a real entry in Apple Reminders — which syncs through iCloud if iCloud Reminders is on. Same for Notes (iCloud Notes) and Calendar (iCloud Calendar). Juno mediates the Action; the resulting item lives in Apple's system, which has its own sync and privacy properties.
+
+## What you can do about the limits
+
+- Lock your Mac when stepping away
+- Encrypt your backup drive (Time Machine has an encrypted-backup option)
+- Set History and Recordings to short windows if long-term access is not needed
+- Use Per-app overrides to disable history/recordings/learning for sensitive apps
+- Clear the clipboard manually after a sensitive Copy Ready (`pbcopy < /dev/null` from Terminal)
+- Disable Voice Actions if Hey Juno phrases should not create iCloud-synced items
+- Verify the secure-field assumption before dictating into any non-standard sensitive field
+
+## Outside Juno's control
+
+- That Juno protects against compromise of your macOS user account
+- That Juno protects against compromise of iCloud (if you use Actions)
+- That Juno protects against the destination app's own data handling
+- That cleared history is irrecoverably gone — file-system snapshots, backups, and forensic recovery exist independent of Juno
+
+For the things Juno *does* enforce, see [Local Security Model](/docs/privacy-and-data/local-security-model) and [Secure Fields](/docs/privacy-and-data/secure-fields).

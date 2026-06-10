@@ -1,0 +1,99 @@
+---
+title: "Dictate and Insert"
+description: "Start dictation and insert final text."
+---
+
+import { FlowSteps } from '@/components/docs/FlowSteps';
+
+# Dictate and Insert
+
+Place the caret, press the shortcut, speak, and press again to finish.
+
+<FlowSteps
+  steps={[
+    {
+      title: 'Place the caret',
+      description: 'Click into the field where the text should land. The caret has to be blinking before you press the shortcut.',
+      status: 'required',
+    },
+    {
+      title: 'Press Fn (or your chosen shortcut)',
+      description: 'The HUD appears. It moves through Checking microphone → Waiting for speech → Listening. Start speaking after the HUD shows Listening to avoid losing the start of your sentence.',
+      status: 'required',
+    },
+    {
+      title: 'Speak naturally',
+      description: 'Speak in full sentences. Juno punctuates and paragraphs for you — "comma" or "period" is treated as the word, not the punctuation mark.',
+      status: 'required',
+    },
+    {
+      title: 'Press the shortcut again',
+      description: 'Juno finalizes the session. Final text lands in the field, or shows as Copy Ready in the HUD if the destination cannot accept paste.',
+      status: 'required',
+    },
+  ]}
+/>
+
+## Live preview and finalized text
+
+Juno separates interim recognition from finalized output. The HUD can show a live caption while you speak, then Juno inserts the finalized text when the session completes.
+
+Two states matter:
+
+1. **While you speak** — the HUD live caption shows interim recognition: *"umm wait no, ask Avery to review the install flow before Friday"*.
+2. **When you finish** — the polished version lands in the field: *"Avery, could you review the install flow before Friday?"*
+
+The live caption is a preview. The finalized text is the output Juno inserts or holds as Copy Ready.
+
+## What lands in the field
+
+The default style removes common speech artifacts such as false starts, filler words, and repeated phrases without changing the intended meaning.
+
+| You said | What lands |
+| --- | --- |
+| *"uh tell sam I'll send the draft by five"* | "Tell Sam I'll send the draft by five." |
+| *"so we finished onboarding and we are testing permissions now"* | "We finished onboarding and we are testing permissions now." |
+| *"make this a short bullet list permissions shortcut first dictation history"* (with Structured notes style active) | A four-item bullet list with those items. |
+
+Want a different shape — verbatim, formal email tone, structured notes? Pick a [Style](/docs/use-juno/styles) or pin one per app in [Per-app writing](/docs/use-juno/per-app-writing).
+
+## Partials during pauses
+
+Juno can place finalized partials during natural pauses. After each pause, the engine finalizes the recent segment and inserts it into the field before the session continues.
+
+This supports longer dictation sessions, such as multi-paragraph email drafts, without requiring a separate session for each paragraph.
+
+**Selected text is the exception.** If a session starts with highlighted text, Juno waits for the final result before replacing the selection. Partial commits do not overwrite selected text.
+
+## Voice commands during dictation
+
+Some phrases are commands, not text:
+
+| Say | What it does |
+| --- | --- |
+| `scratch that` | Erases the sentence you just dictated |
+| `delete last word` | Removes the most recent word |
+| `new paragraph` | Inserts a paragraph break |
+| `next bullet` | Starts the next bulleted item |
+| `make that shorter` | Rewrites the last sentence shorter |
+| `turn that into bullets` | Reshapes the last passage as a list |
+
+Use these phrases during the active session. The full set is in [Voice Commands](/docs/use-juno/voice-commands).
+
+## Actions during dictation (Hey Juno)
+
+If Voice Actions is on, "Hey Juno" (or just "Juno,") followed by an action verb routes the sentence to Apple Notes, Reminders, or Calendar instead of writing into the field:
+
+- *"Hey Juno, remind me to send the proposal tomorrow morning."* → Reminder
+- *"Juno, take a note: the release copy needs a shorter summary."* → Note
+- *"Hey Juno, set an alarm for 7:30."* → Calendar-backed alarm
+
+Inside an active session, the word "Juno" is a **content cue** that routes the rest of the sentence as an Action. The shortcut opens the microphone; Juno does not listen passively. See [Voice Actions](/docs/use-juno/actions) for compound utterances, relative-time defaults, and the full grammar.
+
+## When text is not inserted
+
+The HUD will tell you why. Common cases:
+
+- **Copy Ready** — the destination cannot accept paste, or Accessibility is not granted. The text is still in the HUD; copy it manually. See [Insertion and Copy Ready](/docs/troubleshooting/insertion-and-copy-ready-output).
+- **Blocked** — a secure/password field was detected. Juno protects those fields by skipping capture entirely. Move to a normal text field.
+- **Error** — engine or microphone failure. The HUD message links to the right troubleshooting page.

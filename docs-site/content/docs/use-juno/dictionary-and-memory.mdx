@@ -1,0 +1,135 @@
+---
+title: "Dictionary and Memory"
+description: "Vocabulary, replacements, snippets, and corrections."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+
+# Dictionary and Memory
+
+Dictionary and Memory stores local vocabulary, replacements, snippets, and corrections.
+
+| Tier | When it applies | What it does | Best for |
+| --- | --- | --- | --- |
+| **Vocabulary** | During transcription | Hint to the recognizer that this exact word/term exists | Names, products, acronyms, domain terms |
+| **Replacements** | At the ASR stage, before writer cleanup | Literal find/replace on the raw transcript | Persistent misrecognitions, abbreviation expansion ("NY" → "New York") |
+| **Snippets** | After transcription, on trigger phrase | Voice-triggered text expansion to canned body text | Calendar link, mailing address, sign-offs |
+| **Corrections** | Observed after insertion | Learned from edits made in the destination app | Repeated manual corrections |
+
+Use Vocabulary first. Use Replacements only when the recognizer repeatedly writes the same incorrect word or phrase.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/dictionary-memory-real.png"
+  alt="Dictionary and memory Vocabulary tab showing seed and user-added terms"
+  caption="Add names, terms, and abbreviations so Juno recognizes them consistently."
+/>
+
+---
+
+## Vocabulary
+
+Vocabulary is a list of terms Juno prioritizes in speech recognition. When a spoken sound could match a common word or your vocabulary term, Juno favors the vocabulary term.
+
+**What to add:**
+- Names of people you mention often (colleagues, clients, founders)
+- Product names, company names, startup names
+- Technical terms your field uses that are not common words
+- Acronyms you speak as initials (ASR, MLX, PR, CI)
+- Proper nouns that generic models consistently misspell
+
+**How to add:** Settings → Dictionary and Memory → Vocabulary → Add term.
+
+**Boost:** Terms you use frequently get a higher recognition priority automatically. Manually added terms start with a baseline boost; Juno increases it as it observes you using them.
+
+**By voice:** During any dictation session, say *"add [term] to my vocabulary"* and Juno adds it immediately without leaving the session.
+
+---
+
+## Replacements
+
+Replacements are persistent ASR-level corrections. When Juno hears the trigger word, it writes the replacement instead.
+
+**Use for:**
+- Homophones the model confuses: if Juno consistently hears "their" when you mean "there," add a replacement
+- Common mishears for your name, product, or terminology
+- Abbreviations you want expanded: say "NY" → write "New York"
+- Contractions you want shortened: say "it is" → write "it's" in casual contexts
+
+**Format:** trigger → replacement, case-insensitive by default.
+
+**Replacements run at the ASR level** — earlier in the pipeline than snippets — so they affect what the writer sees, not what appears after writing.
+
+---
+
+## Snippets
+
+Snippets are voice-triggered text expansions. Say the trigger phrase during any dictation and Juno replaces it with the full body text after the session finalizes.
+
+**What to use snippets for:**
+- Your calendar or scheduling link
+- Standard email sign-offs or sign-ons
+- Your company address or boilerplate
+- Common code patterns (import blocks, function signatures)
+- Long project or client names you speak as a short code
+- Standard phrases you type dozens of times a week
+
+**Example snippets:**
+
+| Trigger | Body |
+| --- | --- |
+| `my cal link` | your actual scheduling link + a short "happy to find a time" note |
+| `our address` | your company's full mailing address |
+| `sign off` | Thanks for the partnership on this — looking forward to the next step. |
+| `meeting template` | **Date:** / **Attendees:** / **Decisions:** / **Actions:** |
+
+**Snippet scopes:**
+
+| Scope | When it expands |
+| --- | --- |
+| Global | In every dictation, every app |
+| Messaging | Only in messaging app contexts (Slack, Messages, Discord) |
+| Email | Only in email app contexts (Mail, Gmail) |
+| Docs | Only in document/notes contexts |
+| Code | Only when Juno detects a coding context |
+
+Scoping prevents code boilerplate from expanding in your emails, or email sign-offs from appearing in Slack messages.
+
+---
+
+## Corrections
+
+Corrections are observed, not entered. When correction learning is on, Juno watches what you change after insertion. If you consistently change "their" to "there" or capitalize a name Juno lowercases, it stores those observed→corrected pairs and applies them in future sessions.
+
+**How it works:**
+1. Juno inserts text
+2. You edit something in the target app
+3. Juno notes the before and after
+4. If the correction appears multiple times, it is promoted to your replacements or lexicon
+
+**Confidence filtering:** Corrections are filtered for plausibility. Very long edits, implausible ASR output, or edits made much later than insertion are excluded.
+
+**Reviewing corrections:** Settings → Dictionary and Memory → Corrections. Delete noisy entries — corrections that got stored because you changed your mind, not because Juno was wrong.
+
+**Disable per app:** If an app contains sensitive content where corrections should not be stored, disable learning for that app in Per-app writing.
+
+---
+
+## Recommended setup order
+
+Start here:
+
+1. **Add your company/product name** — this single entry fixes the most common mishear
+2. **Add 5–10 people's names** — names of colleagues, founders, clients you mention often
+3. **Add your most-used acronyms** — the 4–5 initialisms your work uses daily
+4. **Add 1–2 snippets** — your calendar link and a common sign-off
+
+That is 15–20 entries — enough that the names and terms you say most often start landing correctly from session one.
+
+After a week of regular use, review learned corrections and delete any that are wrong. The corrections list tends to accumulate a few false positives early as the system calibrates.
+
+---
+
+## Privacy controls
+
+Memory is governed by Smart Context settings, Per-app writing, secure-field policy, and correction learning settings. If an app contains sensitive content, set that app to avoid context and learning in Per-app writing — this stops Juno from learning corrections or applying vocabulary in that context. Secure/password fields force all learning and context off automatically.

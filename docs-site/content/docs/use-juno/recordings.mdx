@@ -1,0 +1,63 @@
+---
+title: "Recordings"
+description: "Audio retention and replay."
+---
+
+import { ScreenshotFrame } from '@/components/docs/ScreenshotFrame';
+
+# Recordings
+
+When recording retention is on, Juno saves session audio locally. Default retention is **30 days**.
+
+<ScreenshotFrame
+  src="/images/screenshots/live/real/settings-real.png"
+  alt="Juno Settings showing Keep recordings for set to 30 days"
+  caption="Choose how long Juno keeps audio for replay and reprocessing."
+/>
+
+## Replaying a recording
+
+Open **History**, select an entry, and use the replay control. You hear the original audio through your Mac's output device. The transcript stays on screen alongside playback so you can compare what you said to what Juno transcribed.
+
+Replay is only available while the linked recording exists. Once the recording expires or is deleted, the history entry remains but playback is not available.
+
+## Retention options
+
+| Setting | Effect |
+| --- | --- |
+| Forever | Keep all recordings indefinitely. Useful for QA, sensitive revision workflows, or long-form projects. |
+| 7 days | Keep recent audio. Covers most short-term troubleshooting needs. |
+| 30 days (default) | Standard window. Enough for reviewing recent sessions and reprocessing. |
+| Never | No audio is retained after a session ends. Transcript history continues as normal. |
+
+Change the retention setting at any time in **Settings → General → Keep recordings for**.
+
+## Where recordings are stored
+
+Recordings live in your Application Support folder under `com.juno.shell/Workbench/`. Do not manually delete files there — use the controls in Settings. Manual deletion can leave orphaned history entries that reference files that no longer exist.
+
+## Reprocessing from a recording
+
+When a retained recording is available, you can run it through the current processing path again from the History view. This is useful if you want to reapply a different style — for example, dictating in Default but later wanting the Formal email version.
+
+## Separate from transcript history
+
+Recording retention and transcript history retention are independent. You can have:
+- History on, recordings off — keep the transcripts, no audio
+- History on, recordings on — full record with playback
+- History off, recordings off — nothing retained after a session
+
+Deleting a history entry from the History view also removes the linked recording if it still exists.
+
+## When to turn recordings off
+
+Turn off recording retention for:
+- Sensitive writing such as legal, medical, or confidential client work
+- Regulated environments where audio storage has compliance implications
+- Any app or workflow where you do not want audio kept after dictation ends
+
+Secure/password fields force audio save off automatically, regardless of the global setting. Per-app overrides in Per-app writing let you disable recordings for specific apps without changing the global default.
+
+## Storage impact
+
+Recording files are compressed audio. A typical dictation session of 30–60 seconds is roughly 100–300 KB. Juno shows a storage summary in **Settings → General** so you can see how much space retained recordings are using.

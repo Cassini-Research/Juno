@@ -32,8 +32,6 @@ enum JunoAppearancePreference: String, CaseIterable, Identifiable {
 /// Central Juno-specific `UserDefaults` keys. Legacy Juno → Juno suite migration lives in ``JunoLegacyDefaultsMigration``.
 enum JunoUserDefaults {
     static let onboardingCompletedKey = "JunoOnboardingCompleted"
-    static let onboardingRequirementsVersionKey = "JunoOnboardingRequirementsVersion"
-    static let currentOnboardingRequirementsVersion = 1
     static let preferredDisplayNameKey = "JunoPreferredDisplayName"
     static let onboardingBrandDelightShownKey = "JunoShellOnboardingBrandDelightShown"
     static let hudDelightAnimationsEnabledKey = "JunoHUDDelightAnimationsEnabled"
@@ -50,6 +48,8 @@ enum JunoUserDefaults {
     static let developerModeEnabledKey = "JunoDeveloperModeEnabled"
     static let saveLogsToFileEnabledKey = "JunoSaveLogsToFileEnabled"
     static let appearancePreferenceKey = "JunoAppearancePreference"
+    static let screenContextEnabledKey = "JunoScreenContextEnabled"
+    static let screenContextNudgeDismissedAtKey = "JunoScreenContextNudgeDismissedAt"
     /// Top-level enable for the Voice Actions feature (notes & reminders).
     /// Defaults to ``false`` — users opt in explicitly via Settings or by
     /// confirming the Home-page nudge. When off, action utterances paste
@@ -79,15 +79,7 @@ enum JunoUserDefaults {
         get { UserDefaults.standard.bool(forKey: onboardingCompletedKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: onboardingCompletedKey)
-            if newValue {
-                UserDefaults.standard.set(currentOnboardingRequirementsVersion, forKey: onboardingRequirementsVersionKey)
-            }
         }
-    }
-
-    static var onboardingRequirementsVersion: Int {
-        get { UserDefaults.standard.integer(forKey: onboardingRequirementsVersionKey) }
-        set { UserDefaults.standard.set(newValue, forKey: onboardingRequirementsVersionKey) }
     }
 
     /// Trimming empty; persisted for home greetings.
@@ -202,30 +194,29 @@ enum JunoUserDefaults {
         }
     }
 
-    /// Live transcriptions in the HUD. Defaults to OFF. When ON the floating
-    /// HUD shows partial transcript text as you speak. When OFF, Juno still
-    /// shows the listening/refining HUD but sends no preview audio chunks.
+    /// Live transcriptions in the HUD. When ON (default) the floating HUD shows
+    /// the partial transcript as you speak (full island). When OFF the HUD
+    /// collapses to a tiny waveform pill, and the engine skips per-utterance
+    /// preview-lane decoding to save CPU/GPU. The model is still installed and
+    /// the resident streaming-preview service stays warm — we only suppress the
+    /// per-utterance `decode(...)` call.
     static var hudLiveTranscriptionsEnabled: Bool {
         get {
             let ud = UserDefaults.standard
-            guard JunoPreviewEligibility.current.isEligible else { return false }
-            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return false }
+            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return true }
             return ud.bool(forKey: hudLiveTranscriptionsEnabledKey)
         }
-        set {
-            let allowed = !newValue || JunoPreviewEligibility.current.isEligible
-            UserDefaults.standard.set(allowed ? newValue : false, forKey: hudLiveTranscriptionsEnabledKey)
-        }
+        set { UserDefaults.standard.set(newValue, forKey: hudLiveTranscriptionsEnabledKey) }
     }
 
-    /// Run model adjudication on in-speech snapshots while the user is still
-    /// dictating. The Whisper-driven HUD should move forward append-only by
-    /// default; mid-speech rewrites are opt-in because they can make visible
-    /// words jump before final delivery settles the transcript.
+    /// Run bounded model adjudication on in-speech snapshots while the user is
+    /// still dictating. Whisper's preview lane is intentionally conservative and
+    /// append-mostly, so this correction layer keeps personalized terms and
+    /// self-corrections from staying wrong in the HUD until final paste.
     static var liveAdjudicationEnabled: Bool {
         get {
             let ud = UserDefaults.standard
-            if ud.object(forKey: liveAdjudicationEnabledKey) == nil { return false }
+            if ud.object(forKey: liveAdjudicationEnabledKey) == nil { return true }
             return ud.bool(forKey: liveAdjudicationEnabledKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: liveAdjudicationEnabledKey) }
@@ -234,7 +225,7 @@ enum JunoUserDefaults {
     static func migrateWhisperPreviewDefaults() {
         let ud = UserDefaults.standard
         guard ud.object(forKey: whisperPreviewDefaultsMigratedKey) == nil else { return }
-        ud.set(false, forKey: liveAdjudicationEnabledKey)
+        ud.set(true, forKey: liveAdjudicationEnabledKey)
         ud.set(true, forKey: whisperPreviewDefaultsMigratedKey)
     }
 
@@ -320,6 +311,27 @@ enum JunoUserDefaults {
         set { UserDefaults.standard.set(newValue, forKey: saveLogsToFileEnabledKey) }
     }
 
+    /// Optional visible-screen text context. Defaults to OFF and is never
+    /// enabled from dictation; users must opt in from Home or Settings.
+    static var screenContextEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: screenContextEnabledKey) }
+        set { UserDefaults.standard.set(newValue, forKey: screenContextEnabledKey) }
+    }
+
+    static var screenContextNudgeDismissedAt: Date? {
+        let raw = UserDefaults.standard.double(forKey: screenContextNudgeDismissedAtKey)
+        return raw > 0 ? Date(timeIntervalSince1970: raw) : nil
+    }
+
+    static func markScreenContextNudgeDismissed() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: screenContextNudgeDismissedAtKey)
+    }
+
+    static var screenContextNudgeDismissedRecently: Bool {
+        guard let dismissedAt = screenContextNudgeDismissedAt else { return false }
+        return Date().timeIntervalSince(dismissedAt) < 14 * 24 * 3600
+    }
+
     /// Voice Actions master toggle. Defaults to OFF — opt-in.
     static var actionsEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: actionsEnabledKey) }
@@ -386,11 +398,11 @@ enum JunoUserDefaults {
     static func resetOnboardingForRetest() {
         let ud = UserDefaults.standard
         ud.set(false, forKey: onboardingCompletedKey)
-        ud.removeObject(forKey: onboardingRequirementsVersionKey)
         ud.removeObject(forKey: onboardingBrandDelightShownKey)
         ud.removeObject(forKey: actionsOnboardingDecisionMadeKey)
         ud.removeObject(forKey: actionsNudgeShownKey)
         ud.removeObject(forKey: dictationCompletedCountKey)
+        ud.removeObject(forKey: screenContextNudgeDismissedAtKey)
         ud.synchronize()
     }
 }

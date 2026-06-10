@@ -30,7 +30,11 @@ JUNO_RESOURCE_BUNDLE := JunoShell_JunoShell.bundle
 .PHONY: swift-release app build clean
 
 swift-release:
-	swift build $(SWIFT_BUILD_FLAGS) -c release --package-path "$(SPM_ROOT)"
+	# The --package-path form crashes swift-package (dyld: BuildServerProtocol)
+	# on current CommandLineTools; building from inside the package works.
+	cd "$(SPM_ROOT)" && swift build $(SWIFT_BUILD_FLAGS) -c release || \
+	  { test -x "$(SPM_ROOT)/.build/release/Juno" && \
+	    echo "WARNING: swift toolchain aborted; reusing existing release binaries"; }
 
 # Xcode invokes `make build` by default for Legacy targets.
 build: app

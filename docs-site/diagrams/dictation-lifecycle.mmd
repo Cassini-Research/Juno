@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as "Juno.app"
+    participant Capability as "Capability Check"
+    participant Mic as "Microphone"
+    participant Engine as "Local Voice Engine"
+    participant Target as "Target App"
+    participant History as "Local History and Retention"
+
+    User->>App: Press shortcut
+    App->>Capability: Check active surface and permissions
+    Capability-->>App: Safe target or blocked reason
+    App->>Mic: Start capture
+    Mic-->>App: First mic frames
+    App-->>User: Show "Checking microphone"
+    App-->>User: Show "Waiting for speech"
+    Mic-->>App: Speech energy detected
+    App-->>User: Show "Listening"
+    App->>Engine: Send dictation audio with frozen context
+    Engine-->>App: Final text
+    alt Safe insertion allowed
+        App->>Target: Insert final text
+        App-->>User: Show "Inserted"
+    else Insertion blocked or unsafe
+        App-->>User: Show "Copy ready"
+    end
+    App->>History: Save history and apply retention policy

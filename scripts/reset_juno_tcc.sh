@@ -39,7 +39,7 @@ reset_bundle_print() {
   echo "Target bundle: $b"
   echo "  tccutil reset Microphone \"$b\""
   echo "  tccutil reset Accessibility \"$b\""
-  echo "  tccutil reset SpeechRecognition \"$b\""
+  echo "  tccutil reset ScreenCapture \"$b\""
   if [[ "$ALL" == 1 ]]; then
     echo "  tccutil reset All \"$b\""
   else
@@ -51,7 +51,7 @@ reset_bundle_run() {
   local b="$1"
   # Microphone + dictation
   reset_service_run Microphone "$b"
-  reset_service_run SpeechRecognition "$b"
+  reset_service_run ScreenCapture "$b"
   # Keystroke + selection injection
   reset_service_run Accessibility "$b"
   # Voice Actions: Apple Events (Notes Automation) + EventKit (Reminders, Calendar)
@@ -131,7 +131,7 @@ if [[ "$RUN" == 1 ]]; then
   flush_tccd_cache
   if [[ "$FAILURES" -gt 0 ]]; then
     echo "warning: $FAILURES TCC reset command(s) failed." >&2
-    echo "         macOS may keep existing Microphone/Accessibility/Speech permissions." >&2
+    echo "         macOS may keep existing Microphone/Accessibility/Screen Recording permissions." >&2
     echo "         Try running from Terminal/Conductor with Full Disk Access, or manually remove Juno from System Settings > Privacy & Security." >&2
     if [[ "$STRICT" == 1 ]]; then
       exit 70

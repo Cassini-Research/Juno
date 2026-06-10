@@ -1,0 +1,32 @@
+---
+title: "Clipboard and Pasteboard"
+description: "Insertion pasteboard and clipboard context."
+full: true
+---
+
+import { DiagramBlock } from '@/components/docs/DiagramBlock';
+
+
+# Clipboard and Pasteboard
+
+Juno uses the pasteboard for insertion. Clipboard context is separate and off by default.
+
+<DiagramBlock
+  title="Pasteboard insertion vs. clipboard context"
+  caption="Two separate flows: Juno always writes to the pasteboard on insert; clipboard context is a separate, opt-in read."
+  takeaway="Juno never reads your clipboard unless you explicitly enable recent-clipboard context in Settings."
+>
+  <img src="/images/posters/clipboard-vs-pasteboard.svg" alt="Pasteboard insertion vs clipboard context diagram" style={{ width: '100%', height: 'auto' }} />
+</DiagramBlock>
+
+## Pasteboard insertion
+
+Pasteboard insertion is a way to put the dictated output where your cursor is. It is part of normal Mac automation. If direct insertion is unsafe or unavailable, Juno uses Copy Ready instead of forcing paste.
+
+## Clipboard context
+
+Clipboard context is optional. When enabled, Juno may use recent clipboard text to improve transcription, formatting, or transformations. Keep it off if your clipboard often contains passwords, tokens, private messages, client data, or copied documents.
+
+## Recommended setting
+
+Keep clipboard context off by default. Turn it on only for workflows where recent copied text is deliberately part of what you are writing.
