@@ -32,6 +32,12 @@ enum JunoAppearancePreference: String, CaseIterable, Identifiable {
 /// Central Juno-specific `UserDefaults` keys. Legacy Juno → Juno suite migration lives in ``JunoLegacyDefaultsMigration``.
 enum JunoUserDefaults {
     static let onboardingCompletedKey = "JunoOnboardingCompleted"
+    static let onboardingRequirementsVersionKey = "JunoOnboardingRequirementsVersion"
+    /// Bump this when a new release adds onboarding steps existing users must
+    /// repeat (for example a new required permission). ``JunoFreshInstallGuard``
+    /// only re-runs the welcome flow when this number grows past the version a
+    /// user completed.
+    static let currentOnboardingRequirementsVersion = 1
     static let preferredDisplayNameKey = "JunoPreferredDisplayName"
     static let onboardingBrandDelightShownKey = "JunoShellOnboardingBrandDelightShown"
     static let hudDelightAnimationsEnabledKey = "JunoHUDDelightAnimationsEnabled"
@@ -79,7 +85,15 @@ enum JunoUserDefaults {
         get { UserDefaults.standard.bool(forKey: onboardingCompletedKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: onboardingCompletedKey)
+            if newValue {
+                UserDefaults.standard.set(currentOnboardingRequirementsVersion, forKey: onboardingRequirementsVersionKey)
+            }
         }
+    }
+
+    static var onboardingRequirementsVersion: Int {
+        get { UserDefaults.standard.integer(forKey: onboardingRequirementsVersionKey) }
+        set { UserDefaults.standard.set(newValue, forKey: onboardingRequirementsVersionKey) }
     }
 
     /// Trimming empty; persisted for home greetings.
@@ -203,10 +217,16 @@ enum JunoUserDefaults {
     static var hudLiveTranscriptionsEnabled: Bool {
         get {
             let ud = UserDefaults.standard
+            // Hardware gate: live preview decoding is never enabled on Macs
+            // below the resource floor (see ``JunoPreviewEligibility``).
+            guard JunoPreviewEligibility.current.isEligible else { return false }
             if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return true }
             return ud.bool(forKey: hudLiveTranscriptionsEnabledKey)
         }
-        set { UserDefaults.standard.set(newValue, forKey: hudLiveTranscriptionsEnabledKey) }
+        set {
+            let allowed = !newValue || JunoPreviewEligibility.current.isEligible
+            UserDefaults.standard.set(allowed ? newValue : false, forKey: hudLiveTranscriptionsEnabledKey)
+        }
     }
 
     /// Run bounded model adjudication on in-speech snapshots while the user is
@@ -398,6 +418,7 @@ enum JunoUserDefaults {
     static func resetOnboardingForRetest() {
         let ud = UserDefaults.standard
         ud.set(false, forKey: onboardingCompletedKey)
+        ud.removeObject(forKey: onboardingRequirementsVersionKey)
         ud.removeObject(forKey: onboardingBrandDelightShownKey)
         ud.removeObject(forKey: actionsOnboardingDecisionMadeKey)
         ud.removeObject(forKey: actionsNudgeShownKey)

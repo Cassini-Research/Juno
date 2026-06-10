@@ -1917,8 +1917,9 @@ class WorkbenchApp:
             # skips preview-lane decode invocations to save CPU/GPU; the model
             # remains downloaded and the resident streaming-preview service
             # stays warm so toggling back on is cheap. Read once at session
-            # start; mutating mid-session is undefined.
-            "live_caption_enabled": True,
+            # start; mutating mid-session is undefined. The macOS shell forces
+            # this off via JUNO_V2_LIVE_CAPTION_ALLOWED on ineligible Macs.
+            "live_caption_enabled": _env_bool('JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED', True),
             "language_mode": "auto",
             "smart_context": True,
             "use_selected_text": True,
@@ -1943,6 +1944,10 @@ class WorkbenchApp:
                     defaults.update(raw)
         except Exception:
             pass
+        if 'JUNO_V2_LIVE_CAPTION_START_ENABLED' in os.environ:
+            defaults["live_caption_enabled"] = _env_bool('JUNO_V2_LIVE_CAPTION_START_ENABLED', False)
+        if not _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True):
+            defaults["live_caption_enabled"] = False
         return defaults
 
     def _persist_settings(self) -> None:
@@ -2131,12 +2136,17 @@ class WorkbenchApp:
         streaming-preview service, and the lifecycle registration of the
         preview backend are all unchanged.
         """
-        self._settings["live_caption_enabled"] = bool(enabled)
+        allowed = _env_bool('JUNO_V2_LIVE_CAPTION_ALLOWED', True)
+        enabled = bool(enabled) and allowed
+        self._settings["live_caption_enabled"] = enabled
         self._persist_settings()
         runner = getattr(self, "dictation_runner", None)
         if runner is not None and hasattr(runner, "preview_decode_enabled"):
-            runner.preview_decode_enabled = bool(enabled)
-        return {"ok": True, "live_caption_enabled": bool(enabled)}
+            runner.preview_decode_enabled = enabled
+        out = {"ok": True, "live_caption_enabled": enabled}
+        if not allowed:
+            out["disabled_reason"] = "host_not_eligible"
+        return out
 
     def broker_settings_set_retention(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         def _parse_policy(key: str, *, allow_days: bool = True) -> str | None:
@@ -6535,6 +6545,14 @@ class WorkbenchApp:
             },
         }
 
+    def broker_memory_clear_all(self, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        err = self._memory_required()
+        if err:
+            return err
+        with self._lock:
+            counts = self.memory.clear_all()
+        return {"ok": True, **counts}
+
     def broker_memory_vocab_list(self) -> Dict[str, Any]:
         err = self._memory_required()
         if err:
@@ -7028,6 +7046,8 @@ class WorkbenchRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(HTTPStatus.OK, self.app.broker_storage_prune_all_audio())
         if path == "/api/broker/history/clear_all":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_clear_all())
+        if path == "/api/broker/memory/clear_all":
+            return self._send_json(HTTPStatus.OK, self.app.broker_memory_clear_all())
         if path == "/api/broker/history/cancel_draft":
             return self._send_json(HTTPStatus.OK, self.app.broker_history_cancel_draft(payload))
         if path == "/api/broker/history/reprocess":

@@ -41,6 +41,10 @@ class JunoPersonalizationLearnedStore:
     def _write(self, data: dict[str, Any]) -> None:
         self._fs.write(data)
 
+    def clear(self) -> None:
+        with self._fs.lock:
+            self._write({"schema_version": 1, "context_entities": []})
+
     def increment_observation(self, token: str, *, from_suppressed_context: bool) -> None:
         """Count a surface-context entity observed in a transcript.
 

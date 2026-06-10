@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -107,3 +108,103 @@ def test_workbench_stays_alive_until_stopped() -> None:
 def test_forbidden_public_terms_are_allowlisted() -> None:
     result = run(sys.executable, "scripts/audit_public_terms.py")
     assert result.returncode == 0, result.stderr + result.stdout
+
+
+def test_macos_ota_plist_configures_sparkle(tmp_path: Path) -> None:
+    key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    plist_path = tmp_path / "Info.plist"
+    plist_path.write_bytes(
+        b"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+</dict></plist>
+"""
+    )
+
+    result = run(
+        sys.executable,
+        "scripts/configure_juno_macos_plist.py",
+        str(plist_path),
+        "--version",
+        "1.2.3",
+        "--build",
+        "45",
+        "--ota-feed-url",
+        "https://updates.example.com/juno/appcast.xml",
+        "--ota-public-ed-key",
+        key,
+        "--ota-channel",
+        "beta",
+        "--automatic-downloads",
+        "--scheduled-interval",
+        "3600",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+
+    plist = plistlib.loads(plist_path.read_bytes())
+    assert plist["CFBundleShortVersionString"] == "1.2.3"
+    assert plist["CFBundleVersion"] == "45"
+    assert plist["JunoOTAEnabled"] is True
+    assert plist["SUFeedURL"] == "https://updates.example.com/juno/appcast.xml"
+    assert plist["SUPublicEDKey"] == key
+    assert plist["SUEnableAutomaticChecks"] is True
+    assert plist["SUAllowsAutomaticUpdates"] is True
+    assert plist["SUAutomaticallyUpdate"] is True
+    assert plist["SUScheduledCheckInterval"] == 3600.0
+    assert plist["SUShowReleaseNotes"] is True
+    assert plist["JunoUpdateChannel"] == "beta"
+
+
+def test_macos_ota_plist_disable_removes_sparkle_keys(tmp_path: Path) -> None:
+    plist_path = tmp_path / "Info.plist"
+    plist_path.write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleShortVersionString": "0.2.0",
+                "CFBundleVersion": "1",
+                "JunoOTAEnabled": True,
+                "JunoUpdateChannel": "beta",
+                "SUFeedURL": "https://updates.example.com/juno/appcast.xml",
+                "SUPublicEDKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "SUEnableAutomaticChecks": True,
+                "SUAllowsAutomaticUpdates": True,
+                "SUAutomaticallyUpdate": True,
+                "SUScheduledCheckInterval": 3600.0,
+                "SUShowReleaseNotes": True,
+            }
+        )
+    )
+
+    result = run(
+        sys.executable,
+        "scripts/configure_juno_macos_plist.py",
+        str(plist_path),
+        "--disable-ota",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    plist = plistlib.loads(plist_path.read_bytes())
+    assert plist["JunoOTAEnabled"] is False
+    assert "JunoUpdateChannel" not in plist
+    assert "SUFeedURL" not in plist
+    assert "SUPublicEDKey" not in plist
+    assert "SUEnableAutomaticChecks" not in plist
+
+
+def test_macos_ota_plist_rejects_partial_configuration(tmp_path: Path) -> None:
+    plist_path = tmp_path / "Info.plist"
+    plist_path.write_bytes(b"<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>")
+
+    result = run(
+        sys.executable,
+        "scripts/configure_juno_macos_plist.py",
+        str(plist_path),
+        "--ota-feed-url",
+        "https://updates.example.com/juno/appcast.xml",
+    )
+
+    assert result.returncode == 2
+    assert "OTA requires both" in result.stderr

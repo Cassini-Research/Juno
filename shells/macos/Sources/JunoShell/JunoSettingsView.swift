@@ -64,6 +64,7 @@ struct JunoSettingsView: View {
     @State private var micProcessing = JunoUserDefaults.micVoiceProcessingEnabled
     @State private var hudPosition = JunoUserDefaults.hudPosition
     @State private var hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
+    @State private var previewEligibility = JunoPreviewEligibility.current
     @State private var hudSounds = JunoUserDefaults.hudOpenSoundEnabled
     @State private var hudShowDoneRow = JunoUserDefaults.hudShowDoneRowEnabled
     @State private var pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
@@ -147,18 +148,38 @@ struct JunoSettingsView: View {
 
                             Divider().opacity(0.25)
 
-                            settingsRow(
-                                title: "Live transcriptions",
-                                subtitle: "Show what you're saying inside the HUD as you speak. When off, the HUD collapses to a tiny waveform.",
-                                trailing: {
-                                    Toggle("", isOn: $hudLiveTranscriptions)
+                            VStack(alignment: .leading, spacing: 8) {
+                                settingsRow(
+                                    title: "Live transcriptions",
+                                    subtitle: "Show what you're saying inside the HUD as you speak. When off, the HUD collapses to a tiny waveform.",
+                                    trailing: {
+                                        Toggle("", isOn: Binding(
+                                            get: { hudLiveTranscriptions },
+                                            set: { newValue in
+                                                setLiveTranscriptionPreview(newValue)
+                                            }
+                                        ))
                                         .labelsHidden()
-                                        .onChange(of: hudLiveTranscriptions) { newValue in
-                                            JunoUserDefaults.hudLiveTranscriptionsEnabled = newValue
-                                            persistLiveCaptionEnabled(newValue)
-                                        }
+                                        .disabled(!previewEligibility.isEligible)
+                                    }
+                                )
+
+                                if let message = livePreviewResourceMessage {
+                                    Label(
+                                        message,
+                                        systemImage: previewEligibility.isEligible
+                                            ? "exclamationmark.triangle.fill"
+                                            : "lock.fill"
+                                    )
+                                    .font(.caption2)
+                                    .foregroundStyle(
+                                        previewEligibility.isEligible
+                                            ? JunoDesignTokens.danger
+                                            : JunoTheme.secondaryText(scheme)
+                                    )
+                                    .fixedSize(horizontal: false, vertical: true)
                                 }
-                            )
+                            }
 
                             Divider().opacity(0.25)
 
@@ -601,6 +622,7 @@ struct JunoSettingsView: View {
             displayNameDraft = JunoUserDefaults.preferredDisplayName ?? ""
             pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
             screenContextEnabled = JunoUserDefaults.screenContextEnabled
+            refreshPreviewEligibility()
             refreshScreenContextPermission()
             perms.refresh()
             retention.refresh()
@@ -1013,15 +1035,55 @@ struct JunoSettingsView: View {
     /// per-utterance preview-lane decoding on the next dictation session. The
     /// macOS HUD layout flips immediately off `JunoUserDefaults`; the engine
     /// gate is read at session start.
-    private func persistLiveCaptionEnabled(_ enabled: Bool) {
+    private func persistLiveCaptionEnabled(_ enabled: Bool, reportFailures: Bool = true) {
         JunoBroker.postJSON(
             path: "api/broker/settings/live_caption",
             payload: ["enabled": enabled]
         ) { obj in
             let ok = (obj["ok"] as? Bool) ?? false
-            if !ok {
+            if !ok, reportFailures {
                 let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
                 JunoSettingsToastCenter.shared.report(msg)
+            }
+        }
+    }
+
+    private var livePreviewResourceMessage: String? {
+        if !previewEligibility.isEligible {
+            return previewEligibility.unavailableMessage
+        }
+        if hudLiveTranscriptions {
+            return previewEligibility.warningMessage
+        }
+        return nil
+    }
+
+    private func refreshPreviewEligibility() {
+        previewEligibility = JunoPreviewEligibility.current
+        hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
+        if !previewEligibility.isEligible {
+            persistLiveCaptionEnabled(false, reportFailures: false)
+        }
+    }
+
+    private func setLiveTranscriptionPreview(_ enabled: Bool) {
+        if enabled && !previewEligibility.isEligible {
+            hudLiveTranscriptions = false
+            JunoUserDefaults.hudLiveTranscriptionsEnabled = false
+            persistLiveCaptionEnabled(false)
+            if let message = previewEligibility.unavailableMessage {
+                JunoSettingsToastCenter.shared.report(message)
+            }
+            return
+        }
+
+        hudLiveTranscriptions = enabled
+        JunoUserDefaults.hudLiveTranscriptionsEnabled = enabled
+        persistLiveCaptionEnabled(enabled)
+
+        if enabled {
+            if let warning = previewEligibility.warningMessage {
+                JunoSettingsToastCenter.shared.report(warning, severity: .info, autoDismissAfter: 8)
             }
         }
     }
@@ -1348,11 +1410,17 @@ final class JunoPrivacySettingsModel: ObservableObject {
 /// the same scroll surface as the rest of Settings instead.
 struct JunoAdvancedSettingsView: View {
     @ObservedObject private var perms = JunoPermissionMonitor.shared
+    @ObservedObject private var windowNav = JunoMainWindowNavigator.shared
     @Environment(\.colorScheme) private var scheme
 
     @State private var saveLogsToFile = JunoUserDefaults.saveLogsToFileEnabled
     @State private var lastBundleURL: URL?
     @State private var bundleStatus: String?
+    @State private var pendingClearMemory = false
+    @State private var isClearingMemory = false
+    @State private var clearMemoryStatus: String?
+    @State private var memoryCounts: [String: Int] = [:]
+    @State private var isRefreshingMemory = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1376,6 +1444,55 @@ struct JunoAdvancedSettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+                }
+
+                advancedCard(title: "Memory") {
+                    Text(
+                        "Review and edit learned vocabulary, corrections, replacements, and snippets. Bulk clear also removes session entities. Dictation history and retained recordings stay intact."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(JunoTheme.secondaryText(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Text(memorySummaryLine)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(JunoTheme.secondaryText(scheme))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Button("View and edit…") {
+                            windowNav.openDictionaryAndMemory(categoryRaw: "vocab")
+                        }
+                        .junoPrimaryActionButton()
+
+                        Button(isRefreshingMemory ? "Refreshing…" : "Refresh") {
+                            refreshMemorySnapshot()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isRefreshingMemory)
+
+                        Button(isClearingMemory ? "Clearing…" : "Clear learned memory…") {
+                            pendingClearMemory = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isClearingMemory)
+
+                        if isClearingMemory {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.75)
+                        }
+                    }
+
+                    if let clearMemoryStatus {
+                        Text(clearMemoryStatus)
+                            .font(.caption)
+                            .foregroundStyle(JunoTheme.secondaryText(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -1454,7 +1571,68 @@ struct JunoAdvancedSettingsView: View {
                     }
                 }
         }
-        .onAppear { perms.refresh() }
+        .onAppear {
+            perms.refresh()
+            refreshMemorySnapshot()
+        }
+        .confirmationDialog(
+            "Clear learned memory?",
+            isPresented: $pendingClearMemory,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Learned Memory", role: .destructive) { clearLearnedMemory() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This keeps dictation history and recordings, but removes learned transcription memory. Use it when Juno keeps biasing toward the wrong words.")
+        }
+    }
+
+    private func clearLearnedMemory() {
+        guard !isClearingMemory else { return }
+        isClearingMemory = true
+        clearMemoryStatus = nil
+        JunoBroker.postJSON(path: "api/broker/memory/clear_all", payload: [:]) { obj in
+            let ok = (obj["ok"] as? Bool) ?? false
+            isClearingMemory = false
+            if ok {
+                let removedCounts = (obj["removed"] as? [String: Any]) ?? [:]
+                let removed = removedCounts.values.reduce(0) { total, value in
+                    total + ((value as? Int) ?? 0)
+                }
+                clearMemoryStatus = removed > 0
+                    ? "Cleared \(removed) learned memory item\(removed == 1 ? "" : "s"). History was not changed."
+                    : "Learned memory was already clear. History was not changed."
+                refreshMemorySnapshot()
+            } else {
+                let msg = (obj["error"] as? String) ?? "Could not clear learned memory"
+                clearMemoryStatus = msg
+                JunoSettingsToastCenter.shared.report(msg)
+            }
+        }
+    }
+
+    private var memorySummaryLine: String {
+        guard !memoryCounts.isEmpty else { return "Memory: loading…" }
+        let vocab = memoryCounts["lexicon"] ?? 0
+        let corrections = memoryCounts["corrections"] ?? 0
+        let replacements = memoryCounts["replacements"] ?? 0
+        let snippets = memoryCounts["snippets"] ?? 0
+        let entities = memoryCounts["session_entities"] ?? 0
+        return "Memory: \(vocab) vocab, \(corrections) corrections, \(replacements) replacements, \(snippets) snippets, \(entities) session entities"
+    }
+
+    private func refreshMemorySnapshot() {
+        guard !isRefreshingMemory else { return }
+        isRefreshingMemory = true
+        JunoBroker.getJSON(path: "api/broker/memory/snapshot") { obj in
+            isRefreshingMemory = false
+            let ok = (obj["ok"] as? Bool) ?? false
+            if ok, let counts = obj["counts"] as? [String: Any] {
+                memoryCounts = counts.reduce(into: [String: Int]()) { partial, pair in
+                    partial[pair.key] = (pair.value as? Int) ?? 0
+                }
+            }
+        }
     }
 
     private func advancedCard(title: String, @ViewBuilder content: () -> some View) -> some View {

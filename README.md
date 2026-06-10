@@ -134,6 +134,18 @@ Core folders:
 - `seed_data/` contains local vocabulary and personalization seed data.
 - `config/` contains example local configuration.
 
+Build an OTA release for Sparkle:
+
+```bash
+./scripts/generate_juno_sparkle_keys.sh
+./scripts/build_juno_ota_release.sh --version 0.2.1 --build-number 2 --ota-feed-url https://updates.example.com/juno/appcast.xml --ota-public-ed-key "$JUNO_OTA_PUBLIC_ED_KEY" --download-url-prefix https://updates.example.com/juno/
+```
+
+The OTA release script builds `dist/Juno.app`, creates a signed Sparkle archive
+under `dist/ota/`, and regenerates `dist/ota/appcast.xml`. Use
+`--allow-insecure-ota-feed` only for local `http` or `file` appcast testing.
+For the full setup checklist, see [Juno OTA Updates](docs/ota-updates.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

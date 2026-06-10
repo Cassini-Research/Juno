@@ -31,16 +31,41 @@ class StreamingPreviewService:
         *,
         processor_factory: Callable[[], StreamingPreviewSessionManager] | None = None,
         service_metadata: dict[str, Any] | None = None,
+        eager_load: bool = False,
     ) -> None:
         if processor_factory is None:
             if processor is None:
                 raise ValueError("processor or processor_factory is required")
             processor_factory = lambda: processor
-        self._decode_owner = _PreviewDecodeOwner(processor_factory)
+        self._processor_factory = processor_factory
+        self._decode_owner: _PreviewDecodeOwner | None = None
+        self._decode_owner_guard = threading.Lock()
         self._service_metadata = dict(service_metadata or {})
+        if eager_load:
+            self._ensure_decode_owner()
 
     def handle_health(self) -> dict[str, Any]:
-        health = self._decode_owner.health()
+        owner = self._decode_owner
+        health = (
+            owner.health()
+            if owner is not None
+            else {
+                "ok": True,
+                "decode_owner_ready": False,
+                "decode_owner_thread_id": None,
+                "queue_depth": 0,
+                "lazy_load": True,
+                "error": None,
+            }
+        )
+        if self._service_metadata:
+            health["service"] = dict(self._service_metadata)
+        return health
+
+    def handle_warm(self) -> dict[str, Any]:
+        owner = self._ensure_decode_owner()
+        health = owner.health()
+        health["warmed"] = bool(health.get("ok"))
         if self._service_metadata:
             health["service"] = dict(self._service_metadata)
         return health
@@ -64,7 +89,7 @@ class StreamingPreviewService:
         duration_ms = (len(req.audio) / float(req.sample_rate_hz)) * 1000.0 if req.sample_rate_hz > 0 else 0.0
         req.start_ms = 0.0
         req.end_ms = duration_ms
-        response = self._decode_owner.decode(req)
+        response = self._ensure_decode_owner().decode(req)
         # New contract carries committed/tail split. Older clients can still
         # read ``text`` (the combined string from response.text).
         committed_text = getattr(response, "committed_text", None)
@@ -86,7 +111,20 @@ class StreamingPreviewService:
         return payload
 
     def close(self) -> None:
-        self._decode_owner.stop()
+        owner = self._decode_owner
+        if owner is not None:
+            owner.stop()
+
+    def _ensure_decode_owner(self) -> _PreviewDecodeOwner:
+        owner = self._decode_owner
+        if owner is not None:
+            return owner
+        with self._decode_owner_guard:
+            owner = self._decode_owner
+            if owner is None:
+                owner = _PreviewDecodeOwner(self._processor_factory)
+                self._decode_owner = owner
+        return owner
 
 
 class _DecodeJob:
@@ -192,10 +230,16 @@ class _PreviewDecodeOwner:
 def build_http_server(service: StreamingPreviewService, *, host: str, port: int) -> ThreadingHTTPServer:
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
-            if self.path != '/healthz':
-                self.send_error(404)
+            if self.path == '/healthz':
+                self._send_json(service.handle_health())
                 return
-            self._send_json(service.handle_health())
+            if self.path == '/warm':
+                try:
+                    self._send_json(service.handle_warm())
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json({'ok': False, 'error': f'{type(exc).__name__}: {exc}'}, status=500)
+                return
+            self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
             if self.path != '/preview_stream':
@@ -266,6 +310,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help='Buffer hard cap. Beyond this we force-trim regardless of segment ends.')
     parser.add_argument('--force-trim-carry-seconds', type=float, default=5.0,
                         help='How much audio we keep after a force-trim.')
+    parser.add_argument('--eager-load', action='store_true',
+                        help='Load the preview model before /healthz returns ready. Default is lazy.')
     parser.add_argument('--vad-enabled', type=int, default=1,
                         help='1 (default) gates audio via Silero VAD using the official '
                              'VADIterator streaming API (threshold=0.5, min_silence_700ms, '
@@ -296,6 +342,7 @@ def main() -> None:
     service = StreamingPreviewService(
         processor_factory=lambda: _build_processor(args),
         service_metadata=service_metadata,
+        eager_load=bool(args.eager_load),
     )
     httpd = build_http_server(service, host=args.host, port=args.port)
     runner = _ServerRunner(httpd)

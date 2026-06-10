@@ -17,12 +17,14 @@
 //   OPT_SPACE_DOWN / OPT_SPACE_UP   — Option + Space (hold-to-talk chord)
 //   CTRL_SPACE_DOWN / CTRL_SPACE_UP — Control + Space
 //   ESC                             — Escape (HUD dismiss / cancel dictation)
+//   COPY                            — Command + C
 //
 // The Juno surface owns the policy ("which of these is the dictation key?"),
 // so this tool only reports low-level key events.
 
 import Cocoa
 import Darwin
+import JunoHotkeyCore
 
 var fnHeld = false
 var lastMods: NSEvent.ModifierFlags = []
@@ -80,7 +82,17 @@ let monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event
     }
 }
 
-let spaceMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+let keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+    if event.type == .keyDown,
+       let line = JunoHotkeyEventLine.commandCopyLine(
+        keyCode: event.keyCode,
+        modifierFlags: event.modifierFlags,
+        isRepeat: event.isARepeat
+       ) {
+        emit(line)
+        return
+    }
+
     guard event.keyCode == 49 else { return }
     let f = event.modifierFlags
     switch event.type {
@@ -112,16 +124,16 @@ let spaceMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp
     }
 }
 
-if spaceMonitor == nil {
+if keyMonitor == nil {
     FileHandle.standardError.write(
-        Data("juno-hotkey: key monitor unavailable — Option/Ctrl+Space chords disabled (Input Monitoring / Accessibility may be required).\n".utf8)
+        Data("juno-hotkey: key monitor unavailable — Option/Ctrl+Space chords and Command+C disabled (Input Monitoring / Accessibility may be required).\n".utf8)
     )
 }
 
 let escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
     guard event.keyCode == 53 else { return }
     if event.isARepeat { return }
-    emit("ESC")
+    emit(JunoHotkeyEventLine.escape)
 }
 
 if escMonitor == nil {
