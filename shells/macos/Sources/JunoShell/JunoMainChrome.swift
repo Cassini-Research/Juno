@@ -4700,6 +4700,8 @@ extension UtteranceHistoryEntry {
             return "Accessibility permission is missing, so Juno could not insert text."
         case "empty_audio":
             return "Juno did not hear enough audio to transcribe."
+        case "empty_final_text":
+            return "Dictation produced no text to insert."
         case "user_cancelled_hud":
             return "Dictation was cancelled before insertion."
         case "broker_unreachable":

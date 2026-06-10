@@ -5703,11 +5703,20 @@ final class DictationController: ObservableObject {
         pendingRevisionFullTranscript = nil
 
         let insertionOk = !finalText.isEmpty && finalPasteSucceeded
+        // An empty final transcript means no paste was ever attempted (the
+        // writer consumed the utterance as a command, or the engine gated
+        // it). Without an explicit reason the broker defaults the row to
+        // "paste_failed" and History claims Juno "could not insert text" —
+        // wrong: there was nothing to insert. Report a distinct code.
+        var reportedFailureReason = finalPasteFailureReason
+        if !insertionOk, finalText.isEmpty, reportedFailureReason == nil {
+            reportedFailureReason = "empty_final_text"
+        }
         postInsertionCommitted(
             transcript: committedFinalText,
             ok: insertionOk,
             pasteKind: finalPasteKind,
-            failureReason: insertionOk ? nil : finalPasteFailureReason,
+            failureReason: insertionOk ? nil : reportedFailureReason,
             pasteAttempted: finalPasteAttempted
         )
 
