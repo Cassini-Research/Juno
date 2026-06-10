@@ -611,7 +611,7 @@ private struct OnboardingActivationStep: View {
                 Text(pref.displayName)
                     .font(.system(.callout, design: .rounded))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
-                if pref == .fn {
+                if pref == JunoShortcutPreference.defaultShortcut {
                     Text("Recommended")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(isSelected ? JunoDesignTokens.accent : JunoTheme.secondaryText(scheme))

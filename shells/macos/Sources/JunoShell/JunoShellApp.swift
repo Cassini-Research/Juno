@@ -2556,6 +2556,7 @@ enum JunoShortcutPreference: String, CaseIterable {
 
     private static let shortcutKey = "JunoShortcutKey"
     private static let legacyShortcutKey = "JunoShortcutKey"
+    static let defaultShortcut: JunoShortcutPreference = .rightOption
 
     static var stored: JunoShortcutPreference {
         get {
@@ -2565,8 +2566,8 @@ enum JunoShortcutPreference: String, CaseIterable {
                 ud.set(legacy, forKey: shortcutKey)
                 ud.removeObject(forKey: legacyShortcutKey)
             }
-            let raw = ud.string(forKey: shortcutKey) ?? "fn"
-            return JunoShortcutPreference(rawValue: raw) ?? .fn
+            let raw = ud.string(forKey: shortcutKey) ?? Self.defaultShortcut.rawValue
+            return JunoShortcutPreference(rawValue: raw) ?? Self.defaultShortcut
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: shortcutKey) }
     }
