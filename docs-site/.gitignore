@@ -1,7 +1,0 @@
-.next
-node_modules
-.npm-cache
-tsconfig.tsbuildinfo
-.DS_Store
-public/videos/**/*.mov
-public/videos/**/*.mp4
