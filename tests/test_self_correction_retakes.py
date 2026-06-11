@@ -59,3 +59,43 @@ def test_ambiguous_or_literal_markers_are_preserved(literal: str) -> None:
     out, applied = apply_unambiguous_retakes(literal)
     assert out == literal
     assert applied == []
+
+
+# --------------------------------------------------------------------------- #
+# Same-slot retakes + ASR cue variants (2026-06-11 production matrix)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("spoken", "expected"),
+    [
+        # Weekday → weekday shares no characters but is the most common
+        # spoken correction shape (production case 22 shipped "Friday Monday").
+        (
+            "I will send the update on Friday scratch that Monday with full details",
+            "I will send the update on Monday with full details",
+        ),
+        # Date → date with article symmetry.
+        ("meet on the 5th scratch that the 12th of June", "meet on the 12th of June"),
+        # ASR renders "scratch that" as "scratched at" between two clocks
+        # (production case 23 rejected the whole action).
+        ("remind me at 3pm scratched at 4.15pm to call Sam", "remind me at 4.15pm to call Sam"),
+    ],
+)
+def test_same_slot_and_scratched_at_retakes(spoken: str, expected: str) -> None:
+    out, applied = apply_unambiguous_retakes(spoken)
+    assert out == expected
+    assert applied
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "the paint scratched at the edge of the door",
+        "he scratched at his beard while thinking",
+    ],
+)
+def test_scratched_at_outside_temporal_context_stays_literal(literal: str) -> None:
+    out, applied = apply_unambiguous_retakes(literal)
+    assert out == literal
+    assert applied == []

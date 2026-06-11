@@ -32,7 +32,9 @@ def test_replacements_app_scoped_beats_global(tmp_path) -> None:
         ]
     )
     packet = rank_memory_for_context(
-        snapshot, context=TypedContextBundle(app_name="Slack")
+        snapshot,
+        context=TypedContextBundle(app_name="Slack"),
+        transcript_hint="pa na ga oa",
     )
     order = [r["trigger"] for r in packet.replacements]
     # app:<current app> (+10) > bare app scope (+8) > global (+1) >
@@ -48,7 +50,9 @@ def test_replacements_app_scope_casefolds(tmp_path) -> None:
         ]
     )
     packet = rank_memory_for_context(
-        snapshot, context=TypedContextBundle(app_name="  SLACK  ")
+        snapshot,
+        context=TypedContextBundle(app_name="  SLACK  "),
+        transcript_hint="pa ga",
     )
     assert [r["trigger"] for r in packet.replacements] == ["pa", "ga"]
 
@@ -63,7 +67,7 @@ def test_replacements_hint_token_match_outranks_app_scope(tmp_path) -> None:
     packet = rank_memory_for_context(
         snapshot,
         context=TypedContextBundle(app_name="Slack"),
-        transcript_hint="let's review the QBR deck tomorrow",
+        transcript_hint="let's review the scopes QBR deck tomorrow",
     )
     # Hint-token overlap (+12, plus global +1) beats app:slack (+10).
     assert [r["trigger"] for r in packet.replacements] == ["qbr deck", "scoped"]
@@ -80,6 +84,7 @@ def test_replacements_mode_scope_bonus(tmp_path) -> None:
         snapshot,
         context=TypedContextBundle(),
         effective_mode="Notes",
+        transcript_hint="ga ma",
     )
     # mode-key substring match (+6) beats plain global (+1).
     assert [r["trigger"] for r in packet.replacements] == ["ma", "ga"]
@@ -92,7 +97,11 @@ def test_replacements_capped_at_eight(tmp_path) -> None:
             for i in range(12)
         ]
     )
-    packet = rank_memory_for_context(snapshot, context=TypedContextBundle())
+    packet = rank_memory_for_context(
+        snapshot,
+        context=TypedContextBundle(),
+        transcript_hint=" ".join(f"trigger{i}" for i in range(12)),
+    )
     assert len(packet.replacements) == 8
     assert packet.metadata["replacement_total"] == 12
 
@@ -278,3 +287,26 @@ def test_metadata_records_ranking_inputs(tmp_path) -> None:
     assert ranking["session_term_count"] == 1
     # Tokens: review/the/qbr/deck + chino (>=2 chars each).
     assert ranking["hint_token_count"] == 5
+
+
+def test_replacements_not_served_without_trigger_presence(tmp_path) -> None:
+    # Production 2026-06-11: a seeded "launch code" replacement injected
+    # LAUNCH-CODE-991 into a selected rewrite that never mentioned it.
+    snapshot = _snapshot(
+        replacements=[
+            ReplacementRule(trigger="launch code", replacement="LAUNCH-CODE-991", scope="global"),
+        ]
+    )
+    packet = rank_memory_for_context(
+        snapshot,
+        context=TypedContextBundle(app_name="Mail"),
+        transcript_hint="please make this paragraph more formal",
+    )
+    assert packet.replacements == []
+    # Near-miss of the trigger is still admissible (ASR drift coverage).
+    packet2 = rank_memory_for_context(
+        snapshot,
+        context=TypedContextBundle(app_name="Mail"),
+        transcript_hint="set the launch codes to ready",
+    )
+    assert [r["trigger"] for r in packet2.replacements] == ["launch code"]

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from juno_v2.commands.resolver import resolve_command_target
+from juno_v2.commands.resolver import focused_text_before_tail, resolve_command_target
 from juno_v2.commands.semantic import interpret_semantic_command
 from juno_v2.contracts.commands import CommandTargetClass
 from juno_v2.contracts.context import TypedContextBundle
@@ -37,10 +37,12 @@ from juno_v2.turn_plan import (
 from juno_v2.turn_plan.planner import structural_instruction_present
 from juno_v2.writer.dictation_editor import (
     DICTATION_EDIT_TASK,
+    FILLER_STRIP_MODES,
     apply_edit_script,
     build_editor_suffix,
     capitalize_sentence_starts,
     parse_edit_script,
+    strip_hesitation_fillers,
 )
 from juno_v2.turn_plan.validators import span_present
 from juno_v2.writer.backends.base import WriterBackend
@@ -49,7 +51,9 @@ from juno_v2.writer.deterministic import (
     AppCategory,
     expand_snippets,
     render_bullets,
+    render_explicit_bullet_list_command,
     render_lowercase,
+    render_natural_bullet_list_dictation,
     render_numbered,
     render_title_case,
     render_uppercase,
@@ -75,6 +79,59 @@ _MEMORY_COMMAND_TERMS = {
     "word",
     "words",
 }
+_RECENT_TRANSFORM_TARGET_RE = re.compile(
+    r"\b(?:that|the\s+last\s+(?:sentence|line|paragraph|answer|thing|paste|text))\b",
+    re.IGNORECASE,
+)
+_TRANSFORM_VERB_RE = re.compile(
+    r"\b(?:make|turn|rewrite|change|convert|summari[sz]e|shorten|simplify|fix|correct|clean\s+up|translate)\b",
+    re.IGNORECASE,
+)
+
+
+def _mentions_recent_transform_target(text: str) -> bool:
+    current = str(text or "")
+    return bool(_RECENT_TRANSFORM_TARGET_RE.search(current) and _TRANSFORM_VERB_RE.search(current))
+
+
+def _unresolved_correction_cues_present(text: str) -> bool:
+    """True when a spoken edit marker survived the deterministic retake pass.
+
+    The pipeline applies unambiguous retakes before the writer runs, so any
+    marker still present needs meaning-level judgment. Deterministic list
+    rendering must not ship "scratch that" verbatim inside a bullet — the
+    dictation editor owns these turns (it resolves the correction AND emits
+    the list structure).
+    """
+    if not text:
+        return False
+    # Lazy import: juno_core_v3.dictation's package __init__ pulls the
+    # pipeline, which imports this module back.
+    from juno_core_v3.dictation.self_corrections import MID_UTTERANCE_EDIT_MARKER_RE
+
+    return bool(MID_UTTERANCE_EDIT_MARKER_RE.search(text))
+
+
+def _replace_commit_fields(target: dict, text: str) -> tuple[str, dict]:
+    """Output text + metadata for a TRANSFORM_COMMIT that replaces a target.
+
+    The shell deletes ``target_text_chars`` characters back from the caret
+    before pasting (gated on the target name), so the count must be the
+    caret-anchored ``delete_chars`` when the target provides one — the
+    stripped text length undercounts whenever whitespace sits between the
+    target and the caret. Non-empty output re-appends that whitespace so a
+    "pressed Enter twice, then asked for a rewrite" caret keeps its blank
+    line.
+    """
+    out = (text or "").strip()
+    if out:
+        out += str(target.get("trailing_text") or "")
+    meta = {
+        "target": target.get("target"),
+        "target_text_chars": int(target.get("delete_chars") or len(target.get("text") or "")),
+    }
+    return out, meta
+
 
 @dataclass(slots=True)
 class WriterService:
@@ -127,7 +184,7 @@ class WriterService:
             return True
         if target_class == CommandTargetClass.SELECTED_TEXT:
             return bool(pol.allow_selection_commands)
-        if target_class == CommandTargetClass.RECENT_COMMIT:
+        if target_class in (CommandTargetClass.RECENT_COMMIT, CommandTargetClass.FOCUSED_TEXT):
             return bool(pol.allow_recent_target_commands)
         return bool(pol.allow_model_insert_rewrite)
 
@@ -338,8 +395,12 @@ class WriterService:
         ``None`` when the deterministic itemizer finds nothing to render,
         which sends the writer down its existing deterministic/legacy lanes.
         """
+        if _is_no_touch_context(context):
+            return None
         fallback = fallback_structural_turn_plan(final_text)
         if fallback is None:
+            return None
+        if self._defer_list_to_editor(utterance_id, final_text, lane="structural_turn_plan"):
             return None
         validation = validate_turn_plan(fallback, source_text=final_text, context=context)
         if not validation.ok:
@@ -374,6 +435,72 @@ class WriterService:
             },
         )
         return result
+
+    def _pre_editor_route_match(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        memory_store: JsonMemoryStore | None,
+        context: TypedContextBundle,
+        language_hint: str | None,
+    ) -> bool:
+        """Deterministic routes that must win over the dictation editor.
+
+        Commands ("next bullet", "make that shorter"), direct snippet
+        inserts, and explicit structure requests are advertised product
+        behaviors handled by the parser / snippet / structural lanes below.
+        The editor consuming them as prose pasted the literal words
+        (production 2026-06-11). Returns True ⇒ skip the editor.
+        """
+        reason: str | None = None
+        selection_present = bool((getattr(context, "selected_text", "") or "").strip())
+        for candidate in (final_text, raw_text):
+            cleaned = (candidate or "").strip()
+            if not cleaned or len(cleaned.split()) > 12:
+                continue
+            try:
+                intent = self.parser.parse(
+                    cleaned,
+                    language_hint=language_hint,
+                    selection_present=selection_present,
+                )
+            except Exception:  # noqa: BLE001 — probe must never break the turn
+                continue
+            kind = getattr(intent, "kind", None)
+            if kind is not None and kind is not WriterIntentKind.DICTATE:
+                reason = f"parser_intent:{getattr(kind, 'value', kind)}"
+                break
+        if (
+            reason is None
+            and not _is_no_touch_context(context)
+            and structural_instruction_present(final_text)
+            # A surviving correction cue means the structural lane will
+            # defer anyway — keep the editor in play so it can resolve the
+            # correction AND emit the structure in one pass.
+            and not _unresolved_correction_cues_present(final_text)
+        ):
+            reason = "structural_instruction"
+        if reason is None:
+            try:
+                snippet_hit = self._direct_snippet_insert(
+                    final_text,
+                    memory_store=memory_store,
+                    app_category=getattr(context, "app_category", None),
+                )
+            except Exception:  # noqa: BLE001
+                snippet_hit = None
+            if snippet_hit is not None:
+                reason = "direct_snippet"
+        if reason is None:
+            return False
+        self.recorder.record(
+            TraceKind.WRITER,
+            "dictation_edit_bypassed",
+            {"utterance_id": utterance_id, "reason": reason},
+        )
+        return True
 
     def edit_dictation(
         self,
@@ -485,8 +612,14 @@ class WriterService:
             },
         )
         structural = applied.get("struct") is not None
-        if str(getattr(context, "app_category", "") or "").lower() not in {"terminal", "code", "developer_tools"}:
+        category = str(getattr(context, "app_category", "") or "").lower()
+        if category not in {"terminal", "code", "developer_tools"}:
             edited = capitalize_sentence_starts(edited)
+            # Mode-gated hesitation cleanup — the final guard after the
+            # editor (production 2026-06-11: formal Mail kept "uh").
+            mode_name = str(getattr(self.state.mode_policy, "mode_name", "") or "").lower()
+            if mode_name in FILLER_STRIP_MODES:
+                edited = strip_hesitation_fillers(edited)
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.PASS_THROUGH_COMMIT,
@@ -530,6 +663,41 @@ class WriterService:
             writer_tone_addon=writer_tone_addon,
         )
 
+        explicit_bullet_list = self._explicit_bullet_list_outcome(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            context=context,
+            anchor_selection=anchor_selection,
+            wake_verified=wake_verified,
+        )
+        if explicit_bullet_list is not None:
+            return self._annotate_outcome(explicit_bullet_list)
+
+        natural_bullet_list = self._natural_bullet_list_outcome(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            context=context,
+            anchor_selection=anchor_selection,
+            wake_verified=wake_verified,
+        )
+        if natural_bullet_list is not None:
+            return self._annotate_outcome(natural_bullet_list)
+
+        structural_list = self._structural_list_outcome_when_planner_disabled(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            context=context,
+            anchor_selection=anchor_selection,
+            wake_verified=wake_verified,
+            memory_store=memory_store,
+            require_turn_planner_disabled=True,
+        )
+        if structural_list is not None:
+            return self._annotate_outcome(structural_list)
+
         # The dictation editor is the primary AI lane for non-wake dictation:
         # one cached-prefix edit-script pass, deterministically applied. On
         # any failure (parse, grounding, deadline) it returns None and the
@@ -542,6 +710,15 @@ class WriterService:
             and self.state.mode != WriterMode.VERBATIM
             and not (getattr(context, "selected_text", "") or "").strip()
             and (final_text or "").strip()
+            and not _is_no_touch_context(context)
+            and not self._pre_editor_route_match(
+                utterance_id=utterance_id,
+                final_text=final_text,
+                raw_text=raw_text,
+                memory_store=memory_store,
+                context=context,
+                language_hint=language_hint,
+            )
         ):
             editor_outcome = self.edit_dictation(
                 utterance_id=utterance_id,
@@ -653,6 +830,19 @@ class WriterService:
                 )
 
         if intent.kind == WriterIntentKind.DICTATE:
+            structural_list = self._structural_list_outcome_when_planner_disabled(
+                utterance_id=utterance_id,
+                final_text=final_text,
+                raw_text=raw_text,
+                context=context,
+                anchor_selection=anchor_selection,
+                wake_verified=wake_verified,
+                memory_store=memory_store,
+                require_turn_planner_disabled=False,
+            )
+            if structural_list is not None:
+                return self._annotate_outcome(structural_list)
+
             text = final_text
             cleanup_meta = {'pipeline': 'already_adjudicated_passthrough'}
             model_used = False
@@ -904,16 +1094,17 @@ class WriterService:
             if target is None:
                 return self._noop(utterance_id, 'missing_recent_target', intent.kind.value)
             transformed = self._deterministic_transform(intent.transform_kind or '', target['text'])
+            out_text, replace_meta = _replace_commit_fields(target, transformed)
             return self._annotate_outcome(WriterOutcome(
                 utterance_id=utterance_id,
                 action=WriterActionKind.TRANSFORM_COMMIT,
-                output_text=transformed,
+                output_text=out_text,
                 commit_mode=CommitMode.REPLACE_SELECTION,
                 selection_override=target['selection'],
                 writer_mode=self.state.mode,
                 structure_mode=self.state.structure_mode,
                 deterministic_used=True,
-                metadata={'transform_kind': intent.transform_kind, 'source_text': target['text'], 'target': target['target']},
+                metadata={'transform_kind': intent.transform_kind, 'source_text': target['text'], **replace_meta},
             ))
 
         if intent.kind == WriterIntentKind.RECENT_MODEL_TRANSFORM:
@@ -1220,6 +1411,165 @@ class WriterService:
             )
         return None
 
+    def _defer_list_to_editor(self, utterance_id: str, final_text: str, *, lane: str) -> bool:
+        """Deterministic list lanes yield to the editor on surviving cues."""
+        if not _unresolved_correction_cues_present(final_text):
+            return False
+        self.recorder.record(
+            TraceKind.WRITER,
+            "deterministic_list_deferred_to_editor",
+            {"utterance_id": utterance_id, "lane": lane},
+        )
+        return True
+
+    def _explicit_bullet_list_outcome(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        wake_verified: bool,
+    ) -> WriterOutcome | None:
+        if (
+            wake_verified
+            or self.state.mode == WriterMode.VERBATIM
+            or (anchor_selection is not None and anchor_selection.start != anchor_selection.end)
+        ):
+            return None
+        if _is_no_touch_context(context):
+            return None
+        rendered = render_explicit_bullet_list_command(final_text)
+        if rendered is None:
+            return None
+        if self._defer_list_to_editor(utterance_id, final_text, lane="explicit_bullet_list"):
+            return None
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.PASS_THROUGH_COMMIT,
+            output_text=rendered,
+            learn_from_commit=False,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            deterministic_used=True,
+            model_used=False,
+            metadata={
+                "raw_text": raw_text,
+                "input_text": final_text,
+                "dictation_cleanup": {"pipeline": "explicit_same_utterance_bullet_list"},
+                "structure": "bullets",
+            },
+        )
+
+    def _natural_bullet_list_outcome(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        wake_verified: bool,
+    ) -> WriterOutcome | None:
+        if (
+            wake_verified
+            or self.state.mode == WriterMode.VERBATIM
+            or (anchor_selection is not None and anchor_selection.start != anchor_selection.end)
+        ):
+            return None
+        if _is_no_touch_context(context):
+            return None
+        rendered = render_natural_bullet_list_dictation(final_text)
+        if rendered is None:
+            return None
+        if self._defer_list_to_editor(utterance_id, final_text, lane="natural_bullet_list"):
+            return None
+        mismatch = (
+            rendered.claimed_item_count is not None
+            and rendered.claimed_item_count != rendered.spoken_item_count
+        )
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.PASS_THROUGH_COMMIT,
+            output_text=rendered.text,
+            learn_from_commit=False,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            deterministic_used=True,
+            model_used=False,
+            metadata={
+                "raw_text": raw_text,
+                "input_text": final_text,
+                "dictation_cleanup": {
+                    "pipeline": rendered.pipeline,
+                    "claimed_item_count": rendered.claimed_item_count,
+                    "spoken_item_count": rendered.spoken_item_count,
+                    "claimed_count_mismatch": mismatch,
+                },
+                "structure": "bullets",
+            },
+        )
+
+    def _structural_list_outcome_when_planner_disabled(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        wake_verified: bool,
+        memory_store: JsonMemoryStore | None,
+        require_turn_planner_disabled: bool,
+    ) -> WriterOutcome | None:
+        if (
+            wake_verified
+            or (require_turn_planner_disabled and self.config.enable_turn_planner)
+            or self.state.mode == WriterMode.VERBATIM
+            or _is_no_touch_context(context)
+            or (anchor_selection is not None and anchor_selection.start != anchor_selection.end)
+        ):
+            return None
+        fallback = fallback_structural_turn_plan(final_text)
+        if fallback is None:
+            return None
+        if self._defer_list_to_editor(utterance_id, final_text, lane="structural_list"):
+            return None
+        validation = validate_turn_plan(fallback, source_text=final_text, context=context)
+        if not validation.ok:
+            return None
+        render_result = render_turn_plan(fallback, context=context, memory_store=memory_store)
+        if not render_result.rendered or not render_result.text.strip():
+            return None
+        render_kind = str((fallback.get("render_plan") or {}).get("render_kind") or "").strip()
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.PASS_THROUGH_COMMIT,
+            output_text=render_result.text,
+            learn_from_commit=False,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            deterministic_used=True,
+            model_used=False,
+            metadata={
+                "raw_text": raw_text,
+                "input_text": final_text,
+                "turn_plan": {
+                    "status": "ok",
+                    "backend": "deterministic_structural_no_planner",
+                    "utterance_kind": fallback.get("utterance_kind"),
+                    "render_kind": render_kind,
+                    "validation_ok": True,
+                    "validation_warnings": list(validation.warnings),
+                    "render_reason": render_result.reason,
+                    "render_metadata": render_result.metadata,
+                },
+                "dictation_cleanup": {"pipeline": "deterministic_structural_no_planner"},
+                "structure": render_kind,
+            },
+        )
+
     def _apply_turn_plan_memory_candidates(
         self,
         plan: dict[str, Any],
@@ -1368,12 +1718,19 @@ class WriterService:
         transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
         target = self._turn_plan_target(plan, context=context, anchor_selection=anchor_selection)
         if target is None:
-            return self._noop(
-                utterance_id,
-                "turn_plan_missing_transform_target",
-                "turn_plan_transform",
-                extra={"turn_plan": self._turn_plan_metadata(result, validation=validation)},
-            )
+            if _mentions_recent_transform_target(final_text):
+                target = self._selected_target(context, anchor_selection) or self._recent_target(context)
+            if target is None:
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "turn_plan_transform_target_deferred_to_parser",
+                    {
+                        "utterance_id": utterance_id,
+                        "reason": "missing_transform_target",
+                        "recent_target_command": _mentions_recent_transform_target(final_text),
+                    },
+                )
+                return None
 
         transformed = transform.get("transformed_text")
         if not isinstance(transformed, str) or not transformed.strip():
@@ -1392,10 +1749,11 @@ class WriterService:
         if not isinstance(transformed, str) or not transformed.strip():
             return None
 
+        out_text, replace_meta = _replace_commit_fields(target, transformed)
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.TRANSFORM_COMMIT,
-            output_text=transformed.strip(),
+            output_text=out_text,
             commit_mode=CommitMode.REPLACE_SELECTION,
             selection_override=target["selection"],
             writer_mode=self.state.mode,
@@ -1403,9 +1761,8 @@ class WriterService:
             model_used=True,
             metadata={
                 "instruction": str(transform.get("instruction") or final_text),
-                "target": target["target"],
-                "target_text_chars": len(target.get("text") or ""),
                 "turn_plan": self._turn_plan_metadata(result, validation=validation),
+                **replace_meta,
             },
         )
 
@@ -1597,16 +1954,17 @@ class WriterService:
                 return self._noop(utterance_id, missing_reason, intent.kind.value)
             parts = re.split(r'(?<=[.!?])\s+', target['text'])
             out = ' '.join(parts[:-1]).strip() if len(parts) > 1 else ''
+            out_text, replace_meta = _replace_commit_fields(target, out)
             return self._annotate_outcome(WriterOutcome(
                 utterance_id=utterance_id,
                 action=WriterActionKind.TRANSFORM_COMMIT,
-                output_text=out,
+                output_text=out_text,
                 commit_mode=CommitMode.REPLACE_SELECTION,
                 selection_override=target['selection'],
                 writer_mode=self.state.mode,
                 structure_mode=self.state.structure_mode,
                 deterministic_used=True,
-                metadata={'command': 'delete_last_sentence_recent', 'target': target['target']},
+                metadata={'command': 'delete_last_sentence_recent', **replace_meta},
             ))
         if kind == 'insert' and 'text' in payload:
             ins = str(payload['text'])
@@ -1797,50 +2155,54 @@ class WriterService:
                     else 'missing_recent_target'
                 )
                 return self._noop(utterance_id, missing_reason, intent.kind.value)
-            target_class_for_policy = (
-                CommandTargetClass.SELECTED_TEXT
-                if target.get('target') == 'selection'
-                else CommandTargetClass.RECENT_COMMIT
-            )
+            if target.get('target') == 'selection':
+                target_class_for_policy = CommandTargetClass.SELECTED_TEXT
+            elif target.get('target') == 'focused_text_before':
+                target_class_for_policy = CommandTargetClass.FOCUSED_TEXT
+            else:
+                target_class_for_policy = CommandTargetClass.RECENT_COMMIT
             if payload.get('transform') == 'bullets':
                 transformed = self._deterministic_transform('bullets', target['text'])
+                out_text, replace_meta = _replace_commit_fields(target, transformed)
                 return self._annotate_outcome(WriterOutcome(
                     utterance_id=utterance_id,
                     action=WriterActionKind.TRANSFORM_COMMIT,
-                    output_text=transformed,
+                    output_text=out_text,
                     commit_mode=CommitMode.REPLACE_SELECTION,
                     selection_override=target['selection'],
                     writer_mode=self.state.mode,
                     structure_mode=self.state.structure_mode,
                     deterministic_used=True,
-                    metadata={'command': 'recent_bullets', 'target': target['target']},
+                    metadata={'command': 'recent_bullets', **replace_meta},
                 ))
             if payload.get('transform') == 'numbered':
                 transformed = self._deterministic_transform('numbered', target['text'])
+                out_text, replace_meta = _replace_commit_fields(target, transformed)
                 return self._annotate_outcome(WriterOutcome(
                     utterance_id=utterance_id,
                     action=WriterActionKind.TRANSFORM_COMMIT,
-                    output_text=transformed,
+                    output_text=out_text,
                     commit_mode=CommitMode.REPLACE_SELECTION,
                     selection_override=target['selection'],
                     writer_mode=self.state.mode,
                     structure_mode=self.state.structure_mode,
                     deterministic_used=True,
-                    metadata={'command': 'recent_numbered', 'target': target['target']},
+                    metadata={'command': 'recent_numbered', **replace_meta},
                 ))
             if payload.get('transform') == 'delete_paragraph':
                 parts = re.split(r'\n\n+', target['text'])
                 out = '\n\n'.join(parts[:-1]).strip() if len(parts) > 1 else ''
+                out_text, replace_meta = _replace_commit_fields(target, out)
                 return self._annotate_outcome(WriterOutcome(
                     utterance_id=utterance_id,
                     action=WriterActionKind.TRANSFORM_COMMIT,
-                    output_text=out,
+                    output_text=out_text,
                     commit_mode=CommitMode.REPLACE_SELECTION,
                     selection_override=target['selection'],
                     writer_mode=self.state.mode,
                     structure_mode=self.state.structure_mode,
                     deterministic_used=True,
-                    metadata={'command': 'delete_last_paragraph', 'target': target['target']},
+                    metadata={'command': 'delete_last_paragraph', **replace_meta},
                 ))
             instr = str(payload.get('instruction') or '')
             if instr and not self._model_rewrite_allowed_for_target(pol, target_class_for_policy):
@@ -1859,6 +2221,7 @@ class WriterService:
         if kind == 'translate' and tgt_text and tgt_class in (
             CommandTargetClass.SELECTED_TEXT,
             CommandTargetClass.RECENT_COMMIT,
+            CommandTargetClass.FOCUSED_TEXT,
         ):
             if not self._model_rewrite_allowed_for_target(pol, tgt_class):
                 return self._model_rewrite_blocked_noop(utterance_id, intent, tgt_class)
@@ -1892,22 +2255,23 @@ class WriterService:
             b = str(payload.get('to', '')).strip()
             if tgt_class == CommandTargetClass.SELECTED_TEXT:
                 target = self._selected_target(context, anchor_selection)
-            elif tgt_class == CommandTargetClass.RECENT_COMMIT:
+            elif tgt_class in (CommandTargetClass.RECENT_COMMIT, CommandTargetClass.FOCUSED_TEXT):
                 target = self._recent_target(context)
             else:
                 target = None
             if target is not None and a:
                 transformed = target['text'].replace(a, b)
+                out_text, replace_meta = _replace_commit_fields(target, transformed)
                 return self._annotate_outcome(WriterOutcome(
                     utterance_id=utterance_id,
                     action=WriterActionKind.TRANSFORM_COMMIT,
-                    output_text=transformed,
+                    output_text=out_text,
                     commit_mode=CommitMode.REPLACE_SELECTION,
                     selection_override=target['selection'],
                     writer_mode=self.state.mode,
                     structure_mode=self.state.structure_mode,
                     deterministic_used=True,
-                    metadata={'command': 'replace', 'target': target['target']},
+                    metadata={'command': 'replace', **replace_meta},
                 ))
             # No recent-commit target available. Promote to a persistent memory
             # rule so "replace X with Y" matches the intent users express when
@@ -1928,7 +2292,7 @@ class WriterService:
                         'promoted_from': 'deterministic_replace',
                     },
                 ))
-            if tgt_class == CommandTargetClass.RECENT_COMMIT:
+            if tgt_class in (CommandTargetClass.RECENT_COMMIT, CommandTargetClass.FOCUSED_TEXT):
                 return self._noop(utterance_id, 'missing_recent_target', intent.kind.value)
             if tgt_class == CommandTargetClass.SELECTED_TEXT:
                 return self._noop(utterance_id, 'missing_selection_for_transform', intent.kind.value)
@@ -1952,7 +2316,7 @@ class WriterService:
                 },
             ))
         if sem is not None and sem.rewrite_instruction:
-            if tgt_class == CommandTargetClass.RECENT_COMMIT:
+            if tgt_class in (CommandTargetClass.RECENT_COMMIT, CommandTargetClass.FOCUSED_TEXT):
                 target = self._recent_target(context)
                 if target is None:
                     return self._noop(utterance_id, 'missing_recent_target', intent.kind.value)
@@ -2118,6 +2482,15 @@ class WriterService:
                 'selection': ClientSelection(start=0, end=len(clip_text)),
                 'target': 'recent_clipboard',
             }
+        focused_tail = focused_text_before_tail(context.focused_text_before)
+        if focused_tail is not None:
+            return {
+                'text': focused_tail['text'],
+                'selection': ClientSelection(start=focused_tail['start'], end=focused_tail['end']),
+                'target': 'focused_text_before',
+                'delete_chars': focused_tail['delete_chars'],
+                'trailing_text': focused_tail['trailing_text'],
+            }
         return None
 
     def _run_model_transform(
@@ -2211,10 +2584,11 @@ class WriterService:
                 },
             )
         result = self._rewrite_with_backend(req)
+        out_text, replace_meta = _replace_commit_fields(target, result.text)
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.TRANSFORM_COMMIT,
-            output_text=result.text,
+            output_text=out_text,
             commit_mode=CommitMode.REPLACE_SELECTION,
             selection_override=target['selection'],
             writer_mode=self.state.mode,
@@ -2224,10 +2598,9 @@ class WriterService:
                 'instruction': req.instruction,
                 'writer_backend': result.backend_name,
                 'writer_decode_ms': result.decode_ms,
-                'target': target['target'],
-                'target_text_chars': len(target.get('text') or ''),
                 'style_card': style_card.name if style_card is not None else None,
                 **result.metadata,
+                **replace_meta,
             },
         )
 
@@ -2505,6 +2878,11 @@ def _style_card_to_prompt(card: object | None) -> str:
 
 def _approx_word_count(text: str) -> int:
     return len((text or "").split())
+
+
+def _is_no_touch_context(context: TypedContextBundle) -> bool:
+    category = str(getattr(context, "app_category", "") or "").strip().lower()
+    return category in {"code", "terminal", "developer_tools"}
 
 
 def _explicit_memory_learning_requested(text: str) -> bool:

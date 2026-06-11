@@ -338,3 +338,32 @@ def build_editor_suffix(
         parts.append(f"Style: {style_hint[:160]}")
     parts.append("Transcript:\n" + transcript)
     return "\n".join(parts)
+
+
+_HESITATION_RE = re.compile(
+    r"(?:(?<=^)|(?<=[\s,;:.!?(\[]))(?:um+|uh+|hm+m*|mm-?hm+|mhm+|erm+|er|ah+|a{3,})(?=$|[\s,;:.!?)\]])",
+    re.IGNORECASE,
+)
+_HESITATION_LITERAL_GUARD_RE = re.compile(r"(?:\bwords?\s+|[\"'“‘]\s*)$", re.IGNORECASE)
+FILLER_STRIP_MODES = {"formal_email", "casual_chat", "structured_notes"}
+
+
+def strip_hesitation_fillers(text: str) -> str:
+    """Remove standalone spoken hesitations (um/uh/hmm/aaa…) from prose.
+
+    Mode-gated by the caller (never verbatim/code/terminal). Literal guards:
+    quoted fillers and "the word um" stay.
+    """
+    source = text or ""
+
+    def _repl(match: re.Match[str]) -> str:
+        if _HESITATION_LITERAL_GUARD_RE.search(source[: match.start()]):
+            return match.group(0)
+        return ""
+
+    out = _HESITATION_RE.sub(_repl, source)
+    out = re.sub(r"\s{2,}", " ", out)
+    out = re.sub(r"\s+([,.;:!?])", r"\1", out)
+    out = re.sub(r"([,;:])\s*\1+", r"\1", out)
+    out = re.sub(r"^[\s,.;:]+", "", out)
+    return out.strip()

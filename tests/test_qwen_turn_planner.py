@@ -168,6 +168,23 @@ def test_turn_planner_renders_only_spoken_numbered_items_when_claim_count_is_lar
     assert result.metadata["turn_plan"]["utterance_kind"] == "format_dictation"
 
 
+def test_structural_fallback_handles_natural_counted_ordinal_list() -> None:
+    plan = _fallback_structural_turn_plan(
+        "I think we need to focus on 3 things, first is that we check everything properly "
+        "before production and second is that we go to a party after we push things live."
+    )
+
+    assert plan is not None
+    render = plan["render_plan"]
+    assert render["claimed_item_count"] == 3
+    assert render["spoken_item_count"] == 2
+    assert [unit["text"] for unit in render["content_units"]] == [
+        "we check everything properly before production",
+        "we go to a party after we push things live",
+    ]
+    assert plan["uncertainties"] == [{"type": "claimed_count_mismatch", "claimed": 3, "spoken": 2}]
+
+
 def test_turn_plan_json_parser_recovers_misnested_render_metadata() -> None:
     raw = (
         '{"schema_version":"turn_plan_v1","utterance_kind":"dictation",'
@@ -2766,6 +2783,114 @@ def test_turn_planner_uses_structural_fallback_after_invalid_repaired_plan() -> 
     assert result.metadata["turn_plan"]["render"]["spoken_item_count"] == 3
 
 
+def test_turn_plan_missing_recent_deterministic_target_falls_back_to_parser() -> None:
+    source = "Turn that into bullets"
+    recent = "Verify microphone permission. Run action combos. Check final paste."
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "transform",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 0.5},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {
+            "operation": "bullets",
+            "instruction": "Turn into bullets",
+            "transformed_text": None,
+            "requires_second_pass": False,
+        },
+        "actions": [],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+        "uncertainties": [],
+    }
+
+    result = _service(plan).process_transcript(
+        utterance_id="utt-recent-bullets-planner-shadow",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            metadata={
+                "last_committed_text": recent,
+                "last_committed_start": 4,
+                "last_committed_end": 4 + len(recent),
+            },
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == "- Verify microphone permission\n- Run action combos\n- Check final paste"
+    assert result.metadata["target"] == "recent_commit"
+
+
+def test_turn_plan_missing_recent_model_target_uses_recent_commit_for_generation() -> None:
+    source = "Make that shorter"
+    recent = "This is a long launch-readiness update with repeated details about permissions, actions, and paste checks."
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "transform",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 0.5},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {
+            "operation": "rewrite",
+            "instruction": "Make the recent text more concise.",
+            "transformed_text": None,
+            "requires_second_pass": True,
+        },
+        "actions": [],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+        "uncertainties": [],
+    }
+    backend = _TaskBackend({
+        "turn_planning_v1": plan,
+        "transform_generation_v1": {"transformed_text": "Short launch update."},
+    })
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-recent-model-planner-shadow",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            metadata={
+                "last_committed_text": recent,
+                "last_committed_start": 8,
+                "last_committed_end": 8 + len(recent),
+            },
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == "Short launch update."
+    assert result.commit_mode == CommitMode.REPLACE_SELECTION
+    assert result.selection_override == ClientSelection(start=8, end=8 + len(recent))
+    assert result.metadata["target"] == "recent_commit"
+    assert result.metadata["target_text_chars"] == len(recent)
+
+
 def _actions_plan_with_one_ungrounded_body(source: str) -> dict[str, Any]:
     return {
         "schema_version": "turn_plan_v1",
@@ -2853,7 +2978,11 @@ def test_single_bad_action_does_not_trigger_repair_pass() -> None:
     payload = generated[0]
     assert payload["repair_attempted"] is False
     assert payload["validation_ok"] is True
-    assert "action_1_body_not_grounded" in payload["validation_warnings"]
+    # Contract change 2026-06-11: compound segments are authoritative — the
+    # ungrounded sibling body is re-grounded inside its own segment during
+    # normalization instead of surviving as a validation warning.
+    assert "action_1_body_not_grounded" not in payload["validation_warnings"]
+    assert any("segment" in n for n in payload["normalization_notes"])
 
 
 def test_unusable_repair_restores_initial_plan() -> None:
@@ -3096,7 +3225,7 @@ def test_pipeline_wake_action_is_not_demoted_by_question_words_inside_note_body(
     assert "turn_plan_actions_detected" in event_names
 
 
-def test_pipeline_invalid_turn_plan_rejects_action_without_regex_fallback() -> None:
+def test_pipeline_invalid_turn_plan_routes_valid_action_to_regex_fallback() -> None:
     source = "juno remind me at 3 PM to call Ishida"
     recorder = _Recorder()
 
@@ -3139,14 +3268,15 @@ def test_pipeline_invalid_turn_plan_rejects_action_without_regex_fallback() -> N
     )
 
     assert result.ok
-    assert result.actions is None
     assert result.transcript == ""
     assert result.paste_kind == "none"
-    assert result.noop_reason == "action_rejected"
     assert result.is_action is True
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "reminder"
+    assert result.actions[0]["body"] == "call Ishida"
     event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
-    assert "turn_plan_action_rejected" in event_names
-    assert "turn_plan_action_fallback_used" not in event_names
+    assert "turn_plan_action_routed_to_fallback" in event_names
+    assert "turn_plan_action_fallback_used" in event_names
 
 
 def test_pipeline_valid_actionless_turn_plan_is_respected_without_regex_fallback() -> None:
@@ -3813,3 +3943,160 @@ def test_turn_plan_unsupported_operation_routes_to_extractor_fallback() -> None:
     event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
     assert "turn_plan_operation_routed_to_fallback" in event_names
     assert "turn_plan_action_fallback_used" in event_names
+
+
+def test_action_invalid_json_turn_plan_routes_to_extractor_fallback() -> None:
+    source = "Juno take a note Cassini launches on Monday."
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "still not json"})
+    recorder = _Recorder()
+    writer = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=recorder,
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+
+    set_llm_extractor(None)
+    result = pipeline.run(_loud_wav_bytes(), utterance_id="utt-action-invalid-json-fallback", save_history=False, save_audio=False)
+
+    assert result.ok
+    assert result.paste_kind == "none"
+    assert result.is_action is True
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "note"
+    assert result.actions[0]["body"] == "Cassini launches on Monday"
+    assert result.metadata["turn_plan"]["status"] == "invalid_json"
+    event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
+    assert "turn_plan_action_routed_to_fallback" in event_names
+    assert "turn_plan_action_fallback_used" in event_names
+
+
+def test_scratched_at_asr_variant_retake_runs_before_action_fallback() -> None:
+    source = "Juno remind me at 3 p.m. scratched at 4.15 p.m. to call Sam."
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "still not json"})
+    writer = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=_Recorder(),
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+
+    set_llm_extractor(None)
+    result = pipeline.run(_loud_wav_bytes(), utterance_id="utt-scratched-at-action", save_history=False, save_audio=False)
+
+    assert result.ok
+    assert result.paste_kind == "none"
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "reminder"
+    assert result.actions[0]["body"] == "call Sam"
+    assert result.actions[0]["when"] is not None
+    assert "4:15" in result.actions[0]["when"]["iso"] or "16:15" in result.actions[0]["when"]["iso"]
+    assert any(
+        applied.get("rule") == "self_correction_retakes"
+        for applied in result.normalization_applied
+    )
+
+
+def test_compound_six_actions_segment_authoritative_semantics() -> None:
+    # Production 2026-06-11 case 19: six actions passed count checks while
+    # bodies/spans/times bled across siblings. Segments are now authoritative:
+    # exact bodies, kinds, and times — from a deliberately corrupted batch.
+    src = (
+        "take a note checkpoint alpha and take a note checkpoint beta and remind me tomorrow at 10am "
+        "to call Sam and remind me Friday at 2pm to review metrics and set an alarm for 4.30pm to publish "
+        "and set an alarm in 45 minutes to stand up"
+    )
+    corrupted = [
+        {"kind": "note", "operation": "create", "body": "checkpoint alpha and take a note checkpoint beta",
+         "evidence_span": "take a note checkpoint alpha and take a note checkpoint beta", "schedule": {"kind": "none"}, "missing_fields": []},
+        {"kind": "note", "operation": "create", "body": "checkpoint alpha and take a note checkpoint beta",
+         "evidence_span": "take a", "schedule": {"kind": "none"}, "missing_fields": []},
+        {"kind": "reminder", "operation": "create", "body": "call Sam",
+         "evidence_span": "beta and", "schedule": {"kind": "instant", "source_span": "tomorrow at 10am"}, "missing_fields": []},
+        {"kind": "reminder", "operation": "create", "body": "Friday at 2pm to review metrics",
+         "evidence_span": "remind me", "schedule": {"kind": "instant", "source_span": "tomorrow at 10am"}, "missing_fields": []},
+        {"kind": "alarm", "operation": "create", "body": "publish",
+         "evidence_span": "and set", "schedule": {"kind": "instant", "source_span": "4.30pm"}, "missing_fields": []},
+        {"kind": "alarm", "operation": "create", "body": "stand up",
+         "evidence_span": "and set", "schedule": {"kind": "instant", "source_span": "in 45 minutes"}, "missing_fields": []},
+    ]
+    plan = {
+        "schema_version": "turn_plan_v1", "utterance_kind": "actions",
+        "corrected_transcript": {"text": src},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": corrupted, "snippets": [], "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"}, "uncertainties": [],
+    }
+    from datetime import timedelta, timezone
+
+    normalized, notes = normalize_turn_plan(plan, source_text=src)
+    now = datetime(2026, 6, 11, 12, 0, tzinfo=timezone(timedelta(hours=7)))  # Thursday
+    parsed = actions_from_turn_plan(normalized, source_text=src, now=now)
+    assert parsed.actions is not None and len(parsed.actions) == 6
+    expected = [
+        ("note", "checkpoint alpha", None),
+        ("note", "checkpoint beta", None),
+        ("reminder", "call Sam", "2026-06-12T10:00:00+07:00"),
+        ("reminder", "review metrics", "2026-06-12T14:00:00+07:00"),
+        ("alarm", "publish", "2026-06-11T16:30:00+07:00"),
+        ("alarm", "stand up", "2026-06-11T12:45:00+07:00"),
+    ]
+    for action, (kind, body, when_iso) in zip(parsed.actions, expected):
+        assert action.kind.value == kind
+        assert action.body == body
+        assert (action.when.iso if action.when else None) == when_iso
+        # No body may carry a sibling's native-action anchor.
+        for anchor in ("take a note", "remind me", "set an alarm"):
+            assert anchor not in action.body

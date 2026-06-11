@@ -750,6 +750,25 @@ def parse_when(clause: str, *, now: datetime | None = None) -> ParsedTime | None
                 now=now,
             )
 
+    # Day-first relative clauses with a clock ("tomorrow at 9.15am") must
+    # also be deterministic: dateparser accepts the day but silently drops
+    # dotted clocks, returning the CURRENT time on that day — an actively
+    # wrong answer (a 21:42 reminder shipped for a 9:15 request,
+    # production 2026-06-11).
+    day_first = _RELATIVE_DAY_RE.match(cleaned.lower())
+    if day_first is not None and day_first.group("clock"):
+        preempted = _try_relative_day(cleaned.lower(), now)
+        if preempted is not None:
+            return resolve_time(
+                clause=cleaned,
+                parsed=preempted,
+                parser_confidence=0.85,
+                # Contract allows a fixed source set; this is the same
+                # preemption pattern the clock-first branch uses.
+                parser_source="dateparser",
+                now=now,
+            )
+
     # Tier 1: dateparser.
     parsed = _try_dateparser(cleaned, now)
     if parsed is not None:

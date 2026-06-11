@@ -91,6 +91,82 @@ def _process(service: WriterService, text: str, **kwargs: Any):
     )
 
 
+def test_same_utterance_bullet_list_command_bypasses_editor() -> None:
+    service, backend, _ = _editor_service("VERDICT: clean")
+
+    result = _process(
+        service,
+        "Start a bullet list. First verify microphone permission. Second run action combos. Third check final paste.",
+    )
+
+    assert backend.requests == []
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == (
+        "- verify microphone permission\n"
+        "- run action combos\n"
+        "- check final paste"
+    )
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "explicit_same_utterance_bullet_list"
+
+
+def test_natural_counted_ordinal_list_bypasses_editor() -> None:
+    service, backend, _ = _editor_service("VERDICT: clean")
+
+    result = _process(
+        service,
+        "I think we need to focus on 3 things, first is that we check everything properly "
+        "before production and second is that we go to a party after we push things live.",
+    )
+
+    assert backend.requests == []
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == (
+        "- we check everything properly before production\n"
+        "- we go to a party after we push things live"
+    )
+    cleanup = result.metadata["dictation_cleanup"]
+    assert cleanup["pipeline"] == "natural_ordinal_bullet_list"
+    assert cleanup["claimed_item_count"] == 3
+    assert cleanup["spoken_item_count"] == 2
+    assert cleanup["claimed_count_mismatch"] is True
+
+
+def test_natural_counted_ordinal_list_skips_no_touch_surface() -> None:
+    service, backend, _ = _editor_service("VERDICT: clean")
+    spoken = (
+        "I think we need to focus on 3 things, first is that we check everything properly "
+        "before production and second is that we go to a party after we push things live."
+    )
+
+    result = _process(
+        service,
+        spoken,
+        context=TypedContextBundle(app_name="Xcode", app_category="code"),
+    )
+
+    assert backend.requests == []
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert "- " not in result.output_text
+    assert "\n1." not in result.output_text
+    assert "first is that" in result.output_text.lower()
+    assert "second is that" in result.output_text.lower()
+
+
+def test_explicit_structural_list_uses_deterministic_fallback_when_turn_planner_disabled() -> None:
+    service, backend, _ = _editor_service("VERDICT: clean")
+
+    result = _process(
+        service,
+        "Note down 10 points. First remove patches. Second make Qwen plan. Third validate spans.",
+    )
+
+    assert backend.requests == []
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "1. remove patches\n2. make Qwen plan\n3. validate spans"
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "deterministic_structural_no_planner"
+    assert result.metadata["turn_plan"]["backend"] == "deterministic_structural_no_planner"
+
+
 # --------------------------------------------------------------------------- #
 # Parser + applier
 # --------------------------------------------------------------------------- #
@@ -376,3 +452,172 @@ def test_hud_window_join_smoothing_render_helper() -> None:
     out2 = _smooth_window_joins("why does this exist? new Line Text is still")
     assert "new Line" not in out2 and "\n" in out2
     assert _smooth_window_joins("the new line is short") == "the new line is short"
+
+
+# --------------------------------------------------------------------------- #
+# Route ordering (2026-06-11 production matrix failures)
+# --------------------------------------------------------------------------- #
+
+
+def test_commands_bypass_editor_and_produce_results() -> None:
+    expected = {
+        "New paragraph": "\n\n",
+        "Next bullet": "\n- ",
+        "Make that shorter": None,  # routed to recent-target lane, not literal paste
+    }
+    for spoken, want in expected.items():
+        service, backend, recorder = _editor_service("VERDICT: clean")
+        result = _process(service, spoken)
+        names = [a[1] for a, _ in recorder.events if len(a) > 1]
+        assert "dictation_edit_bypassed" in names, spoken
+        assert not backend.requests, f"editor must not run for {spoken!r}"
+        assert result.output_text != spoken, f"{spoken!r} pasted literally"
+        if want is not None:
+            assert result.output_text == want
+
+
+def test_pipeline_new_paragraph_survives_itn_and_executes() -> None:
+    # Production case 7: ITN collapsed "New Paragraph" to "\n\n" before the
+    # parser, the writer saw an empty command, and the turn died as
+    # unsupported_intent. The pure-command claim must run before ITN.
+    source = "New Paragraph"
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=600.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    import io
+    import math
+    import struct
+    import wave
+
+    def _wav() -> bytes:
+        buf = io.BytesIO()
+        frames = [struct.pack("<h", int(18000 * math.sin(i / 9.0))) for i in range(9600)]
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"".join(frames))
+        return buf.getvalue()
+
+    recorder = _Recorder()
+    writer = WriterService(
+        config=WriterConfig(enable_model_transforms=True, dictation_editor_enabled=True),
+        recorder=_Recorder(),
+        backend=_EditorBackend("VERDICT: clean"),
+    )
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=recorder,
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=True,
+    )
+    result = pipeline.run(_wav(), utterance_id="utt-new-paragraph", save_history=False, save_audio=False)
+    assert result.ok
+    assert result.transcript == "\n\n"
+    assert result.paste_kind != "none"
+    names = [a[1] for a, _ in recorder.events if len(a) > 1]
+    assert "oneshot_itn_skipped_for_command" in names
+
+
+def test_rejected_action_response_carries_recoverable_transcript() -> None:
+    # Safety requirement: a rejected wake/action turn must never silently
+    # erase the words — the response payload carries them for the shell's
+    # copy surface, in addition to the History row.
+    source = "juno set an alarm to publish the changelog"
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": "set an alarm to publish the changelog"},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                "kind": "alarm",
+                "operation": "create",
+                "body": "publish the changelog",
+                "evidence_span": "set an alarm to publish the changelog",
+                "schedule": {"kind": "none"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=900.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    import io
+    import math
+    import struct
+    import wave
+
+    def _wav() -> bytes:
+        buf = io.BytesIO()
+        frames = [struct.pack("<h", int(18000 * math.sin(i / 9.0))) for i in range(9600)]
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"".join(frames))
+        return buf.getvalue()
+
+    from juno_v2.writer.service import WriterService as _WS
+
+    writer = _WS(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=None,
+    )
+    # Force the turn-plan path with a fake planner backend.
+    from tests.test_qwen_turn_planner import _TurnPlanBackend  # type: ignore
+
+    writer.backend = _TurnPlanBackend(plan)
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=_Recorder(),
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+    result = pipeline.run(_wav(), utterance_id="utt-recoverable", save_history=False, save_audio=False)
+    assert result.ok
+    assert result.paste_kind == "none"
+    assert result.transcript == ""
+    assert "publish the changelog" in result.recoverable_transcript
+    assert result.to_dict().get("recoverable_transcript")

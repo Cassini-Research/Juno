@@ -10,6 +10,9 @@ class CommandTargetClass(str, Enum):
     RECENT_COMMIT = "recent_commit"
     SELECTED_TEXT = "selected_text"
     EXPLICIT_SPAN = "explicit_span"
+    # Last paragraph of the focused field's text before the caret — the
+    # fallback target when no selection and no tracked commit exist.
+    FOCUSED_TEXT = "focused_text"
     NONE = "none"
 
 

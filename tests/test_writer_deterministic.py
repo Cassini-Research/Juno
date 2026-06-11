@@ -13,7 +13,9 @@ from juno_v2.writer.deterministic import (
     normalize_explicit_numbered_markers,
     normalize_plain_dictation,
     render_bullets,
+    render_explicit_bullet_list_command,
     render_lowercase,
+    render_natural_bullet_list_dictation,
     render_numbered,
     render_title_case,
     render_uppercase,
@@ -44,6 +46,109 @@ from juno_v2.writer.guards import is_no_touch_surface
 )
 def test_render_bullets(text: str, expected: str) -> None:
     assert render_bullets(text) == expected
+
+
+def test_render_explicit_same_utterance_bullet_list_command() -> None:
+    spoken = (
+        "Start a bullet list. First verify microphone permission. "
+        "Second run action combos. Third check final paste."
+    )
+    assert render_explicit_bullet_list_command(spoken) == (
+        "- verify microphone permission\n"
+        "- run action combos\n"
+        "- check final paste"
+    )
+    assert render_explicit_bullet_list_command("Start a bullet list.") is None
+
+
+def test_render_natural_bullet_list_with_claimed_count_mismatch() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "I think we need to focus on 3 things, first is that we check everything properly "
+        "before production and second is that we go to a party after we push things live."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "- we check everything properly before production\n"
+        "- we go to a party after we push things live"
+    )
+    assert rendered.claimed_item_count == 3
+    assert rendered.spoken_item_count == 2
+
+
+def test_render_natural_bullet_list_with_three_spoken_points() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "I think we need to focus on three things. First check everything properly before production. "
+        "Second go to a party after we push things live. Third monitor for regressions."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "- check everything properly before production\n"
+        "- go to a party after we push things live\n"
+        "- monitor for regressions"
+    )
+    assert rendered.claimed_item_count == 3
+    assert rendered.spoken_item_count == 3
+
+
+def test_render_natural_bullet_list_renders_spoken_items_not_claimed_count() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "I think there are 10 points, first check mic permission, second run action combos, "
+        "third test snippets, fourth verify transforms, fifth watch the installed app."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "- check mic permission\n"
+        "- run action combos\n"
+        "- test snippets\n"
+        "- verify transforms\n"
+        "- watch the installed app"
+    )
+    assert rendered.claimed_item_count == 10
+    assert rendered.spoken_item_count == 5
+
+
+def test_render_natural_bullet_list_allows_extra_spoken_items() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "We need to handle 2 things. First reset permissions. Second run the fullgate. "
+        "Third monitor production."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "- reset permissions\n"
+        "- run the fullgate\n"
+        "- monitor production"
+    )
+    assert rendered.claimed_item_count == 2
+    assert rendered.spoken_item_count == 3
+
+
+def test_render_natural_bullet_list_supports_number_markers() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "I have 4 points. Number one reset permissions. Number two run the fullgate. "
+        "Number three test commands."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "- reset permissions\n"
+        "- run the fullgate\n"
+        "- test commands"
+    )
+    assert rendered.claimed_item_count == 4
+    assert rendered.spoken_item_count == 3
+
+
+def test_render_natural_bullet_list_respects_formatting_negation() -> None:
+    assert (
+        render_natural_bullet_list_dictation(
+            "Do not make this a bullet list. I have 3 things, first alpha, second beta, third gamma."
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(

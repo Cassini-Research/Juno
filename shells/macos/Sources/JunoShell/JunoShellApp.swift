@@ -995,6 +995,7 @@ enum JunoBroker {
         let utteranceId: String?
         let pasteKind: String?
         let noopReason: String?
+        let recoverableTranscript: String?
         let degradedWriter: Bool
         let stage: String?
         let transcriptStage: String?
@@ -1327,6 +1328,7 @@ enum JunoBroker {
                 utteranceId: obj["utterance_id"] as? String,
                 pasteKind: obj["paste_kind"] as? String,
                 noopReason: obj["noop_reason"] as? String,
+                recoverableTranscript: obj["recoverable_transcript"] as? String,
                 degradedWriter: (obj["degraded_writer"] as? Bool) ?? false,
                 stage: stage,
                 transcriptStage: stage,
@@ -5042,16 +5044,21 @@ final class DictationController: ObservableObject {
                 // decoded. Still suppress the literal command text; pasting
                 // "Juno take a note..." is worse than a quiet failed action.
                 liveSpeechHint = "Juno action could not run."
+                let recovered = (response.recoverableTranscript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 showTransientActionHUD(
                     title: "Action could not run",
-                    subtitle: "Try again from the Actions page after checking setup.",
+                    subtitle: recovered.isEmpty
+                        ? "Try again from the Actions page after checking setup."
+                        : "Your words are kept — tap to copy, or see History.",
                     symbolName: "exclamationmark.triangle.fill",
                     isFailure: true
                 )
                 lastPastedFromBroker = ""
                 accumulatedText = ""
                 pendingRevisionFullTranscript = nil
-                copyableTranscript = nil
+                // Never erase the user's words: rejected actions keep the
+                // spoken text recoverable from the copy surface + History.
+                copyableTranscript = recovered.isEmpty ? nil : recovered
                 syncLiveDisplayTranscript()
                 if !isFinal {
                     resetForNextPauseUtterance(
@@ -5458,11 +5465,15 @@ final class DictationController: ObservableObject {
         }
 
         func deleteRecentReplaceTargetIfNeeded() {
+            // focused_text_before targets count chars from the paragraph
+            // start to the caret (incl. trailing whitespace), so the same
+            // delete-back-from-caret removal is exact for them too.
             guard finalPasteKind == "replace",
                   !suppressPartialPasteForSelectionEditing,
                   !deletedRecentReplaceTarget,
                   pendingFinalReplaceTarget == "recent_clipboard"
-                    || pendingFinalReplaceTarget == "recent_commit",
+                    || pendingFinalReplaceTarget == "recent_commit"
+                    || pendingFinalReplaceTarget == "focused_text_before",
                   pendingFinalReplaceTargetChars > 0 else {
                 return
             }
