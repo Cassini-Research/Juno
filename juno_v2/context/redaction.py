@@ -8,7 +8,7 @@ from juno_v2.contracts.context import RedactionSummary
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 _URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
 _DIGIT_SEQUENCE_RE = re.compile(r"\b\d{4,}\b")
-_SECRET_RE = re.compile(r"\b(?:otp|passcode|password|secret|pin)\s*[:=-]?\s*\S+", re.I)
+_SECRET_RE = re.compile(r"\b(?:otp|passcode|password|secret|pin)\b\s*[:=-]?\s*\S+", re.I)
 
 
 class ContextRedactor:

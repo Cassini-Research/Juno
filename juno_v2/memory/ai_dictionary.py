@@ -37,7 +37,8 @@ AI_GLOSSARY: frozenset[str] = frozenset(
         "Falcon",
         "Vicuna",
         "Mamba",
-        "Yi",
+        # "Yi" deliberately absent: 2 chars violates the ≥3 curation rule
+        # above and makes near-miss repair too eager on short tokens.
         "Solar",
         "Zephyr",
         "Orca",

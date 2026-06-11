@@ -5593,8 +5593,7 @@ final class DictationController: ObservableObject {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
                     accumulatedText = finalText
-                    copyableTranscript = nil
-                    flashTransientDone(for: finalText)
+                    presentFinalTextReveal(for: finalText)
                     triggerDraftFlash()
                     let crossed = JunoLifetimeWords.recordWords(from: finalText)
                     JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
@@ -5625,8 +5624,7 @@ final class DictationController: ObservableObject {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
                     accumulatedText = finalText
-                    copyableTranscript = nil
-                    flashTransientDone(for: finalText)
+                    presentFinalTextReveal(for: finalText)
                     triggerDraftFlash()
                 } else {
                     if replacingPartial && lastObservedPastePosted {
@@ -5655,8 +5653,7 @@ final class DictationController: ObservableObject {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = textToPaste
                     accumulatedText = textToPaste
-                    copyableTranscript = nil
-                    flashTransientDone(for: textToPaste)
+                    presentFinalTextReveal(for: textToPaste)
                     triggerDraftFlash()
                     let crossed = JunoLifetimeWords.recordWords(from: textToPaste)
                     JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
@@ -5685,8 +5682,7 @@ final class DictationController: ObservableObject {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = textToPaste
                     accumulatedText = textToPaste
-                    copyableTranscript = nil
-                    flashTransientDone(for: textToPaste)
+                    presentFinalTextReveal(for: textToPaste)
                     triggerDraftFlash()
                     let crossed = JunoLifetimeWords.recordWords(from: textToPaste)
                     JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
@@ -5707,11 +5703,20 @@ final class DictationController: ObservableObject {
         pendingRevisionFullTranscript = nil
 
         let insertionOk = !finalText.isEmpty && finalPasteSucceeded
+        // An empty final transcript means no paste was ever attempted (the
+        // writer consumed the utterance as a command, or the engine gated
+        // it). Without an explicit reason the broker defaults the row to
+        // "paste_failed" and History claims Juno "could not insert text" —
+        // wrong: there was nothing to insert. Report a distinct code.
+        var reportedFailureReason = finalPasteFailureReason
+        if !insertionOk, finalText.isEmpty, reportedFailureReason == nil {
+            reportedFailureReason = "empty_final_text"
+        }
         postInsertionCommitted(
             transcript: committedFinalText,
             ok: insertionOk,
             pasteKind: finalPasteKind,
-            failureReason: insertionOk ? nil : finalPasteFailureReason,
+            failureReason: insertionOk ? nil : reportedFailureReason,
             pasteAttempted: finalPasteAttempted
         )
 
@@ -6064,7 +6069,7 @@ final class DictationController: ObservableObject {
             pasteFailureReason = "no_active_text_field"
         }
         if ok {
-            flashTransientDone(for: text)
+            presentFinalTextReveal(for: text)
             triggerDraftFlash()
             let crossed = JunoLifetimeWords.recordWords(from: text)
             JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
@@ -6180,6 +6185,25 @@ final class DictationController: ObservableObject {
         }
         clearDoneWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.35, execute: work)
+    }
+
+    /// Post-paste HUD reveal for the final transcript.
+    ///
+    /// With live preview ON the user already watched the words stream in, so
+    /// a transient "Text placed +N" flash is enough. With preview OFF this
+    /// moment is the first time the text is visible at all, so surface the
+    /// full final text in the expanded copy-ready island (full transcript +
+    /// Copy ⌘C / esc) — the same reveal the preview-on flow gives at done.
+    /// The overlay root swaps the compact pill for the expanded island while
+    /// ``copyableTranscript`` is set.
+    private func presentFinalTextReveal(for text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !JunoUserDefaults.hudLiveTranscriptionsEnabled, !trimmed.isEmpty {
+            copyableTranscript = text
+        } else {
+            copyableTranscript = nil
+            flashTransientDone(for: text)
+        }
     }
 
     private func showActionHUDResult(_ results: [JunoActionResult]) {

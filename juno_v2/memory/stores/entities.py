@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+import unicodedata
+
 from juno_v2.contracts.memory import SessionEntity
 from juno_v2.memory.fold import fold_key
 from juno_v2.memory.stores._base import JsonFileStore
 from juno_v2.memory.term_policy import learned_term_allowed
+
+
+def _dedup_key(value: str) -> str:
+    """Dedup key for an entity value.
+
+    Non-Latin scripts (CJK, Cyrillic, ...) fold to "" by design — see
+    juno_v2/memory/fold.py. ``term_policy`` deliberately admits those
+    names, so fall back to a case/width-insensitive literal key instead
+    of dropping them. The ``raw:`` prefix cannot collide with fold keys
+    (fold keys only contain [a-z0-9]).
+    """
+    folded = fold_key(value)
+    if folded:
+        return folded
+    literal = unicodedata.normalize("NFKC", value).casefold().strip()
+    return f"raw:{literal}" if literal else ""
 
 
 class EntityStore:
@@ -34,11 +52,11 @@ class EntityStore:
             data = self._fs.read([])
             index: dict[str, int] = {}
             for i, item in enumerate(data):
-                k = fold_key(str(item.get("value", "")))
+                k = _dedup_key(str(item.get("value", "")))
                 if k:
                     index[k] = i
             for entity in clean:
-                key = fold_key(entity)
+                key = _dedup_key(entity)
                 if not key:
                     continue
                 if key in index:
