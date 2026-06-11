@@ -1040,6 +1040,25 @@ def test_protected_context_can_repair_common_word_to_glossary_term() -> None:
     assert replacements == [{"from": "gamma", "to": "Gemma", "source": "protected_term_near_miss"}]
 
 
+def test_screen_term_does_not_pluralize_common_word_in_user_speech() -> None:
+    # Production 2026-06-11: Juno's own sidebar phrase made "Actions" a
+    # repair target and "take a note, action items…" became "Actions
+    # items…", which then broke turn-plan span grounding for the note body.
+    # A common word and its own plural are the same word inflected, never a
+    # near-miss.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Hey Juno, take a note, action items need to be finished",
+        protected_terms=(
+            "Juno Home History Actions Voice Commands Styles Dictionary",
+            "Actions",
+            "Juno",
+        ),
+    )
+
+    assert repaired == "Hey Juno, take a note, action items need to be finished"
+    assert replacements == []
+
+
 def test_protected_context_does_not_rewrite_proper_term_to_common_word() -> None:
     repaired, replacements = _reconcile_protected_term_near_misses(
         text="Please send the Solara investor brief.",

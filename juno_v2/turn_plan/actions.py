@@ -105,6 +105,12 @@ def _coerce_action(
     body = str(raw.get("body") or "").strip()
     if evidence and not span_present(evidence, source_text):
         return None, f"action_{idx}_evidence_not_grounded", missing_fields
+    if not evidence and body and not span_present(body, source_text):
+        # Without grounded evidence the body itself must be a source span,
+        # or a hallucinated/rewritten body could ship into Notes/Reminders.
+        # Mirrors the plan validator's per-action rule, enforced here so a
+        # single ungrounded action skips instead of failing the plan.
+        return None, f"action_{idx}_body_not_grounded", missing_fields
     body = _strip_action_invocation_prefix(kind, body, source_text=source_text)
     body = _latest_self_correction_tail(body)
     evidence = _latest_self_correction_tail(evidence)

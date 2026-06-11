@@ -2871,18 +2871,16 @@ final class DictationController: ObservableObject {
     /// also covers mid-recording cancel and refining cancel where the broker call
     /// is allowed to complete in the background but its result is dropped.
     func cancelDictation() {
-        // Persist whatever the user said before they hit Esc as a "draft"
-        // history row. The broker upserts this verbatim with
-        // failure_reason="user_cancelled_hud" and paste_kind="none" so the
-        // user can find it later in History → Issues. The POST is fire-
-        // and-forget; if the broker is down or the row already exists with
-        // a transcript, the request is a no-op.
-        persistHudCancelDraftIfNeeded()
-
         switch hudState {
         case .idle:
             // Idle but copy-ready: dismissing the copy panel counts as cancel.
+            // Idle with NOTHING to cancel must be a no-op for history:
+            // ``juno-hotkey`` forwards every global Esc press system-wide, so
+            // an Esc in another app after a successful paste was retroactively
+            // stamping failure_reason="user_cancelled_hud" onto a row that
+            // pasted fine (production 2026-06-11).
             if copyableTranscript != nil {
+                persistHudCancelDraftIfNeeded()
                 copyableTranscript = nil
                 transientDoneWordCount = nil
             }
@@ -2893,12 +2891,19 @@ final class DictationController: ObservableObject {
         case .refining:
             // Recognition already torn down; let the broker call resolve but discard
             // its result on arrival via the cancel marker so it can't paste.
+            // (``persistHudCancelDraftIfNeeded`` skips refining by design —
+            // the pipeline owns history for in-flight broker calls.)
             cancelInFlightBrokerInsertion = true
             goIdleOnMain()
             return
         default:
             break
         }
+        // Mid-recording cancel: persist what the user said before Esc as a
+        // "draft" history row. The broker upserts this verbatim with
+        // failure_reason="user_cancelled_hud" and paste_kind="none" so the
+        // user can find it later in History → Issues. Fire-and-forget.
+        persistHudCancelDraftIfNeeded()
         teardownRecognition()
         micWatchdog?.cancel()
         micWatchdog = nil

@@ -102,7 +102,14 @@ def validate_turn_plan(
         errors.append("too_many_actions")
     elif actions:
         for idx, action in enumerate(actions):
-            errors.extend(_validate_action_dict(action, idx=idx, source_text=source_text))
+            # Per-action problems are warnings, not plan-fatal errors:
+            # actions_from_turn_plan re-checks every one of these and skips
+            # the offending action while shipping valid siblings. Failing
+            # the whole plan here forced a slow model repair pass over a
+            # plan that coercion could already salvage (production
+            # 2026-06-11: one ungrounded note body rejected a five-action
+            # utterance after the repair decode returned garbage).
+            warnings.extend(_validate_action_dict(action, idx=idx, source_text=source_text))
 
     transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
     if transform:

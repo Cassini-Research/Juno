@@ -334,6 +334,30 @@ class TurnPlanner:
                 )
                 _normalize_result(fallback_result, packet.final_text)
                 return fallback_result
+        if not repaired.ok and isinstance(prior.plan, dict):
+            # The repair decode produced nothing usable (observed: the model
+            # echoed the turn_repair_v1 request back instead of emitting a
+            # plan). The prior plan at least parsed — return it so per-action
+            # validation and coercion can salvage what is grounded, rather
+            # than failing the whole turn (production 2026-06-11).
+            return TurnPlanResult(
+                plan=prior.plan,
+                status="ok",
+                backend_name=repaired.backend_name or prior.backend_name,
+                decode_ms=prior.decode_ms + repaired.decode_ms,
+                raw_output=repaired.raw_output,
+                errors=[],
+                repair_attempted=True,
+                repair_status=f"unusable_repair_kept_initial:{repaired.status}",
+                initial_status=prior.status,
+                initial_errors=list(prior.errors),
+                validation_errors_before_repair=list(validation_errors or []),
+                validation_warnings_before_repair=list(validation_warnings or []),
+                normalization_notes=[
+                    *repaired.normalization_notes,
+                    "repair_unusable_initial_plan_restored",
+                ],
+            )
         repaired.repair_attempted = True
         repaired.repair_status = "ok" if repaired.ok else repaired.status
         repaired.initial_status = prior.status

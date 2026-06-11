@@ -27,6 +27,7 @@ from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.modes.defaults import BUILTIN_MODES
 from juno_v2.transcript.adjudicator import TranscriptAdjudicatorConfig
 from juno_v2.turn_plan import actions_from_turn_plan, render_turn_plan, validate_turn_plan
+from juno_v2.turn_plan.planner import TurnPlanPacket, TurnPlanResult, TurnPlanner
 from juno_v2.turn_plan.planner import normalize_turn_plan
 from juno_v2.turn_plan.planner import _fallback_structural_turn_plan, _json_object, _result_from_backend
 from juno_v2.writer.backends.mlx_lm import (
@@ -722,8 +723,11 @@ def test_turn_plan_rejects_incomplete_reminder_without_executing_or_pasting_body
     validation = validate_turn_plan(plan, source_text=source, context=TypedContextBundle(app_category="docs"))
     parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 8, 12, 0))
 
-    assert not validation.ok
-    assert "action_0_missing_body" in validation.errors
+    # Per-action problems are validation warnings (plan survives), but the
+    # incomplete reminder must still neither execute nor paste: coercion
+    # rejects it.
+    assert validation.ok
+    assert "action_0_missing_body" in validation.warnings
     assert parsed.actions is None
     assert parsed.rejected_reason == "action_0_missing_body"
 
@@ -2760,6 +2764,127 @@ def test_turn_planner_uses_structural_fallback_after_invalid_repaired_plan() -> 
     assert result.metadata["turn_plan"]["validation_errors_before_repair"]
     assert result.metadata["turn_plan"]["render"]["claimed_item_count"] == 10
     assert result.metadata["turn_plan"]["render"]["spoken_item_count"] == 3
+
+
+def _actions_plan_with_one_ungrounded_body(source: str) -> dict[str, Any]:
+    return {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                "kind": "alarm",
+                "operation": "create",
+                "body": "call Atharv",
+                "evidence_span": "tomorrow 9pm to call Atharv",
+                "schedule": {"kind": "instant", "source_span": "tomorrow 9pm"},
+                "missing_fields": [],
+            },
+            {
+                # Planner rewrote the note body so it is no longer a source
+                # span, and gave no evidence (production 2026-06-11:
+                # action_4_body_not_grounded rejected the whole plan).
+                "kind": "note",
+                "operation": "create",
+                "body": "Fix every bug in the Juno launch build",
+                "evidence_span": "",
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+
+def test_per_action_validation_failures_are_warnings_not_plan_fatal() -> None:
+    source = "Hey Juno, set an alarm tomorrow 9pm to call Atharv, add a note about bugs"
+    plan = _actions_plan_with_one_ungrounded_body(source)
+
+    validation = validate_turn_plan(plan, source_text=source, context=TypedContextBundle(app_category="unknown"))
+
+    assert validation.ok
+    assert validation.errors == []
+    assert "action_1_body_not_grounded" in validation.warnings
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 13, 33))
+
+    assert parsed.actions is not None
+    assert [a.kind.value for a in parsed.actions] == ["alarm"]
+    assert parsed.skipped_reasons == ["action_1_body_not_grounded"]
+
+
+def test_single_bad_action_does_not_trigger_repair_pass() -> None:
+    source = "Hey Juno, set an alarm tomorrow 9pm to call Atharv, add a note about bugs"
+    # No turn_repair_v1 response registered: a repair attempt would KeyError.
+    backend = _TaskBackend({"turn_planning_v1": _actions_plan_with_one_ungrounded_body(source)})
+    recorder = _Recorder()
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=recorder,
+        backend=backend,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-partial-actions",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(app_name="System Settings", app_category="unknown"),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result is not None
+    assert [str((req.context_payload or {}).get("task")) for req in backend.requests] == ["turn_planning_v1"]
+    generated = [
+        args[2]
+        for args, _kwargs in recorder.events
+        if len(args) > 2 and args[1] == "turn_plan_generated"
+    ]
+    assert len(generated) == 1
+    payload = generated[0]
+    assert payload["repair_attempted"] is False
+    assert payload["validation_ok"] is True
+    assert "action_1_body_not_grounded" in payload["validation_warnings"]
+
+
+def test_unusable_repair_restores_initial_plan() -> None:
+    source = "Hey Juno, set an alarm tomorrow 9pm to call Atharv, add a note about bugs"
+    initial_plan = _actions_plan_with_one_ungrounded_body(source)
+    # The repair decode echoes the turn_repair_v1 request back instead of a
+    # plan — exactly what production logged on 2026-06-11.
+    echoed_request = {
+        "task": "turn_repair_v1",
+        "utterance_id": "utt-echo",
+        "source_text": source,
+        "allowed_values": {"utterance_kind": ["dictation", "actions"]},
+        "invalid": {"status": "ok", "errors": []},
+    }
+    backend = _TaskBackend({"turn_repair_v1": echoed_request})
+    planner = TurnPlanner(backend)
+    packet = TurnPlanPacket(
+        utterance_id="utt-echo",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(app_name="System Settings", app_category="unknown"),
+    )
+    prior = TurnPlanResult(plan=initial_plan, status="ok")
+
+    repaired = planner.repair(packet, prior, validation_errors=["action_1_body_not_grounded"])
+
+    assert repaired.ok
+    assert repaired.plan is initial_plan
+    assert repaired.repair_attempted is True
+    assert str(repaired.repair_status).startswith("unusable_repair_kept_initial:")
+    assert "repair_unusable_initial_plan_restored" in repaired.normalization_notes
 
 
 def test_turn_planner_uses_generic_structural_fallback_after_bad_qwen_json() -> None:

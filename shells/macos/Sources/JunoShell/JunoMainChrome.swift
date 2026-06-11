@@ -4388,12 +4388,14 @@ struct JunoMainShellView: View {
                 .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.88))
                 .lineLimit(2)
 
+            // Explicit break after the heart: the sidebar is too narrow for
+            // one line, and a natural wrap split "Cassini / Research Team".
             (Text("Made with ")
                 + Text("♥").foregroundColor(JunoDesignTokens.danger.opacity(0.85))
-                + Text(" by Cassini Research Team"))
+                + Text("\nby Cassini Research Team"))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.7))
-                .lineLimit(2)
+                .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel(Text("Made with love by Cassini Research Team"))
         }

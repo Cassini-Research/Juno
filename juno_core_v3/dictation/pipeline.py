@@ -3759,6 +3759,15 @@ def _single_token_has_identifier_shape(value: str) -> bool:
     )
 
 
+def _single_letter_inflection_pair(a: str, b: str) -> bool:
+    """True when ``a`` and ``b`` are the same word ± a trailing inflection
+    suffix ("action"/"actions", "branch"/"branches")."""
+    for x, y in ((a, b), (b, a)):
+        if x == y + "s" or x == y + "es":
+            return True
+    return False
+
+
 def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool = False) -> bool:
     """True if ``observed`` is a near-miss for ``term``.
 
@@ -3786,6 +3795,20 @@ def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool
     if obs_folded in _COMMON_PHONETIC_REPAIR_WORDS:
         return False
     if static_glossary and common_english_single_word(obs_folded):
+        return False
+    if (
+        common_english_single_word(obs_folded)
+        and _single_letter_inflection_pair(obs_folded, target_folded)
+        and not _single_token_has_identifier_shape(target)
+    ):
+        # A common word and its own plural/singular are not an ASR
+        # near-miss — they are the same word inflected, and "repairing"
+        # one into the other rewrites the user's grammar. Screen-term
+        # phrase tokens made Juno's own sidebar label eligible here and
+        # "take a note, action items…" became "Actions items…" — which
+        # then broke turn-plan span grounding for the note body
+        # (production 2026-06-11). Distinct words that merely look alike
+        # ("gamma" → protected "Gemma") still repair.
         return False
     if (
         len(obs_folded) > len(target_folded)
