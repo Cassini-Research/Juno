@@ -43,6 +43,9 @@ from typing import Any, Protocol
 import numpy as np
 
 from juno_v2.contracts.preview import PreviewDecodeRequest
+from juno_v2.memory.hallucination import (
+    looks_like_hallucination as looks_like_memory_hallucination,
+)
 from juno_v2.preview.live_agreement import (
     HypothesisBuffer,
     absolute_words,
@@ -132,6 +135,7 @@ class StreamingPreviewState:
     quarantined_tail_norms: list[str] = field(default_factory=list)
     quarantined_tail_reason: str | None = None
     silence_tail_norms: list[str] = field(default_factory=list)
+    silence_empty_decode_tail_preserved_events: int = 0
     silence_tail_quarantine_events: int = 0
     # Fingerprint of the audio buffer at the most recent silence-confirmation
     # decode. We refuse to re-run a silence-confirmation pass over identical
@@ -346,12 +350,29 @@ class StreamingPreviewSessionManager:
             state.quarantined_tail_reason = None
             if not decode_on_silence:
                 state.silence_tail_norms = []
-            replay_drop_reason = state.hypothesis.insert(new_words)
-            if replay_drop_reason is not None:
-                state.committed_replay_suppressed_events += 1
-            newly_committed = state.hypothesis.flush()
-            if state.hypothesis.last_flush_replay_drop_reason is not None:
-                state.committed_replay_agreement_drops += 1
+            if (decode_on_silence or semantic_final) and not new_words and state.hypothesis.tail:
+                # An empty decode over a silent (or trimmed) buffer is not
+                # evidence AGAINST the pending tail: the tail's words live in
+                # audio that has been trimmed out of the rolling buffer, so
+                # re-decoding what remains can never re-produce them. Feeding
+                # the empty hypothesis into LocalAgreement erased the tail
+                # outright (production 2026-06-11: a faint-mic "in the
+                # preview" vanished across a segment boundary and the HUD
+                # froze mid-word). Keep the tail as internal evidence — the
+                # display guards below still decide whether it is shown, and
+                # the final-flush gates still decide whether it ever commits
+                # (content-suspicious tails stay blocked there).
+                state.quarantined_tail_norms = previous_quarantined_tail_norms
+                state.quarantined_tail_reason = previous_quarantined_tail_reason
+                state.silence_empty_decode_tail_preserved_events += 1
+                newly_committed = []
+            else:
+                replay_drop_reason = state.hypothesis.insert(new_words)
+                if replay_drop_reason is not None:
+                    state.committed_replay_suppressed_events += 1
+                newly_committed = state.hypothesis.flush()
+                if state.hypothesis.last_flush_replay_drop_reason is not None:
+                    state.committed_replay_agreement_drops += 1
             live_commit_budget = _MAX_LIVE_COMMIT_WORDS
             budget_prefix_len = _display_budget_prefix_len(newly_committed, live_commit_budget)
             if budget_prefix_len < len(newly_committed):
@@ -603,7 +624,23 @@ class StreamingPreviewSessionManager:
                 and unsafe_tail_reason == "tail_single_word_quarantine"
                 and tail_suppress_reason is None
             )
-            if unsafe_tail_reason is not None and not confirmed_budget_tail:
+            # Faint-audio quarantines (low signal / post-speech grace /
+            # silence-window decode) mean "the mic got quiet", not "this
+            # text is suspicious". At TRUE utterance end there is no later
+            # audio left to confirm the tail, so blocking it here discards
+            # the user's final words from the display (production
+            # 2026-06-11: "in the preview" was dropped and the HUD froze on
+            # a truncated word). Promote such tails when they pass the same
+            # content guards used everywhere else; content-suspicion
+            # quarantines (BoH blocklist, loops, fragments) stay blocked.
+            rescued_faint_tail = (
+                unsafe_tail_reason in _FINAL_RESCUABLE_TAIL_QUARANTINE_REASONS
+                and not confirmed_budget_tail
+                and _final_quarantined_tail_promotable(
+                    state, max_words=tail_promotion_max_words
+                )
+            )
+            if unsafe_tail_reason is not None and not confirmed_budget_tail and not rescued_faint_tail:
                 tail_final_promotion_status = "blocked"
                 tail_final_promotion_reason = unsafe_tail_reason
                 state.tail_final_promotion_blocked_events += 1
@@ -615,8 +652,22 @@ class StreamingPreviewSessionManager:
                 tail_final_promotion_reason = "tail_promotion_chunk_budget"
                 state.tail_final_promotion_blocked_events += 1
                 tail_text = state.hypothesis.tail_text()
+            elif looks_like_memory_hallucination(state.hypothesis.tail_text()):
+                # The tail loop-detector only covers 2-4 word n-gram loops;
+                # single-word repetition loops ("ansa" × 5) reach this branch
+                # with no suppress reason because the display guard relaxes
+                # at final. Text-only heuristic (no confidence available)
+                # keeps the check conservative.
+                tail_final_promotion_status = "blocked"
+                tail_final_promotion_reason = "final_tail_hallucination"
+                state.tail_final_promotion_blocked_events += 1
+                if not retain_state_after_final:
+                    state.hypothesis.tail = []
+                tail_text = ""
             else:
                 tail_final_promotion_status = "promoted"
+                if rescued_faint_tail and unsafe_tail_reason is not None:
+                    tail_final_promotion_reason = f"rescued_{unsafe_tail_reason}"
                 state.tail_final_promotion_events += 1
                 promoted_tail = list(state.hypothesis.tail)
                 promoted_tail, boundary_revision_reason = (
@@ -659,6 +710,19 @@ class StreamingPreviewSessionManager:
         elif req.is_final and preview_segment_final and state.hypothesis.tail:
             tail_final_promotion_status = "deferred"
             tail_final_promotion_reason = "segment_boundary"
+
+        # Belt-and-braces: no emit may end committed text on a dangling
+        # unsupported letter, whatever path produced it. Production
+        # 2026-06-11: a buffer trim mid-word let a truncated "w" reach
+        # committed through a path the per-commit strip does not cover, and
+        # the HUD displayed "…let me see w" for the rest of the utterance.
+        # The strip is boundary-only and context-gated, so deliberate letter
+        # dictation ("press D") still survives.
+        if decoded is not None and state.hypothesis.committed:
+            emit_letter_strip_reason = _strip_unsupported_boundary_letters(state)
+            if emit_letter_strip_reason is not None:
+                state.committed_boundary_letter_strips += 1
+                committed_text = state.hypothesis.committed_text()
 
         if bool(context_payload.get("preview_display_orthography")):
             committed_text, tail_text, orthography_meta = normalize_preview_orthography(
@@ -1425,6 +1489,16 @@ _TAIL_COMMIT_QUARANTINE_REASONS = {
     "tail_low_signal_quarantine",
     "tail_low_confidence_single_word_quarantine",
 }
+# Quarantine reasons that mean "the audio got quiet", not "this text is
+# suspicious". At true utterance end such tails may be promoted after the
+# content guards in _final_quarantined_tail_promotable pass — there is no
+# later audio left to confirm them, and blocking discards real final words
+# spoken into a faint microphone.
+_FINAL_RESCUABLE_TAIL_QUARANTINE_REASONS = {
+    "tail_low_signal_quarantine",
+    "tail_post_speech_grace_quarantine",
+    "tail_silence_decode_quarantine",
+}
 _MAX_LIVE_COMMIT_WORDS = 4
 _MAX_SEGMENT_FINAL_TAIL_PROMOTION_WORDS = 0
 _MAX_FINAL_TAIL_PROMOTION_WORDS = 12
@@ -1460,6 +1534,45 @@ def _display_budget_prefix_len(words: list[Word], max_words: int) -> int:
             return idx
         total += count
     return len(words)
+
+
+def _final_quarantined_tail_promotable(
+    state: "StreamingPreviewState",
+    *,
+    max_words: int,
+) -> bool:
+    """Content guards for promoting a faint-audio quarantined tail at true
+    utterance end. Mirrors :func:`_silence_agreement_commit_safe`'s checks
+    but uses the final-promotion word budget and the last tail-evaluation
+    ``no_speech_prob`` (whisper's own silence posterior) as the audio-side
+    veto."""
+    words = state.hypothesis.tail
+    if not words or _display_word_count(words) > max_words:
+        return False
+    norms = [w.normalized for w in words if w.normalized]
+    if not norms:
+        return False
+    if any(_is_unsupported_boundary_letter(norm) for norm in norms):
+        return False
+    if len(norms) == 1 and norms[0] in _SILENCE_ONLY_SINGLE_WORD_BLOCKLIST:
+        return False
+    text = " ".join(w.text for w in words).strip()
+    if not text:
+        return False
+    guarded, reason = _guard_tail_hallucination(text)
+    if reason is not None or guarded.strip() != text:
+        return False
+    # The tail loop detector only covers 2-4 word n-gram loops; the
+    # memory-lane heuristic adds single-word repetition, char dominance,
+    # and mixed-script shapes. No confidence is available here, which
+    # keeps it on its conservative text-only path.
+    if looks_like_memory_hallucination(text):
+        return False
+    nsp = state.last_tail_no_speech_prob
+    if nsp is not None and nsp >= 0.6:
+        # Whisper itself says the tail's window was non-speech — keep blocked.
+        return False
+    return True
 
 
 def _silence_agreement_commit_safe(

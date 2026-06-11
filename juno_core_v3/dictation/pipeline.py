@@ -109,6 +109,7 @@ from juno_v2.memory.entity_policy import (
 from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.memory.hallucination import (
     looks_like_hallucination,
+    looks_like_low_yield_garbage,
     looks_like_silence_hallucination,
     strip_leading_prompt_echo,
     strip_trailing_silence_hallucination,
@@ -1064,7 +1065,14 @@ class OneShotDictationPipeline:
                 frozen_context_merged=frozen_context_merged,
                 transcript_stage=stage,
             )
-        if not live_adjudication and raw_text and looks_like_hallucination(raw_text, confidence=confidence_hint):
+        if not live_adjudication and raw_text and (
+            looks_like_hallucination(raw_text, confidence=confidence_hint)
+            or looks_like_low_yield_garbage(
+                raw_text,
+                confidence=confidence_hint,
+                audio_duration_ms=result.audio_duration_ms,
+            )
+        ):
             fallback_hint = _usable_transcript_hint_fallback(transcript_hint)
             if fallback_hint and not live_adjudication:
                 final_asr_hallucination_fallback = {
