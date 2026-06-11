@@ -22,7 +22,9 @@ from juno_v2.transcript.patching import (
     visible_text_hash,
 )
 from juno_v2.transcript.validators import (
+    remove_instructional_exclusion_phrases,
     repair_low_signal_mid_sentence_capitalization,
+    restore_explicit_final_word_tail,
     validate_adjudication_result,
 )
 from juno_v2.writer.backends.base import WriterBackend
@@ -263,6 +265,19 @@ class TranscriptAdjudicator:
                 parsed.corrected_text = repaired_text
                 parsed.metadata = dict(parsed.metadata or {})
                 parsed.metadata["low_signal_capitalization_repairs"] = capitalization_repairs[:16]
+            exclusion_text, exclusion_repairs = remove_instructional_exclusion_phrases(
+                packet,
+                parsed.corrected_text,
+            )
+            if exclusion_repairs and exclusion_text != parsed.corrected_text:
+                parsed.corrected_text = exclusion_text
+                parsed.metadata = dict(parsed.metadata or {})
+                parsed.metadata["instructional_exclusion_repairs"] = exclusion_repairs[:8]
+            tail_text, tail_restore = restore_explicit_final_word_tail(packet, parsed.corrected_text)
+            if tail_restore and tail_text != parsed.corrected_text:
+                parsed.corrected_text = tail_text
+                parsed.metadata = dict(parsed.metadata or {})
+                parsed.metadata["explicit_final_word_tail_restore"] = tail_restore
         ok, reason = validate_adjudication_result(packet, parsed)
         if not ok:
             parsed.rejected = True

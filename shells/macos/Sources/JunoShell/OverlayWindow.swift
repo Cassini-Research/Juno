@@ -151,7 +151,12 @@ struct JunoOverlayView: View {
 
     var body: some View {
         Group {
-            if liveTranscriptionsEnabled {
+            // The expanded island also takes over when a copy-ready final
+            // transcript is showing with preview off: that reveal is the
+            // first time the user sees their text, so it gets the full
+            // surface (whole transcript + Copy ⌘C / esc) instead of the
+            // compact pill. See `presentFinalTextReveal`.
+            if liveTranscriptionsEnabled || controller.copyableTranscript != nil {
                 JunoBrandIslandStack(controller: controller)
             } else {
                 JunoBrandIslandCompact(controller: controller)

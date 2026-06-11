@@ -75,7 +75,11 @@ def session_entity_allowed(value: str) -> bool:
         return False
     units = _word_units(v)
     if not units:
-        return False
+        # No Latin word units: non-Latin scripts (CJK, Devanagari, …).
+        # The common-English gates below exist because ordinary English
+        # words are cheap to hear and expensive as bias — that risk does
+        # not apply here, so any term with at least one letter is allowed.
+        return bool(re.search(r"[^\W\d_]", v))
     if len(units) == 1:
         return _single_token_entity_allowed(v, units[0])
     return _multi_token_entity_allowed(v, units)

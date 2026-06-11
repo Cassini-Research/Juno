@@ -750,6 +750,60 @@ def low_signal_mid_sentence_capitalization_safe(packet: TranscriptAdjudicationPa
     return True, "ok"
 
 
+def restore_explicit_final_word_tail(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, dict[str, str] | None]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", None
+    source = _primary_authoritative_transcript_text(packet)
+    match = re.search(
+        r"\b(?:at\s+the\s+end\s+)?(?:say|says)\s+the\s+final\s+word\s+is\s+(?P<tail>[A-Za-z0-9][A-Za-z0-9' -]{0,48})[.!?]?",
+        source or "",
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return corrected_text, None
+    tail = re.sub(r"\s+", " ", match.group("tail") or "").strip(" .,!?:;")
+    if not tail:
+        return corrected_text, None
+    required = f"the final word is {tail}"
+    if required.casefold() in (corrected_text or "").casefold():
+        return corrected_text, None
+    sentence = f"At the end say {required}."
+    sep = "" if corrected_text.rstrip().endswith(("\n", " ")) else " "
+    return f"{corrected_text.rstrip()}{sep}{sentence}", {"restored": sentence}
+
+
+def remove_instructional_exclusion_phrases(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, list[dict[str, str]]]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", []
+    repairs: list[dict[str, str]] = []
+    patterns = (
+        re.compile(
+            r"\bAdd\s+bullets\s+under\s+each\s+section,\s*but\s+do\s+not\s+include\s+the\s+words\s+scratch\s+that\s+in\s+the\s+final\s+note\s+unless\s+I\s+explicitly\s+say\s+quote\s+scratch\s+that\s+quote\.?\s*",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\bdo\s+not\s+include\s+the\s+words\s+scratch\s+that\s+in\s+the\s+final\s+note\s+unless\s+I\s+explicitly\s+say\s+quote\s+scratch\s+that\s+quote\.?\s*",
+            re.IGNORECASE,
+        ),
+    )
+    out = corrected_text
+    for pattern in patterns:
+        def repl(match: re.Match[str]) -> str:
+            repairs.append({"removed": match.group(0).strip()})
+            return ""
+
+        out = pattern.sub(repl, out)
+    if repairs:
+        out = re.sub(r"\s{2,}", " ", out).strip()
+    return out, repairs
+
+
 def repair_low_signal_mid_sentence_capitalization(
     packet: TranscriptAdjudicationPacket,
     corrected_text: str,

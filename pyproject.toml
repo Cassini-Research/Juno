@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "juno-voice"
-version = "0.2.0"
+version = "1.0.0"
 description = "Juno - local-first voice writing for Mac."
 readme = "README.md"
 requires-python = ">=3.10"

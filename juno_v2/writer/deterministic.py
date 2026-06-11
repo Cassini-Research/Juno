@@ -192,12 +192,23 @@ def _capitalize_sentence_starts(text: str) -> str:
 # Layer 3: newline policy
 # ---------------------------------------------------------------------- #
 
+# A cue preceded by a definite determiner/possessive is a mention of a
+# paragraph or line ("the new paragraph is short"), not a spoken command.
+# Indefinite articles are NOT guarded: "a new paragraph" is how the cue
+# itself is often spoken ("insert a new paragraph"). Python re needs
+# fixed-width lookbehinds, hence one per word.
+_NOT_AFTER_DETERMINER = (
+    r"(?<!\bthe )(?<!\bthis )(?<!\bthat )(?<!\beach )"
+    r"(?<!\bevery )(?<!\bmy )(?<!\byour )(?<!\bour )(?<!\btheir )(?<!\bits )"
+    r"(?<!\bhis )(?<!\bher )"
+)
+
 _NEWLINE_TOKEN_PATTERNS = [
     (re.compile(r"\b(?:okay|ok)[,\s]+go\s+to\s+(?:new\s+line|newline)\b\s*[.,!?]?", re.IGNORECASE), "\n"),
     (re.compile(r"\bgo\s+to\s+(?:new\s+line|newline)\b\s*[.,!?]?", re.IGNORECASE), "\n"),
-    (re.compile(r"\bnew\s+paragraph\b\s*[.,!?]?", re.IGNORECASE), "\n\n"),
-    (re.compile(r"\b(?:new\s+line|newline)\b\s*[.,!?]?", re.IGNORECASE), "\n"),
-    (re.compile(r"\bline\s+break\b\s*[.,!?]?", re.IGNORECASE), "\n"),
+    (re.compile(_NOT_AFTER_DETERMINER + r"\bnew\s+paragraph\b\s*[.,!?]?", re.IGNORECASE), "\n\n"),
+    (re.compile(_NOT_AFTER_DETERMINER + r"\b(?:new\s+line|newline)\b\s*[.,!?]?", re.IGNORECASE), "\n"),
+    (re.compile(_NOT_AFTER_DETERMINER + r"\bline\s+break\b\s*[.,!?]?", re.IGNORECASE), "\n"),
 ]
 
 

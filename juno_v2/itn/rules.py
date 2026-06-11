@@ -388,9 +388,13 @@ def _build_date_pattern() -> re.Pattern:
     ones_alts = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
     tens_alts = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
     num_alts = ones_alts + "|" + tens_alts
+    # Each year half may itself be a tens+ones compound ("twenty six"), so
+    # "twenty twenty six" splits as 20 / 26 → 2026, and "nineteen ninety
+    # nine" as 19 / 99 → 1999.
+    year_half = rf"(?:(?:{tens_alts})\s+(?:{ones_alts})|{num_alts})"
     return re.compile(
         rf"\b({month_alts})\s+({ordinal_alts}|\d{{1,2}})"
-        rf"(?:\s+({num_alts})\s+({num_alts}))?\b",
+        rf"(?:\s+({year_half})\s+({year_half}))?\b",
         re.IGNORECASE,
     )
 
@@ -438,12 +442,35 @@ _ONES_PAT = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
 _TENS_PAT = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
 _NUM_PAT = _ONES_PAT + "|" + _TENS_PAT
 
+# Dotted forms first, and `(?!\w)` instead of `\b`: after the trailing "."
+# of "p.m." there is no word boundary, so `p\.m\.\b` can never match.
+_MERIDIEM_PAT = r"a\.m\.|p\.m\.|am|pm"
+
 _TIME_PAT = re.compile(
-    rf"\b({_NUM_PAT})\s+({_NUM_PAT})\s+(am|pm|a\.m\.|p\.m\.)\b"
-    rf"|\b({_NUM_PAT})\s+(am|pm|a\.m\.|p\.m\.)\b"
+    rf"\b({_NUM_PAT})\s+({_NUM_PAT})\s+({_MERIDIEM_PAT})(?!\w)"
+    rf"|\b({_NUM_PAT})\s+({_MERIDIEM_PAT})(?!\w)"
     rf"|\b(\d{{1,2}})\s+hundred\b",
     re.IGNORECASE,
 )
+
+# Word-form military time. A bare "fourteen hundred" is ambiguous (it is
+# usually a quantity: "fourteen hundred people"), so word-form conversion
+# requires explicit time context: an "at " prefix or an "hours" suffix.
+_MILITARY_WORDS_PAT = re.compile(
+    rf"\b(?:(at)\s+)?((?:{_NUM_PAT})(?:\s+(?:{_NUM_PAT}))?)\s+hundred(\s+hours)?\b",
+    re.IGNORECASE,
+)
+
+
+def _convert_military_words(m: re.Match) -> str:
+    at_prefix, hour_words, hours_suffix = m.group(1), m.group(2), m.group(3)
+    if not at_prefix and not hours_suffix:
+        return m.group(0)
+    hour = _parse_number_words(hour_words.split())
+    if hour is None or not 0 <= hour <= 23:
+        return m.group(0)
+    prefix = f"{at_prefix} " if at_prefix else ""
+    return f"{prefix}{hour:02d}:00"
 
 
 def _convert_time(m: re.Match, fmt: ITNFormatPolicy) -> str:
@@ -468,6 +495,7 @@ def apply_times(text: str, fmt: ITNFormatPolicy | None = None) -> tuple[str, lis
     pol = fmt or ITNFormatPolicy.default()
     applied: list[str] = []
     out = _TIME_PAT.sub(lambda m: _convert_time(m, pol), text)
+    out = _MILITARY_WORDS_PAT.sub(_convert_military_words, out)
     if out != text:
         applied.append("times")
     return out, applied
@@ -656,9 +684,11 @@ def _spoken_punct_is_literal_mention(source: str, start: int, end: int) -> bool:
     # cues are spoken bare between content words; imperative phrasings like
     # "add a new paragraph" are writer commands and are not owned by this
     # inline rule either way.
+    # "one" is deliberately absent: numerals commonly precede dictated
+    # glyphs ("one em dash two" → "1 — 2"), unlike true determiners.
     if re.search(
         r"\b(?:the|a|an|this|that|these|those|each|every|any|no|my|your|our|"
-        r"his|her|its|their|one|first|second|third|last|next|previous|another|same)\s+$",
+        r"his|her|its|their|first|second|third|last|next|previous|another|same)\s+$",
         before,
     ):
         return True
@@ -862,22 +892,21 @@ def apply_spoken_punctuation(text: str) -> tuple[str, list[str]]:
                 else:  # punct
                     out.append(glyph)
                     out.append(" ")
-            # Skip following whitespace in input (we already added our own).
+            # Skip following whitespace in input — every kind owns its own
+            # trailing spacing. "open"/"tight" emit none, which is exactly
+            # why the spoken gap must be consumed here: "open paren example"
+            # attaches as "(example", "well hyphen known" as "well-known".
             j = m.end()
-            if kind in ("open", "tight"):
-                # leave the next char as-is
-                pass
-            else:
-                while j < n and interim[j] == " ":
+            while j < n and interim[j] == " ":
+                j += 1
+            if kind == "newline":
+                # Consume punctuation the ASR attached to the spoken cue
+                # ("New paragraph, text…" → the comma belongs to the cue,
+                # not the new paragraph).
+                while j < n and interim[j] in ".,;:!?":
                     j += 1
-                if kind == "newline":
-                    # Consume punctuation the ASR attached to the spoken cue
-                    # ("New paragraph, text…" → the comma belongs to the cue,
-                    # not the new paragraph).
-                    while j < n and interim[j] in ".,;:!?":
+                    while j < n and interim[j] == " ":
                         j += 1
-                        while j < n and interim[j] == " ":
-                            j += 1
             i = j
             continue
         out.append(interim[i])

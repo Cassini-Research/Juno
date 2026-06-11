@@ -47,10 +47,20 @@ _ADD_TERM_RULES = [
     re.compile(r"\bremember\s+(?:the\s+word\s+|the\s+term\s+)?[\"']?(.+?)[\"']?\s+(?:as\s+a\s+word|in\s+my\s+dictionary)\b", re.I),
 ]
 
+# Anchored at the start of the (polite-prefix-stripped) utterance: the
+# utterance must BE the command. These used to be \b + search(), which
+# fired mid-sentence on ordinary prose ("we should change these two
+# buttons to ...") — the dictation was consumed as a memory mutation,
+# a junk replacement rule was written, and the empty writer output
+# surfaced in History as a bogus "could not insert text" failure.
+# `_strip_polite_prefix` removes "please"/"hey"/fillers but not the wake
+# word itself, so each rule accepts an optional leading "juno".
+_WAKE_PREFIX = r"(?:juno[,\s]+)?"
+
 _ADD_REPLACEMENT_RULES = [
-    (re.compile(r"\bremember\s+(?:that\s+)?[\"']?(.+?)[\"']?\s+(?:is|means|equals|should\s+be)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
-    (re.compile(r"\balways\s+(?:replace|change|use)\s+[\"']?(.+?)[\"']?\s+(?:with|as)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
-    (re.compile(r"\b(?:replace|change)\s+[\"']?(.+?)[\"']?\s+(?:to|with)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
+    (re.compile(rf"^{_WAKE_PREFIX}remember\s+(?:that\s+)?[\"']?(.+?)[\"']?\s+(?:is|means|equals|should\s+be)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
+    (re.compile(rf"^{_WAKE_PREFIX}always\s+(?:replace|change|use)\s+[\"']?(.+?)[\"']?\s+(?:with|as)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
+    (re.compile(rf"^{_WAKE_PREFIX}(?:replace|change)\s+[\"']?(.+?)[\"']?\s+(?:to|with)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
 ]
 
 _DETERMINISTIC_TRANSFORMS = [
@@ -260,7 +270,15 @@ class WriterIntentParser:
             if match:
                 trigger = match.group(trig_grp).strip().strip("'\"")
                 replacement = match.group(repl_grp).strip().strip("'\"")
-                if trigger and replacement and len(trigger) < 80 and len(replacement) < 80:
+                # Triggers are short phrases ("hey chino", "QBR"); a long
+                # trigger means a prose sentence slipped past the anchor.
+                if (
+                    trigger
+                    and replacement
+                    and len(trigger) < 80
+                    and len(trigger.split()) <= 6
+                    and len(replacement) < 80
+                ):
                     return WriterIntent(kind=WriterIntentKind.ADD_REPLACEMENT, raw_text=text, trigger=trigger, replacement=replacement)
 
         for pattern in _ADD_TERM_RULES:
