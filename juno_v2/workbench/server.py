@@ -1912,16 +1912,15 @@ class WorkbenchApp:
             "writer_enabled": True,
             "itn_enabled": True,
             "audio_save_enabled": True,
-            # When True the engine streams per-utterance preview decodes for
-            # the live HUD caption. When False (default) the engine session
+            # When True (default) the engine streams per-utterance preview
+            # decodes for the live HUD caption. When False the engine session
             # skips preview-lane decode invocations to save CPU/GPU; the model
             # remains downloaded and the resident streaming-preview service
             # stays warm so toggling back on is cheap. Read once at session
-            # start; mutating mid-session is undefined. Live captions are
-            # opt-in on every Mac — the shell mirrors the Settings toggle via
-            # JUNO_V2_LIVE_CAPTION_START_ENABLED and force-disables ineligible
-            # hosts via JUNO_V2_LIVE_CAPTION_ALLOWED.
-            "live_caption_enabled": _env_bool('JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED', False),
+            # start; mutating mid-session is undefined. The shell mirrors the
+            # Settings toggle via JUNO_V2_LIVE_CAPTION_START_ENABLED and
+            # force-disables ineligible hosts via JUNO_V2_LIVE_CAPTION_ALLOWED.
+            "live_caption_enabled": _env_bool('JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED', True),
             "language_mode": "auto",
             "smart_context": True,
             "use_selected_text": True,
@@ -4210,7 +4209,7 @@ class WorkbenchApp:
         if not uid:
             return {"ok": False, "error": "missing_utterance_id"}
         root_uid = str(payload.get("root_utterance_id") or uid).strip() or uid
-        if not bool(self._settings.get("live_caption_enabled", False)):
+        if not bool(self._settings.get("live_caption_enabled", True)):
             return {
                 "ok": True,
                 "text": "",
