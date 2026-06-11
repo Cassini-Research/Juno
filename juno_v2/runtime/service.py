@@ -539,7 +539,7 @@ class ProductionServiceRunner:
                 except Exception:  # noqa: BLE001 — never break startup over a stub
                     pass
                 _live_caption_enabled = bool(
-                    getattr(workbench_app, "_settings", {}).get("live_caption_enabled", False)
+                    getattr(workbench_app, "_settings", {}).get("live_caption_enabled", True)
                 )
                 artifacts.runner.preview_decode_enabled = _live_caption_enabled
         active_workbench_url: str | None = None
