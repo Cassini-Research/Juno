@@ -336,6 +336,8 @@ h1 em, h2 em {
 .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
 .footer nav { display: flex; flex-wrap: wrap; gap: 12px 20px; }
 .footer a:hover { color: var(--ink); }
+.footer-made { text-align: center; margin-top: 16px; color: var(--faint); }
+.footer-made .heart { color: #c0564f; }
 
 .reveal { opacity: 0; transform: translateY(14px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
 .reveal.in { opacity: 1; transform: none; }
@@ -458,6 +460,7 @@ h1 em, h2 em {
       <a href="https://github.com/Cassini-Research/Juno" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </div>
+  <div class="container footer-made">Made with <span class="heart" role="img" aria-label="love">&hearts;</span> by Cassini Research Team</div>
 </footer>
 
 <script>
