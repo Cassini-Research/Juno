@@ -722,6 +722,20 @@ def parse_when(clause: str, *, now: datetime | None = None) -> ParsedTime | None
 
     cleaned = clause.strip().rstrip(".,;:!?")
 
+    # Spoken dotted clocks ("11.30 pm") are colon clocks. dateparser
+    # handles most shapes, but "at 11.30 pm tomorrow" specifically makes
+    # it drop the clock and return tomorrow-at-now — an actively wrong
+    # answer at full confidence (production 2026-06-11: an alarm spoken
+    # as "at 11.30 pm tomorrow" was created for the wrong time). Only
+    # rewrite when a meridiem follows, so decimals ("3.5 hours") and
+    # version-like numbers are untouched.
+    cleaned = re.sub(
+        r"\b(\d{1,2})\.(\d{2})(?=\s*(?:a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\b)",
+        r"\1:\2",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
     # Tier 0: pre-empt dateparser for clauses where it produces *wrong*
     # answers (not None — actively misleading). Bare ordinal days like
     # "on the 5th" past today get returned by dateparser as "same date,

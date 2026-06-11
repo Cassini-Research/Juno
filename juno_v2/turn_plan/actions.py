@@ -174,7 +174,14 @@ def _coerce_action(
                         source_text=source_text,
                     )
                     body = _strip_leading_action_body_connector(body)
-            if when is None and schedule_kind == "instant":
+            if when is None and (schedule_kind == "instant" or kind is ActionKind.ALARM):
+                # An alarm without a parsed time can NEVER be created — the
+                # shell's alarm sink hard-fails with "An alarm needs a time."
+                # Shipping it timeless just converts a per-action skip into a
+                # user-visible red error chip (production 2026-06-11: a
+                # five-action utterance dispatched two timeless alarms whose
+                # planner schedule kind was "vague"). Untimed reminders stay
+                # legal — Reminders.app supports them.
                 missing_fields.append("schedule")
                 return None, f"action_{idx}_time_parse_failed", missing_fields
         elif kind is ActionKind.ALARM:
