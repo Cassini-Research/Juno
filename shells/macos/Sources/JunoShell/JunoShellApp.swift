@@ -6128,6 +6128,14 @@ final class DictationController: ObservableObject {
         let p = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty else { return }
         if fieldSnapshot.contains(p) { return }
+        // Terminals and rich editors re-wrap pasted text inside their AX
+        // value (hard newlines at column width, NBSP), so verbatim
+        // containment false-flags any paste longer than one visual line.
+        // That reopened the HUD as copy-ready after a successful paste —
+        // which also suppressed the dictation hotkey until the user pressed
+        // Esc (production 2026-06-11). Collapse all whitespace on both sides
+        // before declaring the paste missing.
+        if Self.whitespaceCollapsed(fieldSnapshot).contains(Self.whitespaceCollapsed(p)) { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {
@@ -6135,6 +6143,13 @@ final class DictationController: ObservableObject {
         } else {
             liveSpeechHint = "Text may not have landed — use Copy if needed."
         }
+    }
+
+    static func whitespaceCollapsed(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private func shouldLearnTextMonCorrection(observed: String, expected: String) -> Bool {

@@ -46,9 +46,15 @@ func writeErr(_ line: String) {
 }
 
 func emitValue(tag: String, value: String) {
-    let truncated = String(value.prefix(MAX_VALUE_BYTES))
+    // Keep the TAIL of oversized values, not the head: the consumer checks
+    // whether freshly pasted text is present, and in terminals the AX value
+    // is the whole scrollback — the paste lives at the end. `prefix` cropped
+    // the new text out, so every long-session paste verified as "missing"
+    // (production 2026-06-11: HUD reopened copy-ready after a successful
+    // paste and the copy-ready state suppressed the dictation hotkey).
+    let truncated = String(value.suffix(MAX_VALUE_BYTES))
     if truncated.contains("\n") || truncated.contains("\r") {
-        let capped = String(truncated.prefix(MAX_B64_INPUT))
+        let capped = String(truncated.suffix(MAX_B64_INPUT))
         let b64 = Data(capped.utf8).base64EncodedString()
         writeOut("\(tag)_B64:\(b64)")
     } else {
