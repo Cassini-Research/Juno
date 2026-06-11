@@ -6,6 +6,22 @@ Juno is a native Mac voice layer for people who want speech to become finished w
 
 It is designed to be local, private, and free to run from source. The runtime handles live preview, final transcription, writing cleanup, transformations, actions, dictionary and memory, app context, privacy gates, and native insertion without requiring a hosted transcription account.
 
+## How Juno Compares
+
+Juno next to Apple Dictation, Wispr Flow, and Superwhisper, across the loop that matters: live transcript, cleaned writing, Mac actions, rewrites, and price.
+
+| Difference | Juno | Apple Dictation | Wispr Flow | Superwhisper |
+| --- | --- | --- | --- | --- |
+| **Live HUD transcript** | Yes. Live HUD transcript while dictating. | No. Text appears in the current field. | No. Voice-to-text across apps. | No. Voice-to-text across apps. |
+| **Final cleaned writing** | Yes. Pauses, restarts, and corrections become finished text. | Basic dictation commands and punctuation. | Yes. Positioned around polished voice writing. | Yes. Custom AI modes and formatting. |
+| **Mac-native actions** | Yes. Notes, Reminders, and alarms from voice. | No. Dictation enters text. | No. Not the product center. | No. Not the product center. |
+| **Selected text rewrites** | Yes. Rewrite selected or recent text in place. | No. Built-in dictation is not a rewrite layer. | Yes. Command mode is in paid Pro. | Yes. Custom prompts and AI modes. |
+| **Price model** | Free forever. No paid tier, no usage cap. | Included with macOS. | Free Basic has word limits. Pro is paid. | Free tier. Pro and Enterprise are paid. |
+| **Open source** | Yes | No | No | No |
+| **Best reason to pick it** | You want private Mac work, not another SaaS meter. | You only need built-in speech-to-text. | You want a polished cross-platform voice-writing service. | You want a mature dictation app with meeting/file workflows. |
+
+The live version of this comparison is at [usejuno.co/#compare](https://usejuno.co/#compare).
+
 ## What Juno Does
 
 - Writes into the active Mac app from a hotkey.
