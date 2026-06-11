@@ -208,19 +208,22 @@ enum JunoUserDefaults {
         }
     }
 
-    /// Live transcriptions in the HUD. When ON (default) the floating HUD shows
-    /// the partial transcript as you speak (full island). When OFF the HUD
-    /// collapses to a tiny waveform pill, and the engine skips per-utterance
-    /// preview-lane decoding to save CPU/GPU. The model is still installed and
-    /// the resident streaming-preview service stays warm — we only suppress the
-    /// per-utterance `decode(...)` call.
+    /// Live transcriptions in the HUD. When ON the floating HUD shows the
+    /// partial transcript as you speak (full island). When OFF (default) the
+    /// HUD collapses to a tiny waveform pill, and the engine skips
+    /// per-utterance preview-lane decoding to save CPU/GPU. The model is
+    /// still installed and the resident streaming-preview service stays warm
+    /// — we only suppress the per-utterance `decode(...)` call.
+    ///
+    /// OFF by default on every Mac: live preview is the single most
+    /// expensive always-on lane, so it is strictly opt-in from Settings.
     static var hudLiveTranscriptionsEnabled: Bool {
         get {
             let ud = UserDefaults.standard
             // Hardware gate: live preview decoding is never enabled on Macs
             // below the resource floor (see ``JunoPreviewEligibility``).
             guard JunoPreviewEligibility.current.isEligible else { return false }
-            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return true }
+            if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return false }
             return ud.bool(forKey: hudLiveTranscriptionsEnabledKey)
         }
         set {
