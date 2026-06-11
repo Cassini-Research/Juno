@@ -1792,6 +1792,6 @@ def test_memory_phrases_not_subject_to_screen_gate() -> None:
     # Memory-lane phrases are policy-gated at learn time; serving keeps them
     # even when they would fail the screen-term shape gate.
     out = _diversify_bias_phrases(
-        ["o4-mini-high", "claude code"], screen_terms=[], cap=24
+        ["o4-mini-high", "luma-mode"], screen_terms=[], cap=24
     )
-    assert out == ["o4-mini-high", "claude code"]
+    assert out == ["o4-mini-high", "luma-mode"]
