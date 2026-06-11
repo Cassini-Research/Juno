@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/juno-banner.png" alt="Juno - Local Voice OS for Mac" width="1000">
+  <img src="assets/juno-banner.png" alt="Juno - Local Voice Layer for Mac" width="1000">
 </p>
 
 Juno is a native Mac voice layer for people who want speech to become finished work, not just a raw transcript. Press a hotkey, talk naturally, watch the live transcript, and let Juno commit the final text into the app you were already using.
