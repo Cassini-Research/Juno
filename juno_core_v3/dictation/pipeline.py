@@ -1844,8 +1844,24 @@ class OneShotDictationPipeline:
                                     "kinds": [a.kind.value for a in planned.actions],
                                     "mixed_paste_allowed": turn_plan_allows_mixed_paste,
                                     "missing_fields": list(planned.missing_fields),
+                                    "skipped_reasons": list(planned.skipped_reasons),
                                 },
                             )
+                            if planned.skipped_reasons:
+                                # Valid sibling actions shipped; these did not.
+                                # Distinct event so partially dropped commands
+                                # are findable without diffing counts.
+                                self.recorder.record(
+                                    TraceKind.SYSTEM,
+                                    "turn_plan_actions_partially_skipped",
+                                    {
+                                        "utterance_id": uid,
+                                        "skipped_count": len(planned.skipped_reasons),
+                                        "skipped_reasons": list(planned.skipped_reasons),
+                                        "accepted_count": len(planned.actions),
+                                        "missing_fields": list(planned.missing_fields),
+                                    },
+                                )
                         elif planned.rejected_reason and (
                             plan_kind in {"actions", "mixed"}
                             or bool(turn_plan_result.plan.get("actions"))

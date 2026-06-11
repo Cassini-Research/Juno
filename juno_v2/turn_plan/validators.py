@@ -196,6 +196,12 @@ def span_present(span: Any, source_text: str) -> bool:
 def _span_key(text: Any) -> str:
     s = str(text or "").casefold().strip()
     s = s.strip(" \t\r\n\"'`.,!?;:()[]{}<>")
+    # Meridiems must compare equal across ASR/model spellings: Whisper emits
+    # "11 p.m." while the planner re-types spans as "11 PM", and bare
+    # punctuation stripping below would key them as "p m" vs "pm"
+    # (production 2026-06-11: every grounded time in an alarm batch failed).
+    # The dot requirement keeps ordinary "…a m…" word sequences untouched.
+    s = re.sub(r"\b([ap])\s*\.\s*m\s*\.?(?=$|[\s\W])", r"\1m", s)
     s = re.sub(r"[^\w]+", " ", s, flags=re.UNICODE)
     return " ".join(s.split())
 

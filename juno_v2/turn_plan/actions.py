@@ -15,6 +15,11 @@ class TurnPlanActionsResult:
     actions: list[Action] | None = None
     rejected_reason: str | None = None
     missing_fields: list[str] = field(default_factory=list)
+    # Per-action coercion failures that did NOT reject the batch. A batch
+    # with at least one valid action ships the valid ones and records the
+    # rest here (production 2026-06-11: one unparseable alarm schedule threw
+    # away five well-formed sibling actions).
+    skipped_reasons: list[str] = field(default_factory=list)
 
 
 def actions_from_turn_plan(
@@ -36,6 +41,7 @@ def actions_from_turn_plan(
 
     out: list[Action] = []
     missing: list[str] = []
+    skipped: list[str] = []
     for idx, raw in enumerate(raw_actions[:max_actions]):
         action, reason, missing_for_action = _coerce_action(
             raw,
@@ -48,10 +54,24 @@ def actions_from_turn_plan(
             missing.extend(missing_for_action)
         if action is not None:
             out.append(action)
-        elif reason:
+            continue
+        if reason and "unsupported_operation" in reason:
+            # Operations on existing actions (complete / update / delete /
+            # snooze) belong to the extractor lane; the pipeline routes the
+            # whole utterance there off this batch-level rejection, so it
+            # must stay all-or-nothing.
             return TurnPlanActionsResult(actions=None, rejected_reason=reason, missing_fields=missing)
+        if reason:
+            skipped.append(reason)
     if out:
-        return TurnPlanActionsResult(actions=out, missing_fields=missing)
+        return TurnPlanActionsResult(actions=out, missing_fields=missing, skipped_reasons=skipped)
+    if skipped:
+        return TurnPlanActionsResult(
+            actions=None,
+            rejected_reason=skipped[0],
+            missing_fields=missing,
+            skipped_reasons=skipped,
+        )
     return TurnPlanActionsResult(actions=None, rejected_reason="no_valid_actions", missing_fields=missing)
 
 

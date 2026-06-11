@@ -1864,9 +1864,156 @@ def test_actions_do_not_borrow_schedule_from_another_action_clause() -> None:
 
     parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 10, 12, 0))
 
+    # The ambiguous "at 3" reminder must not borrow the alarm clause's
+    # "in 25 minutes" — it is skipped. The well-formed alarm still ships.
+    assert parsed.actions is not None
+    assert [a.kind.value for a in parsed.actions] == ["alarm"]
+    assert parsed.actions[0].when is not None
+    assert parsed.skipped_reasons == ["action_0_time_parse_failed"]
+    assert "schedule" in parsed.missing_fields
+
+
+def test_one_invalid_action_does_not_reject_valid_siblings() -> None:
+    # Production 2026-06-11: a six-action utterance ("set up 3 alarms…,
+    # 4th call Parth at 11 p.m. today, add a note…, remind me…") was fully
+    # rejected because the planner emitted the 4th alarm without a usable
+    # schedule span. Valid siblings must survive.
+    source = (
+        "Hey Juno, Set up 3 alarms. First, Call Aarti at 5 PM today. "
+        "Second, Call Atharva at 7 PM today. Third, Call Darpan at 9 PM today. "
+        "4th call Parth at 11 p.m. today. Add a note that we need to release Juno today. "
+        "Remind me to call my mom tomorrow 5 p.m."
+    )
+
+    def alarm(body: str, span: str, evidence: str) -> dict:
+        return {
+            "kind": "alarm",
+            "operation": "create",
+            "body": body,
+            "evidence_span": evidence,
+            "schedule": {"kind": "instant", "source_span": span},
+            "missing_fields": [],
+        }
+
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            alarm("Call Aarti", "5 PM today", "Call Aarti at 5 PM today"),
+            alarm("Call Atharva", "7 PM today", "Call Atharva at 7 PM today"),
+            alarm("Call Darpan", "9 PM today", "Call Darpan at 9 PM today"),
+            # Planner dropped the time for the irregular "4th call …" clause.
+            alarm("Call Parth", "", "4th call Parth"),
+            {
+                "kind": "note",
+                "operation": "create",
+                "body": "we need to release Juno today",
+                "evidence_span": "Add a note that we need to release Juno today",
+                "missing_fields": [],
+            },
+            {
+                "kind": "reminder",
+                "operation": "create",
+                "body": "call my mom",
+                "evidence_span": "Remind me to call my mom tomorrow 5 p.m.",
+                "schedule": {"kind": "instant", "source_span": "tomorrow 5 p.m."},
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 12, 6))
+
+    assert parsed.actions is not None
+    assert [a.kind.value for a in parsed.actions] == ["alarm", "alarm", "alarm", "note", "reminder"]
+    assert parsed.rejected_reason is None
+    assert parsed.skipped_reasons == ["action_3_time_parse_failed"]
+    assert "schedule" in parsed.missing_fields
+
+
+def test_all_invalid_actions_still_reject_the_batch() -> None:
+    source = "remind me at 3 to call Tara"
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                "kind": "reminder",
+                "operation": "create",
+                "body": "call Tara",
+                "evidence_span": "remind me at 3 to call Tara",
+                "schedule": {"kind": "instant", "source_span": "at 3"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 12, 6))
+
     assert parsed.actions is None
     assert parsed.rejected_reason == "action_0_time_parse_failed"
-    assert "schedule" in parsed.missing_fields
+    assert parsed.skipped_reasons == ["action_0_time_parse_failed"]
+
+
+def test_meridiem_spelling_grounds_across_asr_and_planner_forms() -> None:
+    from juno_v2.turn_plan.validators import span_present
+
+    source = "4th call Parth at 11 p.m. today."
+    # Planner re-types spans in normalized form; both spellings must ground.
+    assert span_present("11 p.m. today", source)
+    assert span_present("11 PM today", source)
+    assert span_present("11 P.M. today", source)
+    # And the reverse: dotted span against a normalized source.
+    assert span_present("11 p.m. today", "call Parth at 11 PM today")
+    # Ordinary "a"/"m" word sequences must not be collapsed.
+    assert not span_present("am", "got a message")
+
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                "kind": "alarm",
+                "operation": "create",
+                "body": "Call Parth",
+                # Normalized re-typing of the dotted source time.
+                "evidence_span": "4th call Parth at 11 PM today",
+                "schedule": {"kind": "instant", "source_span": "11 PM today"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 12, 6))
+
+    assert parsed.actions is not None
+    assert parsed.skipped_reasons == []
+    assert parsed.actions[0].when is not None
+    assert parsed.actions[0].when.iso.startswith("2026-06-11T23:00")
 
 
 def test_turn_plan_validation_rejects_common_memory_candidates_in_secure_fields() -> None:
