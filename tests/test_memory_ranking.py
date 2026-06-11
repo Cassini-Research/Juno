@@ -190,36 +190,42 @@ def test_session_entities_low_signal_single_words_filtered(tmp_path) -> None:
         session_entities=[
             SessionEntity(value="you", count=50),
             SessionEntity(value="the", count=50),
-            SessionEntity(value="Chino", count=1),
+            SessionEntity(value="Karvix", count=1),
             SessionEntity(value="Acme Corp", count=1),
         ]
     )
     packet = rank_memory_for_context(snapshot, context=TypedContextBundle())
-    assert set(packet.session_entities) == {"Chino", "Acme Corp"}
+    assert set(packet.session_entities) == {"Karvix", "Acme Corp"}
     assert packet.metadata["session_entity_total"] == 4
 
 
-def test_session_entities_multiword_stopword_phrase_is_kept(tmp_path) -> None:
-    # The low-signal filter only applies to single-token values.
+def test_session_entities_all_stopword_phrase_is_filtered(tmp_path) -> None:
+    # The entity policy filters phrases made entirely of common English
+    # words ("The Who" is a famous false negative we accept): serving
+    # common-word phrases as ASR bias corrupts ordinary dictation far more
+    # often than it helps. Phrases with at least one rare token survive.
     snapshot = _snapshot(
-        session_entities=[SessionEntity(value="The Who", count=1)]
+        session_entities=[
+            SessionEntity(value="The Who", count=1),
+            SessionEntity(value="Karvix Labs", count=1),
+        ]
     )
     packet = rank_memory_for_context(snapshot, context=TypedContextBundle())
-    assert packet.session_entities == ["The Who"]
+    assert packet.session_entities == ["Karvix Labs"]
 
 
 def test_session_entities_hint_match_outranks_count(tmp_path) -> None:
     snapshot = _snapshot(
         session_entities=[
             SessionEntity(value="Gamma Project", count=10),
-            SessionEntity(value="Chino", count=1),
+            SessionEntity(value="Karvix", count=1),
         ]
     )
     packet = rank_memory_for_context(
         snapshot,
-        context=TypedContextBundle(selected_text="ping Chino about the deck"),
+        context=TypedContextBundle(selected_text="ping Karvix about the deck"),
     )
-    assert packet.session_entities[0] == "Chino"
+    assert packet.session_entities[0] == "Karvix"
 
 
 # --------------------------------------------------------------------- #
@@ -264,7 +270,7 @@ def test_metadata_records_ranking_inputs(tmp_path) -> None:
         context=TypedContextBundle(app_name="Slack"),
         effective_mode="Notes",
         transcript_hint="review the QBR deck",
-        session_terms=["Chino"],
+        session_terms=["Karvix"],
     )
     ranking = packet.metadata["ranking"]
     assert ranking["app_scope"] == "slack"

@@ -158,10 +158,10 @@ def test_remove_replacement_via_fold_key(tmp_path) -> None:
 
 def test_record_correction_accepts_safe_pair(tmp_path) -> None:
     memory = JsonMemoryStore(tmp_path / "memory")
-    assert memory.record_correction("chino", "juno")
+    assert memory.record_correction("karvix", "juno")
     pairs = memory.snapshot().corrections
     assert len(pairs) == 1
-    assert pairs[0].observed == "chino"
+    assert pairs[0].observed == "karvix"
     assert pairs[0].corrected == "juno"
     assert pairs[0].count == 1
 
@@ -211,8 +211,8 @@ def test_record_correction_rejects_low_signal_case_only_edit(tmp_path) -> None:
 
 def test_remove_correction(tmp_path) -> None:
     memory = JsonMemoryStore(tmp_path / "memory")
-    assert memory.record_correction("chino", "juno")
-    assert memory.remove_correction("Chino")
+    assert memory.record_correction("karvix", "juno")
+    assert memory.remove_correction("Karvix")
     assert memory.snapshot().corrections == []
 
 
@@ -223,11 +223,14 @@ def test_remove_correction(tmp_path) -> None:
 
 def test_upsert_session_entities_inserts_and_counts(tmp_path) -> None:
     memory = JsonMemoryStore(tmp_path / "memory")
-    memory.upsert_session_entities(["Chino", "Acme Corp"])
-    memory.upsert_session_entities(["chino"])  # fold-key dedup
+    memory.upsert_session_entities(["Karvix", "Acme Corp"])
+    # Lowercase single tokens are not valid session entities under the
+    # entity policy (proper-noun casing is the learn signal), so the
+    # lowercase re-upsert is filtered and the original surface survives.
+    memory.upsert_session_entities(["karvix"])
     entities = {e.value: e for e in memory.snapshot().session_entities}
-    assert set(entities) == {"chino", "Acme Corp"}  # latest surface form wins
-    assert entities["chino"].count == 2
+    assert set(entities) == {"Karvix", "Acme Corp"}
+    assert entities["Karvix"].count == 1
     assert entities["Acme Corp"].count == 1
 
 
@@ -239,10 +242,13 @@ def test_upsert_session_entities_skips_short_and_empty(tmp_path) -> None:
 
 def test_upsert_session_entities_dedups_within_one_call(tmp_path) -> None:
     memory = JsonMemoryStore(tmp_path / "memory")
+    # The all-lowercase variant is filtered by the entity policy, so only
+    # the cased surface inserts; nothing duplicates.
     memory.upsert_session_entities(["Polka-Foundation", "polka foundation"])
     entities = memory.snapshot().session_entities
     assert len(entities) == 1
-    assert entities[0].count == 2
+    assert entities[0].value == "Polka-Foundation"
+    assert entities[0].count == 1
 
 
 # --------------------------------------------------------------------- #
@@ -301,8 +307,8 @@ def test_everything_persists_across_reload(tmp_path) -> None:
     first = JsonMemoryStore(memory_dir)
     first.add_lexicon_entry(term="Qwen", canonical_form="Qwen", boost=2.0)
     first.add_replacement(trigger="my email", replacement="me@example.com", scope="email")
-    assert first.record_correction("chino", "juno")
-    assert first.record_correction("chino", "juno")
+    assert first.record_correction("karvix", "juno")
+    assert first.record_correction("karvix", "juno")
     first.upsert_session_entities(["Acme Corp"])
     first.add_snippet(trigger="sig", body="Best,\nSam", scope="email", description="signature")
 
@@ -314,7 +320,7 @@ def test_everything_persists_across_reload(tmp_path) -> None:
         ("my email", "me@example.com", "email")
     ]
     assert [(c.observed, c.corrected, c.count) for c in snapshot.corrections] == [
-        ("chino", "juno", 2)
+        ("karvix", "juno", 2)
     ]
     assert [(e.value, e.count) for e in snapshot.session_entities] == [("Acme Corp", 1)]
     hit = second.resolve_snippet("sig", scope="email")

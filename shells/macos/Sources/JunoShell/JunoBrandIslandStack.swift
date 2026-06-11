@@ -28,6 +28,8 @@ struct JunoBrandIslandStack: View {
     @State private var lastPartialWordCount: Int = 0
     @State private var wasErrorOrBlocked: Bool = false
     @State private var lastWordBeatAt: Date = .distantPast
+    @State private var lastTranscriptScrollAt: Date = .distantPast
+    @State private var lastTranscriptScrollWordCount: Int = 0
     /// Comma mark scale — driven by wake (02) and word beat (03)
     @State private var commaScale: CGFloat = 1
     /// Horizontal shake offset — driven by error shake (06)
@@ -280,10 +282,14 @@ struct JunoBrandIslandStack: View {
             }
         case .action(let result):
             HStack(spacing: 10) {
-                Image(systemName: result.symbolName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(result.isFailure ? Color.orange.opacity(0.95) : JunoDesignTokens.meadow.opacity(0.95))
-                    .frame(width: 20)
+                if let kind = result.kind, !result.isFailure {
+                    JunoActionNativeIcon(kind: kind, size: 20, fallbackColor: JunoDesignTokens.meadow.opacity(0.95))
+                } else {
+                    Image(systemName: result.symbolName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(result.isFailure ? Color.orange.opacity(0.95) : JunoDesignTokens.meadow.opacity(0.95))
+                        .frame(width: 20)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(result.title)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -361,9 +367,8 @@ struct JunoBrandIslandStack: View {
         case .waitingSpeech:      return "WAITING"
         case .partialCommit:      return "CORRECTING"
         default:
-            // Surface that live captions are available without making the
-            // normal Apple SFSpeech backup path look like a broken mode.
-            if controller.liveSource == .sfSpeechFallback { return "CAPTION" }
+            // Surface that local live captions are available without making
+            // normal waiting states look like a broken mode.
             return "LISTENING"
         }
     }
@@ -415,9 +420,9 @@ struct JunoBrandIslandStack: View {
         let unique = Set(inFlight.kinds)
         if unique.count == 1, let only = unique.first {
             switch only {
-            case .note:     return "Apple Notes \u{2192} \(JunoNotesFolderName) folder"
-            case .reminder: return "Apple Reminders"
-            case .alarm:    return "Apple Calendar"
+            case .note:     return "Notes \u{2192} \(JunoNotesFolderName) folder"
+            case .reminder: return "Reminders"
+            case .alarm:    return "Alarm"
             }
         }
         // Mixed-kind batches: list the destinations in the order the kinds
@@ -428,7 +433,7 @@ struct JunoBrandIslandStack: View {
             switch kind {
             case .note:     return "Notes"
             case .reminder: return "Reminders"
-            case .alarm:    return "Calendar"
+            case .alarm:    return "Alarm"
             }
         }
         return names.joined(separator: " · ")
@@ -469,7 +474,14 @@ struct JunoBrandIslandStack: View {
                     proxy.scrollTo("live_transcript_bottom", anchor: .bottom)
                 }
                 .onChange(of: controller.liveDisplayTranscript) { _ in
-                    withAnimation(JunoBrandKitMotion.wordIn) {
+                    let now = Date()
+                    let words = wordCount(controller.liveDisplayTranscript)
+                    let shouldScroll = words != lastTranscriptScrollWordCount
+                        || now.timeIntervalSince(lastTranscriptScrollAt) >= 0.18
+                    guard shouldScroll else { return }
+                    lastTranscriptScrollAt = now
+                    lastTranscriptScrollWordCount = words
+                    withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo("live_transcript_bottom", anchor: .bottom)
                     }
                 }
@@ -494,7 +506,7 @@ struct JunoBrandIslandStack: View {
                                 removal: .opacity.combined(with: .move(edge: .top))
                             )
                         )
-                        .animation(.easeOut(duration: 0.16), value: span.revision)
+                        .animation(.easeOut(duration: 0.14), value: span.id)
                 }
             }
         }
@@ -903,10 +915,10 @@ private struct LiveTranscriptWord: View {
     /// - `.committed`: confirmed by two consecutive Whisper passes. Full
     ///   opacity, regular weight. NEVER shrinks (HypothesisBuffer invariant).
     /// - `.tail`: legacy/debug volatile hypothesis styling. The production
-    ///   engine preview path now keeps ASR tail out of the HUD entirely.
+    ///   engine preview path keeps ASR tail out of the HUD entirely.
     /// - `.corrected`: post-final Qwen-adjudicated text. Full opacity with a
     ///   subtle weight bump on the changed words. Triggered only on stop.
-    /// - `.draft` / `.pending`: legacy SFSpeech-fallback / pending states.
+    /// - `.draft` / `.pending`: legacy pre-engine preview / pending states.
     private var foreground: Color {
         switch span.origin {
         case .committed:

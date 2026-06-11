@@ -152,6 +152,39 @@ _CODE_EXTENSIONS: frozenset[str] = frozenset({
     'proto', 'graphql', 'tf', 'tfvars',
 })
 
+_LOW_SIGNAL_CONTEXT_CANDIDATES: frozenset[str] = frozenset({
+    "action",
+    "app",
+    "bold",
+    "centre",
+    "center",
+    "context",
+    "customer",
+    "deadline",
+    "document",
+    "edited",
+    "font",
+    "helvetica",
+    "italic",
+    "left",
+    "next",
+    "owner",
+    "paragraph",
+    "regular",
+    "rgb",
+    "status",
+    "style",
+    "text colour",
+    "text color",
+    "text background colour",
+    "text background color",
+    "textedit",
+    "title",
+    "underline",
+    "untitled",
+    "untitled.rtf",
+})
+
 
 def _extract_candidates(chunks: list[str]) -> list[str]:
     out: list[str] = []
@@ -160,6 +193,8 @@ def _extract_candidates(chunks: list[str]) -> list[str]:
     def _add(token: str) -> bool:
         v = token.strip(" ,.!?;:()[]{}<>\"'`")
         if len(v) < 2 or len(v) > 80:
+            return False
+        if not _context_candidate_allowed(v):
             return False
         key = v.casefold()
         if key in seen:
@@ -225,3 +260,15 @@ def _extract_candidates(chunks: list[str]) -> list[str]:
                 return out
 
     return out
+
+
+def _context_candidate_allowed(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    folded = v.casefold()
+    if folded in _LOW_SIGNAL_CONTEXT_CANDIDATES:
+        return False
+    if folded.startswith(("rgb ", "font ", "style ")):
+        return False
+    return True

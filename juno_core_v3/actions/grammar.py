@@ -135,20 +135,6 @@ _VERB_PATTERN = "|".join(
 _VERB_RE = re.compile(rf"\b(?:{_VERB_PATTERN})\b", re.IGNORECASE)
 _VERB_LOOKUP: dict[str, ActionKind] = {v.lower(): k for v, k in _VERB_TABLE}
 
-_ALARM_BATCH_INTRO_RE = re.compile(
-    r"\b(?:please\s+)?(?:add|set(?:\s+up)?)\s+"
-    r"(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+)?alarms?\b",
-    re.IGNORECASE,
-)
-_ENUMERATED_ALARM_RE = re.compile(
-    r"\b(?:"
-    r"first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|"
-    r"seventh|7th|eighth|8th|ninth|9th|tenth|10th"
-    r")\s+one\b|\bone\s+more\b",
-    re.IGNORECASE,
-)
-
-
 @dataclass(frozen=True, slots=True)
 class _VerbHit:
     start: int
@@ -162,32 +148,6 @@ def _find_verbs(text: str) -> list[_VerbHit]:
     for m in _VERB_RE.finditer(text):
         kind = _VERB_LOOKUP[m.group(0).lower()]
         hits.append(_VerbHit(m.start(), m.end(), kind, m.group(0)))
-    return hits
-
-
-def _find_enumerated_alarm_hits(text: str, explicit_hits: list[_VerbHit]) -> list[_VerbHit]:
-    """Infer alarm anchors from "add three alarms. First one..." batches."""
-
-    hits: list[_VerbHit] = []
-    for intro in _ALARM_BATCH_INTRO_RE.finditer(text):
-        start = intro.end()
-        end = min(
-            (
-                hit.start
-                for hit in explicit_hits
-                if hit.start > start and hit.kind is not ActionKind.ALARM
-            ),
-            default=len(text),
-        )
-        for match in _ENUMERATED_ALARM_RE.finditer(text, start, end):
-            hits.append(
-                _VerbHit(
-                    match.start(),
-                    match.end(),
-                    ActionKind.ALARM,
-                    match.group(0),
-                )
-            )
     return hits
 
 
@@ -404,7 +364,6 @@ def parse_actions(
         return None
 
     hits = _find_verbs(body_text)
-    hits.extend(_find_enumerated_alarm_hits(body_text, hits))
     hits.sort(key=lambda hit: (hit.start, hit.end))
     if not hits:
         return None

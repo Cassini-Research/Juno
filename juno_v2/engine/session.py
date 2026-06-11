@@ -100,6 +100,7 @@ from juno_v2.contracts.tracing import TraceKind
 from juno_v2.final.backends.base import FinalAsrBackend
 from juno_v2.final.config import FinalAsrConfig
 from juno_v2.memory.bias import RecognitionBiasEngine
+from juno_v2.memory.entity_policy import commit_session_entity_allowed
 from juno_v2.memory.repetition import collapse_tail_repetition
 from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.memory.term_policy import learned_term_allowed
@@ -329,9 +330,7 @@ class DictationSessionRunner:
             # thread. The workbench server warms them on a dedicated worker;
             # flag the registration so warm_all() on the main thread skips
             # them.
-            _preview_warm_on_main_thread = self.preview_config.backend_name not in {
-                'qwen_asr',
-            }
+            _preview_warm_on_main_thread = True
             lifecycle.register_backend('preview_asr', self.preview_backend, metadata={
                 'configured_backend': self.preview_config.backend_name,
                 'model_path': str(self.preview_config.model_path),
@@ -563,7 +562,6 @@ class DictationSessionRunner:
                             "failure_reason": None,
                             "session_class": "insert",
                             "processing_ms": int(m.speech_end_to_commit_ms or 0),
-                            "final_transcription_ms": float(transcript.decode_ms or 0.0),
                             "words": words,
                             "replay_available": False,
                         },
@@ -1426,12 +1424,39 @@ class DictationSessionRunner:
                 durable_memory_suppressed=False,
             )
         committed_lower = committed_text.casefold()
-        entities = self.bias_engine.extract_session_entities(committed_text)
+        context_text = " ".join(
+            part
+            for part in (
+                plan.context.selected_text,
+                plan.context.focused_text_before,
+                plan.context.focused_text_after,
+                plan.context.field_text_excerpt,
+                plan.context.window_title,
+            )
+            if part
+        )
+        entities = [
+            token
+            for token in self.bias_engine.extract_session_entities(committed_text)
+            if commit_session_entity_allowed(
+                token,
+                committed_text=committed_text,
+                spoken_evidence_text=raw_text,
+                context_text=context_text,
+            )
+        ]
         for candidate in plan.context.candidate_entities[:8]:
             token = (candidate or '').strip()
             if (
                 self.bias_engine.is_session_entity_candidate(token)
                 and token.casefold() in committed_lower
+                and commit_session_entity_allowed(
+                    token,
+                    committed_text=committed_text,
+                    spoken_evidence_text=raw_text,
+                    context_text=context_text,
+                    context_backed=True,
+                )
             ):
                 entities.append(token)
         entities = [

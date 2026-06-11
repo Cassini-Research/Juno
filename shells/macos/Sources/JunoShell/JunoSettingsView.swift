@@ -69,6 +69,8 @@ struct JunoSettingsView: View {
     @State private var hudShowDoneRow = JunoUserDefaults.hudShowDoneRowEnabled
     @State private var pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
     @State private var languageMode = JunoUserDefaults.languageMode
+    @State private var screenContextEnabled = JunoUserDefaults.screenContextEnabled
+    @State private var screenContextPermissionGranted = JunoScreenContextAccess.permissionGranted
     @State private var showModelDetails = false
     @State private var developerMode = JunoUserDefaults.developerModeEnabled
     @State private var pendingStorageAction: JunoPendingStorageAction?
@@ -96,6 +98,7 @@ struct JunoSettingsView: View {
                     // a slim pointer here so users coming to Settings
                     // looking for Voice Actions still find them.
                     JunoSettingsActionsPointer()
+                    screenContextSettingsCard
 
                     settingsCard(
                         title: "General",
@@ -147,8 +150,8 @@ struct JunoSettingsView: View {
 
                             VStack(alignment: .leading, spacing: 8) {
                                 settingsRow(
-                                    title: "Live transcription preview",
-                                    subtitle: "Show preview text in the HUD while you speak. When off, Juno listens and transcribes after you finish.",
+                                    title: "Live transcriptions",
+                                    subtitle: "Show what you're saying inside the HUD as you speak. When off, the HUD collapses to a tiny waveform.",
                                     trailing: {
                                         Toggle("", isOn: Binding(
                                             get: { hudLiveTranscriptions },
@@ -408,6 +411,8 @@ struct JunoSettingsView: View {
                         VStack(spacing: 10) {
                             privacyToggle("Smart Context", "Use safe local app context while writing", $privacy.smartContext)
                             Divider().opacity(0.25)
+                            screenContextSettingsRow
+                            Divider().opacity(0.25)
                             privacyToggle("Use selected text", "Let Juno edit highlighted text", $privacy.useSelectedText)
                             Divider().opacity(0.25)
                             privacyToggle("Use current app/field", "Use focused field context when available", $privacy.useFocusedText)
@@ -458,14 +463,14 @@ struct JunoSettingsView: View {
                                 settingsAction: { perms.openAXSettings() }
                             )
                             permCard(
-                                icon: "text.bubble",
-                                label: "Live captions",
-                                detail: perms.speechStatusLabel + " — Optional on-screen captions while you speak.",
-                                ok: perms.speechStatus == .authorized,
-                                primaryTitle: speechPrimaryTitle,
-                                primaryAction: speechPrimaryAction,
+                                icon: "viewfinder",
+                                label: "Visible screen text",
+                                detail: perms.screenRecordingStatusLabel + " — Optional local OCR for names and code terms.",
+                                ok: perms.screenContextEnabled && perms.screenRecordingGranted,
+                                primaryTitle: screenRecordingPrimaryTitle,
+                                primaryAction: screenRecordingPrimaryAction,
                                 showSecondarySettings: false,
-                                settingsAction: { perms.openSpeechRecognitionSettings() }
+                                settingsAction: { perms.openScreenRecordingSettings() }
                             )
                         }
 
@@ -614,9 +619,11 @@ struct JunoSettingsView: View {
             }
         }
         .onAppear {
-            refreshPreviewEligibility()
             displayNameDraft = JunoUserDefaults.preferredDisplayName ?? ""
             pauseSensitivitySeconds = JunoUserDefaults.pauseSensitivitySeconds
+            screenContextEnabled = JunoUserDefaults.screenContextEnabled
+            refreshPreviewEligibility()
+            refreshScreenContextPermission()
             perms.refresh()
             retention.refresh()
             privacy.refresh()
@@ -787,19 +794,18 @@ struct JunoSettingsView: View {
         }
     }
 
-    private var speechPrimaryTitle: String {
-        switch perms.speechStatus {
-        case .notDetermined: return "Allow speech recognition"
-        case .denied, .restricted: return "Open Speech Recognition privacy"
-        case .authorized: return "Granted"
-        @unknown default: return "Open Speech Recognition privacy"
+    private var screenRecordingPrimaryTitle: String {
+        if perms.screenContextEnabled && perms.screenRecordingGranted {
+            return "Granted"
         }
+        return "Open Screen Recording"
     }
 
-    private func speechPrimaryAction() {
-        switch perms.speechStatus {
-        case .notDetermined: perms.requestSpeechRecognition()
-        default: perms.openSpeechRecognitionSettings()
+    private func screenRecordingPrimaryAction() {
+        if perms.screenContextEnabled && perms.screenRecordingGranted {
+            perms.openScreenRecordingSettings()
+        } else {
+            perms.requestScreenRecording()
         }
     }
 
@@ -869,6 +875,134 @@ struct JunoSettingsView: View {
         }
     }
 
+    private var screenContextSettingsRow: some View {
+        settingsRow(
+            title: "Visible screen text",
+            subtitle: screenContextSubtitle,
+            trailing: {
+                if screenContextEnabled && screenContextPermissionGranted {
+                    Button("Turn off") {
+                        setScreenContextEnabled(false)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Button("Open Screen Recording") {
+                        setScreenContextEnabled(true)
+                    }
+                    .junoPrimaryActionButton()
+                }
+            }
+        )
+    }
+
+    private var screenContextSettingsCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "viewfinder")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.accent)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text("Visible screen text")
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .foregroundStyle(JunoTheme.primaryText(scheme))
+                    Text(screenContextStatusLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(screenContextStatusColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(screenContextStatusColor.opacity(scheme == .dark ? 0.18 : 0.11))
+                        )
+                }
+                Text(screenContextTopCardSubtitle)
+                    .font(.system(.footnote, design: .rounded))
+                    .foregroundStyle(JunoTheme.secondaryText(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            if screenContextEnabled && screenContextPermissionGranted {
+                Button("Turn off") {
+                    setScreenContextEnabled(false)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Button("Open Screen Recording") {
+                    requestScreenContextPermission()
+                }
+                .junoPrimaryActionButton()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard()
+        .onAppear {
+            refreshScreenContextPermission()
+        }
+    }
+
+    private var screenContextStatusLabel: String {
+        if !screenContextEnabled { return "Off" }
+        return screenContextPermissionGranted ? "On" : "Needs approval"
+    }
+
+    private var screenContextStatusColor: Color {
+        if !screenContextEnabled { return JunoTheme.secondaryText(scheme) }
+        return screenContextPermissionGranted ? JunoDesignTokens.meadow : Color.orange
+    }
+
+    private var screenContextTopCardSubtitle: String {
+        if !screenContextEnabled {
+            return "Optional local OCR for names, code terms, and product words already visible while you dictate."
+        }
+        if screenContextPermissionGranted {
+            return "Juno can prioritize visible terms while dictating. Text is not stored and does not leave this Mac."
+        }
+        return "Juno is ready to be turned on in macOS Screen Recording so visible terms can be read locally while dictating."
+    }
+
+    private var screenContextSubtitle: String {
+        if !screenContextEnabled {
+            return "Optional. Off by default; enable it here when you want visible names and code terms prioritized."
+        }
+        if screenContextPermissionGranted {
+            return "Reads visible names and code terms with on-device OCR while you dictate. Never stored, never leaves this Mac."
+        }
+        return "Turn on Juno in macOS Screen Recording. Used only for on-device OCR while dictating; never stored or sent."
+    }
+
+    private func setScreenContextEnabled(_ enabled: Bool) {
+        screenContextEnabled = enabled
+        JunoUserDefaults.screenContextEnabled = enabled
+        if enabled {
+            refreshScreenContextPermission()
+            if !screenContextPermissionGranted {
+                requestScreenContextPermission()
+            }
+        } else {
+            JunoScreenTermHarvester.shared.deactivate()
+            refreshScreenContextPermission()
+        }
+    }
+
+    private func refreshScreenContextPermission() {
+        screenContextPermissionGranted = JunoScreenContextAccess.permissionGranted
+    }
+
+    private func requestScreenContextPermission() {
+        screenContextEnabled = true
+        JunoUserDefaults.screenContextEnabled = true
+        JunoScreenContextAccess.requestFromExplicitUserAction { granted in
+            screenContextPermissionGranted = granted
+        }
+    }
+
     private func privacyToggle(_ title: String, _ subtitle: String, _ binding: Binding<Bool>) -> some View {
         settingsRow(
             title: title,
@@ -882,6 +1016,36 @@ struct JunoSettingsView: View {
                     }
             }
         )
+    }
+
+    private func persistLanguageEnvironment() {
+        JunoBroker.postJSON(
+            path: "api/broker/settings/language_environment",
+            payload: ["language_mode": languageMode]
+        ) { obj in
+            let ok = (obj["ok"] as? Bool) ?? false
+            if !ok {
+                let msg = (obj["error"] as? String) ?? "Could not save language settings"
+                JunoSettingsToastCenter.shared.report(msg)
+            }
+        }
+    }
+
+    /// Mirror the macOS-side toggle into the broker so the engine can suppress
+    /// per-utterance preview-lane decoding on the next dictation session. The
+    /// macOS HUD layout flips immediately off `JunoUserDefaults`; the engine
+    /// gate is read at session start.
+    private func persistLiveCaptionEnabled(_ enabled: Bool, reportFailures: Bool = true) {
+        JunoBroker.postJSON(
+            path: "api/broker/settings/live_caption",
+            payload: ["enabled": enabled]
+        ) { obj in
+            let ok = (obj["ok"] as? Bool) ?? false
+            if !ok, reportFailures {
+                let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
+                JunoSettingsToastCenter.shared.report(msg)
+            }
+        }
     }
 
     private var livePreviewResourceMessage: String? {
@@ -920,51 +1084,6 @@ struct JunoSettingsView: View {
         if enabled {
             if let warning = previewEligibility.warningMessage {
                 JunoSettingsToastCenter.shared.report(warning, severity: .info, autoDismissAfter: 8)
-            }
-        }
-    }
-
-    private func persistLanguageEnvironment() {
-        JunoBroker.postJSON(
-            path: "api/broker/settings/language_environment",
-            payload: ["language_mode": languageMode]
-        ) { obj in
-            let ok = (obj["ok"] as? Bool) ?? false
-            if !ok {
-                let msg = (obj["error"] as? String) ?? "Could not save language settings"
-                JunoSettingsToastCenter.shared.report(msg)
-            }
-        }
-    }
-
-    /// Mirror the macOS-side toggle into the broker so the engine can suppress
-    /// per-utterance preview-lane decoding on the next dictation session. The
-    /// macOS HUD layout flips immediately off `JunoUserDefaults`; the engine
-    /// gate is read at session start.
-    private func persistLiveCaptionEnabled(_ enabled: Bool, reportFailures: Bool = true) {
-        JunoBroker.postJSON(
-            path: "api/broker/settings/live_caption",
-            payload: ["enabled": enabled]
-        ) { obj in
-            let ok = (obj["ok"] as? Bool) ?? false
-            if !ok {
-                if reportFailures {
-                    let msg = (obj["error"] as? String) ?? "Could not save live transcription setting"
-                    JunoSettingsToastCenter.shared.report(msg)
-                }
-                return
-            }
-            if let brokerEnabled = obj["live_caption_enabled"] as? Bool, brokerEnabled != enabled {
-                hudLiveTranscriptions = brokerEnabled
-                JunoUserDefaults.hudLiveTranscriptionsEnabled = brokerEnabled
-                if reportFailures {
-                    let msg = (obj["disabled_reason"] as? String) ?? "Live preview is not available on this Mac"
-                    JunoSettingsToastCenter.shared.report(msg.replacingOccurrences(of: "_", with: " ").capitalized)
-                }
-                return
-            }
-            if enabled {
-                JunoBroker.getJSON(path: "api/broker/preview/warm") { _ in }
             }
         }
     }

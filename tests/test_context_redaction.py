@@ -214,9 +214,21 @@ def test_merge_candidate_entities_dedup_casefold() -> None:
     frozen = {"candidate_entities": ["alpha", "Beta", "", "Beta", "  Gamma  "]}
     assert merge_frozen_capability_into_bundle(ctx, frozen) is True
     assert ctx.candidate_entities == ["Alpha", "Beta", "Gamma"]
-    # Explicit client entities are tracked separately in metadata.
-    explicit = ctx.metadata["explicit_candidate_entities"]
-    assert explicit == ["alpha", "Beta", "Gamma"]
+    # Harvested candidates are NOT explicit entities: the shell sends
+    # user-named terms under their own "explicit_candidate_entities" key
+    # and only those reach the explicit repair gates.
+    assert "explicit_candidate_entities" not in ctx.metadata
+
+
+def test_merge_explicit_candidate_entities_tracked_separately() -> None:
+    ctx = TypedContextBundle()
+    frozen = {
+        "candidate_entities": ["Beta"],
+        "explicit_candidate_entities": ["alpha", "", "Alpha", "  Gamma  "],
+    }
+    assert merge_frozen_capability_into_bundle(ctx, frozen) is True
+    assert ctx.candidate_entities == ["Beta"]
+    assert ctx.metadata["explicit_candidate_entities"] == ["alpha", "Gamma"]
 
 
 def test_merge_candidate_entities_capped() -> None:

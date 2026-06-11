@@ -129,6 +129,7 @@ struct JunoSessionContextTape {
             "focused_text",
             "focused_text_before",
             "focused_text_after",
+            "field_text_excerpt",
             "clipboard_text",
             "focused_document_path",
             "focused_file_path",
@@ -162,7 +163,10 @@ struct JunoSessionContextTape {
             out["focused_text"] = ""
             out["focused_text_before"] = ""
             out["focused_text_after"] = ""
+            out["field_text_excerpt"] = ""
             out["clipboard_text"] = ""
+            out["candidate_entities"] = []
+            out["candidate_terms"] = []
         }
         return out
     }

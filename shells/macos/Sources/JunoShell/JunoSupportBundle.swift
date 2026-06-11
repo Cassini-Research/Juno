@@ -125,6 +125,7 @@ enum JunoSupportBundle {
             JunoUserDefaults.appearancePreferenceKey,
             JunoUserDefaults.hudDelightAnimationsEnabledKey,
             JunoUserDefaults.hudDelightSoundEnabledKey,
+            JunoUserDefaults.screenContextEnabledKey,
             JunoUserDefaults.onboardingCompletedKey,
         ]
         let ud = UserDefaults.standard

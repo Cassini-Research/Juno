@@ -426,7 +426,7 @@ struct ShortcutPopoverPicker: View {
                             },
                             accessory: {
                                 Group {
-                                    if pref == .fn {
+                                    if pref == JunoShortcutPreference.defaultShortcut {
                                         Text("Recommended")
                                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                                             .foregroundStyle(JunoDesignTokens.accent)
@@ -669,4 +669,3 @@ enum JunoLanguagePickerOptions {
         .init(value: "keep_original", title: "Keep original",    subtitle: "Don’t translate — keep what was spoken",             systemName: "quote.bubble"),
     ]
 }
-

@@ -151,10 +151,7 @@ private struct JunoActionToastCard: View {
         // there's nothing competing for height.
         let dense = batch.results.count > 1
         return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: request.kind.descriptor.symbolName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(request.kind.descriptor.accent)
-                .frame(width: 18)
+            JunoActionNativeIcon(kind: request.kind, size: 18, fallbackColor: request.kind.descriptor.accent)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -241,7 +238,7 @@ private struct JunoActionToastCard: View {
             // recurring at all.
             if let series = request.schedule?.series,
                let summary = JunoRecurrenceCopy.summary(for: series) {
-                let tail = request.kind == .alarm ? " · Calendar alert" : ""
+                let tail = request.kind == .alarm ? " · alarm" : ""
                 return summary + tail
             }
             if let vague = request.schedule?.vague,
@@ -249,14 +246,14 @@ private struct JunoActionToastCard: View {
                 return "\(formatted) · tap to change"
             }
             // For reminders/alarms, prefer the time. For notes (no time),
-            // show the destination ("Juno folder · Apple Notes") so the
+            // show the destination ("Juno folder · Notes") so the
             // user learns where to look. Calendar-event alarms also get
-            // a "Calendar alert" tail so the messaging stays consistent
-            // with the action card and the HUD subtitle.
+            // an "alarm" tail so the messaging stays consistent with the
+            // action card and the HUD subtitle.
             if let when = request.when, let formatted = formatDue(when.iso) {
                 let tail: String
                 switch request.kind {
-                case .alarm: tail = " · Calendar alert"
+                case .alarm: tail = " · alarm"
                 default: tail = ""
                 }
                 let prefix = when.inferred ? "\(formatted) · time inferred" : formatted
@@ -264,11 +261,11 @@ private struct JunoActionToastCard: View {
             }
             switch request.kind {
             case .note:
-                return "\(JunoNotesFolderName) folder · Apple Notes"
+                return "\(JunoNotesFolderName) folder · Notes"
             case .alarm:
-                return "Calendar alert"
+                return "Alarm"
             case .reminder:
-                return "Apple Reminders"
+                return "Reminders"
             }
         case .blockedToggleOff:
             return "Tap to enable in Actions."

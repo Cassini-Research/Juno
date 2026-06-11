@@ -25,6 +25,7 @@ from juno_v2.memory.hallucination import (
     HALLUCINATION_CONFIDENCE_FLOOR,
     looks_like_hallucination,
 )
+from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.ranking import _low_signal_lexicon_pair
 from juno_v2.memory.stores import (
     CorrectionStore,
@@ -158,6 +159,7 @@ class JsonMemoryStore:
                 replacements=self.replacements.list(),
                 corrections=self.corrections.list(),
                 session_entities=self.entities.list(),
+                snippets=[item.to_dict() for item in self.snippets.list()],
                 metadata=self._manifest.read({"schema_version": SCHEMA_VERSION}),
             )
 
@@ -191,7 +193,7 @@ class JsonMemoryStore:
             ),
         )
         entities = sorted(
-            snapshot.session_entities,
+            (item for item in snapshot.session_entities if session_entity_allowed(item.value)),
             key=lambda item: (-int(item.count), item.value.casefold()),
         )
 
@@ -214,12 +216,24 @@ class JsonMemoryStore:
                 for item in corrections[:max_corrections]
             ],
             session_entities=[item.value for item in entities[:max_entities]],
+            snippets=[
+                {
+                    "trigger": str(item.get("trigger") or ""),
+                    "scope": str(item.get("scope") or "global"),
+                    "body_preview": str(item.get("body") or "")[:500],
+                    "body_chars": len(str(item.get("body") or "")),
+                    "case_sensitive": bool(item.get("case_sensitive", False)),
+                }
+                for item in list(snapshot.snippets or [])[:8]
+                if str(item.get("trigger") or "").strip() and str(item.get("body") or "")
+            ],
             metadata={
                 "lexicon_total": len(snapshot.lexicon),
                 "replacement_total": len(snapshot.replacements),
                 "correction_total": len(snapshot.corrections),
                 "correction_served_total": len(corrections),
                 "session_entity_total": len(snapshot.session_entities),
+                "snippet_total": len(snapshot.snippets),
                 "lexicon_truncated": len(snapshot.lexicon) > max_lexicon,
                 "replacement_truncated": len(snapshot.replacements) > max_replacements,
                 "correction_truncated": len(corrections) > max_corrections,

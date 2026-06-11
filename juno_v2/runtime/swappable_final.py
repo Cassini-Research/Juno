@@ -65,7 +65,6 @@ class SwapResult:
 _BACKEND_NAMES: dict[RuntimeBackend, str] = {
     RuntimeBackend.FASTER_WHISPER: "faster_whisper",
     RuntimeBackend.MLX_WHISPER: "mlx_whisper",
-    RuntimeBackend.QWEN_ASR: "qwen_asr",
     RuntimeBackend.LOCAL_HTTP_JSON: "local_http_json",
 }
 

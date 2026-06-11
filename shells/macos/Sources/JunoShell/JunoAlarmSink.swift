@@ -38,11 +38,10 @@ final class JunoAlarmSink {
             JunoEventKitGrantCache.setGrant(.calendarEvents, granted: true)
             return .granted
         case .notDetermined:
-            if hasOptimisticGrant() {
+            if hasOptimisticGrant() || JunoEventKitGrantCache.hasGrant(.calendarEvents) {
                 resetEventStore()
                 return .granted
             }
-            JunoEventKitGrantCache.setGrant(.calendarEvents, granted: false)
             return .notDetermined
         case .denied, .restricted:
             clearOptimisticGrant()
@@ -128,26 +127,6 @@ final class JunoAlarmSink {
         grantLock.unlock()
     }
 
-    private func forgetGrantAfterAuthorizationFailure() {
-        clearOptimisticGrant()
-        JunoEventKitGrantCache.setGrant(.calendarEvents, granted: false)
-        resetEventStore()
-    }
-
-    private func permissionAwareFailure(_ error: Error) -> SinkError {
-        if Self.isEventStoreNotAuthorized(error) {
-            forgetGrantAfterAuthorizationFailure()
-            return .permissionDenied
-        }
-        return .saveFailed(underlying: error)
-    }
-
-    private static func isEventStoreNotAuthorized(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        return nsError.domain == EKError.errorDomain
-            && nsError.code == EKError.Code.eventStoreNotAuthorized.rawValue
-    }
-
     // MARK: - Create
 
     struct CreatedAlarm {
@@ -226,7 +205,7 @@ final class JunoAlarmSink {
             let url = URL(string: "ical://showEvent?id=\(id)")
             completion(.success(CreatedAlarm(id: id, url: url)))
         } catch {
-            completion(.failure(permissionAwareFailure(error)))
+            completion(.failure(.saveFailed(underlying: error)))
         }
     }
 
@@ -260,7 +239,7 @@ final class JunoAlarmSink {
             let storedId = event.eventIdentifier ?? event.calendarItemIdentifier
             completion(.success(CreatedAlarm(id: storedId, url: URL(string: "ical://showEvent?id=\(storedId)"))))
         } catch {
-            completion(.failure(permissionAwareFailure(error)))
+            completion(.failure(.saveFailed(underlying: error)))
         }
     }
 
@@ -280,7 +259,7 @@ final class JunoAlarmSink {
             try store.remove(event, span: .thisEvent, commit: true)
             completion(.success(()))
         } catch {
-            completion(.failure(permissionAwareFailure(error)))
+            completion(.failure(.saveFailed(underlying: error)))
         }
     }
 
@@ -290,11 +269,15 @@ final class JunoAlarmSink {
         let rawAuthorization = EKEventStore.authorizationStatus(for: .event)
         if #available(macOS 14.0, *),
            rawAuthorization == .writeOnly
+            || (rawAuthorization == .notDetermined && JunoEventKitGrantCache.hasGrant(.calendarEvents))
         {
             // Write-only Calendar access exposes a virtual writable calendar.
             // We cannot read or create a dedicated "Juno Alarms" calendar in
             // this mode, but saving an event to the default/virtual calendar
-            // is exactly the privacy-preserving path Apple provides.
+            // is exactly the privacy-preserving path Apple provides. The
+            // persisted-grant branch covers EventKit's post-grant lag where
+            // the static status still reports notDetermined even though TCC
+            // has accepted the grant.
             return store.defaultCalendarForNewEvents
                 ?? store.calendars(for: .event).first
         }

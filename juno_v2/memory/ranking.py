@@ -5,6 +5,7 @@ import re
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.contracts.memory import MemoryServingPacket, MemorySnapshot, ReplacementRule
 from juno_v2.contracts.modes import ModePolicy
+from juno_v2.memory.entity_policy import session_entity_allowed
 
 _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
     {
@@ -20,9 +21,16 @@ _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
         "but",
         "by",
         "can",
+        "context",
+        "customer",
+        "deadline",
         "did",
+        "document",
         "do",
         "does",
+        "edited",
+        "focus",
+        "font",
         "for",
         "from",
         "he",
@@ -41,8 +49,14 @@ _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
         "of",
         "on",
         "or",
+        "owner",
         "our",
+        "regular",
         "she",
+        "status",
+        "style",
+        "task",
+        "title",
         "so",
         "that",
         "the",
@@ -129,6 +143,14 @@ def rank_memory_for_context(
         key=lambda item: _term_score(item.value, float(item.count)),
     )
     replacements = sorted(snapshot.replacements, key=lambda r: _rep_score(r))
+    snippets = sorted(
+        (
+            item
+            for item in list(getattr(snapshot, "snippets", []) or [])
+            if isinstance(item, dict) and _snippet_allowed(item, app_scope=app_scope, hint_tokens=hint_tokens)
+        ),
+        key=lambda item: _snippet_score(item, app_scope=app_scope, hint_tokens=hint_tokens),
+    )
 
     served_lexicon = lexicon[:12]
     lexicon_aliases: dict[str, list[str]] = {}
@@ -156,11 +178,22 @@ def rank_memory_for_context(
             for item in corrections[:8]
         ],
         session_entities=[item.value for item in entities[:10]],
+        snippets=[
+            {
+                'trigger': str(item.get('trigger') or '').strip(),
+                'scope': str(item.get('scope') or 'global').strip() or 'global',
+                'body_preview': str(item.get('body') or '')[:500],
+                'body_chars': len(str(item.get('body') or '')),
+                'case_sensitive': bool(item.get('case_sensitive', False)),
+            }
+            for item in snippets[:8]
+        ],
         metadata={
             'lexicon_total': len(snapshot.lexicon),
             'replacement_total': len(snapshot.replacements),
             'correction_total': len(snapshot.corrections),
             'session_entity_total': len(snapshot.session_entities),
+            'snippet_total': len(list(getattr(snapshot, "snippets", []) or [])),
             'ranking': {
                 'app_scope': app_scope or None,
                 'mode': mode_key or None,
@@ -173,13 +206,35 @@ def rank_memory_for_context(
 
 
 def _session_entity_allowed(value: str) -> bool:
-    v = (value or "").strip()
-    if not v:
+    return session_entity_allowed(value)
+
+
+def _snippet_allowed(item: dict, *, app_scope: str, hint_tokens: set[str]) -> bool:
+    trigger = str(item.get("trigger") or "").strip()
+    body = str(item.get("body") or "")
+    if not trigger or not body:
         return False
-    tokens = v.split()
-    if len(tokens) == 1 and tokens[0].casefold() in _LOW_SIGNAL_SESSION_ENTITY_WORDS:
-        return False
-    return True
+    scope = str(item.get("scope") or "global").strip().casefold() or "global"
+    if scope in {"global", app_scope, ""}:
+        return True
+    if scope.startswith("app:") and app_scope and scope[4:] == app_scope:
+        return True
+    return bool(_token_set(trigger) & hint_tokens)
+
+
+def _snippet_score(item: dict, *, app_scope: str, hint_tokens: set[str]) -> tuple[float, int, str]:
+    scope = str(item.get("scope") or "global").strip().casefold() or "global"
+    trigger = str(item.get("trigger") or "").strip()
+    bonus = 0.0
+    if scope == "global":
+        bonus += 1.0
+    if scope == app_scope and app_scope:
+        bonus += 8.0
+    if scope.startswith("app:") and app_scope and scope[4:] == app_scope:
+        bonus += 10.0
+    if _token_set(trigger) & hint_tokens:
+        bonus += 14.0
+    return (-bonus, -len(trigger), trigger.casefold())
 
 
 def _low_signal_phrase(value: str) -> bool:

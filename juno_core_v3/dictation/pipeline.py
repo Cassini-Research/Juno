@@ -101,6 +101,11 @@ from juno_v2.language.normalize import LanguageAwareNormalizer
 from juno_v2.language.policy import LanguagePlanner
 from juno_v2.memory.ai_dictionary import AI_GLOSSARY
 from juno_v2.memory.bias import RecognitionBiasEngine
+from juno_v2.memory.entity_policy import (
+    common_english_single_word,
+    commit_session_entity_allowed,
+    term_present_in_text,
+)
 from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.memory.hallucination import (
     looks_like_hallucination,
@@ -114,7 +119,12 @@ from juno_v2.personalization.seed.runtime import JunoSeedPersonalizationRuntime
 from juno_v2.observability.tracing import TraceRecorder
 from juno_v2.transcript.adjudicator import TranscriptAdjudicator, TranscriptAdjudicatorConfig
 from juno_v2.transcript.validators import validate_adjudication_result
+from juno_v2.turn_plan import actions_from_turn_plan, validate_turn_plan
 
+from juno_core_v3.dictation.self_corrections import (
+    MID_UTTERANCE_EDIT_MARKER_RE,
+    apply_unambiguous_retakes,
+)
 from juno_core_v3.dictation.transcriber import (
     DictationTranscriber,
     TranscribeResult,
@@ -281,7 +291,6 @@ class OneShotDictationResult:
             "model_path": self.model_path,
             "audio_duration_ms": self.audio_duration_ms,
             "decode_ms": self.decode_ms,
-            "final_transcription_ms": self.decode_ms,
             "language": self.language,
             "writer_action": self.writer_action,
             "writer_deterministic": self.writer_deterministic,
@@ -812,6 +821,7 @@ class OneShotDictationPipeline:
                 result = self.transcriber.transcribe_wav(
                     wav_bytes,
                     language=requested_language,
+                    language_policy=language_policy,
                     initial_prompt=plan.initial_prompt,
                     bias_phrases=list(plan.bias_phrases),
                 )
@@ -1321,7 +1331,6 @@ class OneShotDictationPipeline:
             )
         self_correction_cues = _collect_self_correction_cues(normalized_text)
         if self_correction_cues:
-            compiled_context.metadata["self_correction_cues"] = list(self_correction_cues)
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "oneshot_self_correction_cues_detected",
@@ -1331,6 +1340,31 @@ class OneShotDictationPipeline:
                     "cues": list(self_correction_cues[:8]),
                 },
             )
+            # Deterministic retake application. The model lanes get the cue
+            # diagnostics too, but they pass through on a large share of real
+            # utterances — without this pass, literal "Scratch that …"
+            # shipped in pasted text (2026-06-10). Only unambiguous retakes
+            # are applied; everything else stays for the model lanes.
+            retake_text, retakes_applied = apply_unambiguous_retakes(normalized_text)
+            if retakes_applied:
+                normalized_text = retake_text
+                all_applied.append({
+                    "rule": "self_correction_retakes",
+                    "scope": "oneshot",
+                    "replacements": retakes_applied,
+                })
+                self.recorder.record(
+                    TraceKind.SYSTEM,
+                    "oneshot_self_corrections_applied",
+                    {
+                        "utterance_id": uid,
+                        "applied_count": len(retakes_applied),
+                        "retakes": retakes_applied[:8],
+                    },
+                )
+                self_correction_cues = _collect_self_correction_cues(normalized_text)
+            if self_correction_cues:
+                compiled_context.metadata["self_correction_cues"] = list(self_correction_cues)
         self.recorder.record(
             TraceKind.SYSTEM,
             "oneshot_final_transcription_postprocess",
@@ -1358,7 +1392,20 @@ class OneShotDictationPipeline:
         )
         adjudication_skip_reason: str | None = None
         fast_skip_reason: str | None = None
-        if _should_run_transcript_adjudication(
+        # Non-wake dictation is corrected by the dictation editor (one 4B
+        # pass with full context); running the 0.6B final adjudication too
+        # would be redundant model latency. Wake/action turns keep it so
+        # commands are cleaned before extraction.
+        editor_owns_final_correction = (
+            not live_adjudication
+            and self.writer_enabled
+            and self.writer_service is not None
+            and bool(getattr(getattr(self.writer_service, "config", None), "dictation_editor_enabled", False))
+            and not leading_wake_status(raw_text, normalized_text).verified
+        )
+        if editor_owns_final_correction:
+            adjudication_skip_reason = "dictation_editor_lane"
+        if not editor_owns_final_correction and _should_run_transcript_adjudication(
             transcript_policy=transcript_policy,
             live_correction_policy=live_correction_policy,
             app_category=context.app_category,
@@ -1666,28 +1713,254 @@ class OneShotDictationPipeline:
                 "normalized_wake_detected": wake_status.normalized_wake_detected,
             },
         )
-        action_source_text = _post_wake_from_adjudicated(adjudicated_text) if wake_status.verified else adjudicated_text
-        action_attempt_rejected = False
-        if wake_status.verified and action_source_text:
-            action_now = datetime.now().astimezone()
-            parsed_actions = detect_actions_for_pipeline(
-                utterance_id=uid,
-                normalized_text=action_source_text,
-                recorder=self.recorder,
-                trace_kind=TraceKind.SYSTEM,
-                now=action_now,
-                wake_verified=True,
-                raw_wake_text=wake_status.raw_wake_text,
-                context_packet=compiled_context.action_packet(
-                    corrected_text=action_source_text,
-                    raw_or_normalized_text_for_wake_gate=wake_status.raw_wake_text or normalized_text,
-                    now_iso=action_now.isoformat(),
-                ),
+        candidate_action_source_text = _post_wake_from_adjudicated(adjudicated_text) if wake_status.verified else adjudicated_text
+        hinted_action_source_text = _action_source_from_live_hint(
+            candidate_action_source_text,
+            transcript_hint=transcript_hint,
+            wake_verified=wake_status.verified,
+        )
+        if hinted_action_source_text is not None:
+            self.recorder.record(
+                TraceKind.SYSTEM,
+                "action_source_recovered_from_live_hint",
+                {
+                    "utterance_id": uid,
+                    "final_post_wake_chars": len(candidate_action_source_text or ""),
+                    "hint_post_wake_chars": len(hinted_action_source_text),
+                },
             )
-            if parsed_actions:
-                parsed_actions_payload = [a.to_dict() for a in parsed_actions]
-            elif _looks_like_action_attempt(action_source_text):
-                action_attempt_rejected = True
+            candidate_action_source_text = hinted_action_source_text
+        action_source_text = candidate_action_source_text if wake_status.verified else adjudicated_text
+        action_attempt_rejected = False
+        action_now = datetime.now().astimezone()
+        writer_mode_policy = _mode_policy_for_final_delivery(
+            mode_pol,
+            context=context,
+            raw_text=raw_text,
+            adjudicated_text=adjudicated_text,
+            adjudication_result=adjudication_result,
+        )
+        turn_plan_result = None
+        turn_plan_validation_payload: dict[str, Any] | None = None
+        turn_plan_allows_mixed_paste = False
+        turn_plan_controls_actions = False
+        turn_plan_source_text = action_source_text if wake_status.verified else adjudicated_text
+        # When the dictation editor owns non-wake dictation, the pipeline
+        # only pre-plans for wake (actions) and selection (transform) turns;
+        # plain dictation goes straight to the editor inside the writer
+        # service, with the planner as its internal floor.
+        editor_owns_dictation = (
+            self.writer_enabled
+            and self.writer_service is not None
+            and bool(getattr(getattr(self.writer_service, "config", None), "dictation_editor_enabled", False))
+            and not wake_status.verified
+            and not (getattr(context, "selected_text", "") or "").strip()
+        )
+        if (
+            self.writer_enabled
+            and self.writer_service is not None
+            and turn_plan_source_text
+            and not editor_owns_dictation
+        ):
+            try:
+                wt = plan.metadata.get("surface_preset_writer_tone")
+                writer_tone = wt.strip() if isinstance(wt, str) and wt.strip() else None
+                turn_plan_result = self.writer_service.plan_turn(
+                    utterance_id=uid,
+                    final_text=turn_plan_source_text,
+                    raw_text=raw_text,
+                    context=context,
+                    memory_store=self.memory_store,
+                    memory_snapshot=memory_snapshot,
+                    memory_packet=memory_packet.to_dict(),
+                    language_hint=requested_language,
+                    mode_policy=writer_mode_policy,
+                    mode_selection=mode_sel,
+                    partial_text=transcript_hint or "",
+                    writer_tone_addon=writer_tone,
+                    wake_verified=wake_status.verified,
+                    now_iso=action_now.isoformat(),
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "turn_plan_pipeline_error",
+                    {"utterance_id": uid, "error": str(exc)},
+                )
+                turn_plan_result = None
+
+        if wake_status.verified and action_source_text:
+            should_try_action_fallback = False
+            action_fallback_reason: str | None = None
+            if turn_plan_result is not None:
+                turn_plan_controls_actions = True
+                if turn_plan_result.ok and isinstance(turn_plan_result.plan, dict):
+                    validation = validate_turn_plan(turn_plan_result.plan, source_text=turn_plan_source_text, context=context)
+                    turn_plan_validation_payload = {
+                        "ok": validation.ok,
+                        "errors": list(validation.errors),
+                        "warnings": list(validation.warnings),
+                    }
+                    self.recorder.record(
+                        TraceKind.SYSTEM,
+                        "turn_plan_action_validation",
+                        {
+                            "utterance_id": uid,
+                            **turn_plan_validation_payload,
+                            "utterance_kind": turn_plan_result.plan.get("utterance_kind"),
+                        },
+                    )
+                    if validation.ok:
+                        plan_kind = str(turn_plan_result.plan.get("utterance_kind") or "").strip()
+                        turn_plan_allows_mixed_paste = _turn_plan_allows_mixed_paste(turn_plan_result.plan)
+                        planned = actions_from_turn_plan(
+                            turn_plan_result.plan,
+                            source_text=turn_plan_source_text,
+                            now=action_now,
+                        )
+                        if planned.actions and not _looks_like_action_attempt(action_source_text):
+                            # Wake word alone is not consent to reroute
+                            # dictation into Notes/Reminders. Without an
+                            # explicit action verb in the spoken text the
+                            # planner's actions are treated as hallucinated
+                            # and the utterance stays dictation (pasted).
+                            self.recorder.record(
+                                TraceKind.SYSTEM,
+                                "turn_plan_actions_ignored_without_verb",
+                                {
+                                    "utterance_id": uid,
+                                    "count": len(planned.actions),
+                                    "kinds": [a.kind.value for a in planned.actions],
+                                },
+                            )
+                        elif planned.actions:
+                            parsed_actions_payload = [a.to_dict() for a in planned.actions]
+                            self.recorder.record(
+                                TraceKind.SYSTEM,
+                                "turn_plan_actions_detected",
+                                {
+                                    "utterance_id": uid,
+                                    "count": len(planned.actions),
+                                    "kinds": [a.kind.value for a in planned.actions],
+                                    "mixed_paste_allowed": turn_plan_allows_mixed_paste,
+                                    "missing_fields": list(planned.missing_fields),
+                                    "skipped_reasons": list(planned.skipped_reasons),
+                                },
+                            )
+                            if planned.skipped_reasons:
+                                # Valid sibling actions shipped; these did not.
+                                # Distinct event so partially dropped commands
+                                # are findable without diffing counts.
+                                self.recorder.record(
+                                    TraceKind.SYSTEM,
+                                    "turn_plan_actions_partially_skipped",
+                                    {
+                                        "utterance_id": uid,
+                                        "skipped_count": len(planned.skipped_reasons),
+                                        "skipped_reasons": list(planned.skipped_reasons),
+                                        "accepted_count": len(planned.actions),
+                                        "missing_fields": list(planned.missing_fields),
+                                    },
+                                )
+                        elif planned.rejected_reason and (
+                            plan_kind in {"actions", "mixed"}
+                            or bool(turn_plan_result.plan.get("actions"))
+                        ):
+                            if "unsupported_operation" in str(planned.rejected_reason):
+                                # The turn-plan lane only creates. Operations
+                                # on existing actions (complete / update /
+                                # delete / snooze) belong to the extractor
+                                # lane with the actions-index reference
+                                # resolver — route there instead of failing
+                                # the turn.
+                                should_try_action_fallback = True
+                                action_fallback_reason = "turn_plan_unsupported_operation"
+                                self.recorder.record(
+                                    TraceKind.SYSTEM,
+                                    "turn_plan_operation_routed_to_fallback",
+                                    {
+                                        "utterance_id": uid,
+                                        "reason": planned.rejected_reason,
+                                    },
+                                )
+                            else:
+                                action_attempt_rejected = True
+                                self.recorder.record(
+                                    TraceKind.SYSTEM,
+                                    "turn_plan_action_rejected",
+                                    {
+                                        "utterance_id": uid,
+                                        "reason": planned.rejected_reason,
+                                        "missing_fields": list(planned.missing_fields),
+                                    },
+                                )
+                        elif plan_kind in {"actions", "mixed"} or bool(turn_plan_result.plan.get("actions")):
+                            action_attempt_rejected = True
+                            self.recorder.record(
+                                TraceKind.SYSTEM,
+                                "turn_plan_action_rejected",
+                                {
+                                    "utterance_id": uid,
+                                    "reason": planned.rejected_reason or "no_valid_actions",
+                                    "missing_fields": list(planned.missing_fields),
+                                },
+                            )
+                    elif _looks_like_action_attempt(action_source_text):
+                        action_attempt_rejected = True
+                        self.recorder.record(
+                            TraceKind.SYSTEM,
+                            "turn_plan_action_rejected",
+                            {
+                                "utterance_id": uid,
+                                "reason": "turn_plan_validation_failed",
+                                "validation_errors": list(validation.errors),
+                            },
+                        )
+                elif _looks_like_action_attempt(action_source_text):
+                    action_attempt_rejected = True
+                    self.recorder.record(
+                        TraceKind.SYSTEM,
+                        "turn_plan_action_rejected",
+                        {
+                            "utterance_id": uid,
+                            "reason": getattr(turn_plan_result, "status", None) or "turn_plan_invalid",
+                            "errors": list(getattr(turn_plan_result, "errors", ()) or ()),
+                        },
+                    )
+            else:
+                should_try_action_fallback = _looks_like_action_attempt(action_source_text)
+                action_fallback_reason = "turn_plan_unavailable" if should_try_action_fallback else None
+
+            if should_try_action_fallback and not parsed_actions_payload:
+                parsed_actions = detect_actions_for_pipeline(
+                    utterance_id=uid,
+                    normalized_text=action_source_text,
+                    recorder=self.recorder,
+                    trace_kind=TraceKind.SYSTEM,
+                    now=action_now,
+                    wake_verified=True,
+                    raw_wake_text=wake_status.raw_wake_text,
+                    context_packet=compiled_context.action_packet(
+                        corrected_text=action_source_text,
+                        raw_or_normalized_text_for_wake_gate=wake_status.raw_wake_text or normalized_text,
+                        now_iso=action_now.isoformat(),
+                    ),
+                )
+                if parsed_actions:
+                    parsed_actions_payload = [a.to_dict() for a in parsed_actions]
+                    turn_plan_controls_actions = False
+                    self.recorder.record(
+                        TraceKind.SYSTEM,
+                        "turn_plan_action_fallback_used",
+                        {
+                            "utterance_id": uid,
+                            "reason": action_fallback_reason,
+                            "count": len(parsed_actions),
+                            "kinds": [a.kind.value for a in parsed_actions],
+                        },
+                    )
+                elif _looks_like_action_attempt(action_source_text):
+                    action_attempt_rejected = True
 
         # Seed context-entity observations are durable memory signals. They are
         # recorded only after the final text is actually committed by the user
@@ -1706,13 +1979,6 @@ class OneShotDictationPipeline:
 
         # 9. Writer service --------------------------------------------------
         writer_outcome: WriterOutcome | None = None
-        writer_mode_policy = _mode_policy_for_final_delivery(
-            mode_pol,
-            context=context,
-            raw_text=raw_text,
-            adjudicated_text=adjudicated_text,
-            adjudication_result=adjudication_result,
-        )
         if (
             not parsed_actions_payload
             and not action_attempt_rejected
@@ -1737,6 +2003,9 @@ class OneShotDictationPipeline:
                     mode_selection=mode_sel,
                     partial_text=transcript_hint or "",
                     writer_tone_addon=writer_tone,
+                    turn_plan_result=turn_plan_result,
+                    wake_verified=wake_status.verified,
+                    now_iso=action_now.isoformat(),
                 )
             except Exception as exc:  # noqa: BLE001 — never fail the whole turn on writer errors
                 self.recorder.record(
@@ -1746,10 +2015,29 @@ class OneShotDictationPipeline:
                 )
                 writer_outcome = None
 
-        writer_fallback_text = action_source_text if wake_status.verified else adjudicated_text
+        writer_fallback_text = (
+            action_source_text
+            if wake_status.verified and turn_plan_result is not None
+            else adjudicated_text
+        )
         writer_text, writer_action, writer_deterministic, memory_updated = _writer_to_surface_text(
             writer_outcome, fallback=writer_fallback_text
         )
+        writer_text, writer_term_repairs = _preserve_writer_context_terms(
+            writer_text,
+            fallback_text=writer_fallback_text,
+            compiled_context=compiled_context,
+        )
+        if writer_term_repairs:
+            self.recorder.record(
+                TraceKind.WRITER,
+                "writer_context_terms_preserved",
+                {
+                    "utterance_id": uid,
+                    "repairs": writer_term_repairs[:8],
+                    "repair_count": len(writer_term_repairs),
+                },
+            )
         paste_kind, noop_reason = _compute_oneshot_paste_kind(
             writer_outcome, fallback_text=writer_fallback_text
         )
@@ -1795,10 +2083,15 @@ class OneShotDictationPipeline:
             paste_kind = "none"
             if not noop_reason:
                 noop_reason = "action_only"
+            writer_text = ""
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "action_paste_suppressed",
-                {"utterance_id": uid, "action_count": len(parsed_actions_payload)},
+                {
+                    "utterance_id": uid,
+                    "action_count": len(parsed_actions_payload),
+                    "turn_plan_controls_actions": turn_plan_controls_actions,
+                },
             )
         elif action_attempt_rejected:
             paste_kind = "none"
@@ -1894,6 +2187,11 @@ class OneShotDictationPipeline:
 
         processing_ms = int((time.perf_counter_ns() - started_ns) / 1_000_000.0)
         transcript_out = (writer_text or "").strip()
+        if not transcript_out and action_attempt_rejected:
+            # A rejected action attempt suppresses the paste, but the spoken
+            # words must stay recoverable from History — silent loss of the
+            # transcript is never acceptable.
+            transcript_out = (adjudicated_text or "").strip()
         raw_out = (raw_text or "").strip()
         words = len([tok for tok in transcript_out.split() if tok])
         app_name = getattr(cached_ctx, "app_name", None)
@@ -1920,10 +2218,9 @@ class OneShotDictationPipeline:
                         "window_title": window_title,
                         "app_category": app_category,
                     },
-                    "failure_reason": None if transcript_out or paste_kind != "none" else (noop_reason or None),
+                    "failure_reason": None if paste_kind != "none" else (noop_reason or None),
                     "session_class": "insert",
                     "processing_ms": processing_ms,
-                    "final_transcription_ms": result.decode_ms,
                     "words": words,
                     "replay_available": bool(self.replay_available(uid)),
                     "audio_path": audio_path_rel,
@@ -1947,7 +2244,6 @@ class OneShotDictationPipeline:
                 "adjudicated_chars": len(adjudicated_text),
                 "writer_chars": len(writer_text),
                 "duration_ms": result.audio_duration_ms,
-                "final_transcription_ms": result.decode_ms,
                 "backend": result.backend_name,
                 "model_path": resolved_model_path,
                 "writer_action": writer_action,
@@ -1967,7 +2263,6 @@ class OneShotDictationPipeline:
             "session_context_tape": tape_meta,
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
-            "final_transcription_ms": result.decode_ms,
         }
         if audio_diag is not None:
             meta_out["audio_diagnostics"] = audio_diag.to_dict()
@@ -1975,6 +2270,13 @@ class OneShotDictationPipeline:
             meta_out["final_asr_hallucination_fallback"] = final_asr_hallucination_fallback
         if adjudication_result is not None:
             meta_out["transcript_adjudication"] = adjudication_result.to_dict()
+        if turn_plan_result is not None:
+            meta_out["turn_plan"] = _turn_plan_result_summary(
+                turn_plan_result,
+                validation=turn_plan_validation_payload,
+                mixed_paste_allowed=turn_plan_allows_mixed_paste,
+                controls_actions=turn_plan_controls_actions,
+            )
         if noop_reason:
             meta_out["noop_reason"] = noop_reason
         if writer_safety_reason is not None:
@@ -2138,13 +2440,46 @@ class OneShotDictationPipeline:
                 )
 
         committed_lower = committed.casefold()
-        entities = self.bias_engine.extract_session_entities(committed)
+        raw_or_adjudicated = " ".join(
+            part
+            for part in (
+                raw_text,
+                record.normalized_text,
+                record.adjudicated_text,
+                record.literal_text,
+            )
+            if part
+        )
+        if correction_suppressed_reason is None:
+            entities = [
+                token
+                for token in self.bias_engine.extract_session_entities(committed)
+                if _commit_session_entity_allowed(
+                    token,
+                    committed_text=committed,
+                    spoken_evidence_text=raw_or_adjudicated,
+                    context=record.context,
+                )
+            ]
+        else:
+            entities = []
         if record.plan is not None:
             for candidate in record.plan.context.candidate_entities[:8]:
                 token = (candidate or "").strip()
                 if (
                     self.bias_engine.is_session_entity_candidate(token)
                     and token.casefold() in committed_lower
+                    and (
+                        correction_suppressed_reason is None
+                        or term_present_in_text(token, raw_or_adjudicated)
+                    )
+                    and _commit_session_entity_allowed(
+                        token,
+                        committed_text=committed,
+                        spoken_evidence_text=raw_or_adjudicated,
+                        context=record.context,
+                        context_backed=True,
+                    )
                 ):
                     entities.append(token)
         entities = _canonicalize_session_entities_against_memory(entities, self.memory_store.snapshot())
@@ -2279,9 +2614,10 @@ class OneShotDictationPipeline:
             raw_items = []
 
         try:
-            from juno_v2.context.provider import _extract_candidates
+            from juno_v2.context.provider import _context_candidate_allowed, _extract_candidates
         except ImportError:
             _extract_candidates = None
+            _context_candidate_allowed = None
 
         chunks: list[str] = []
         explicit_terms: list[str] = []
@@ -2294,17 +2630,22 @@ class OneShotDictationPipeline:
             selected = _bounded_text(item.get("selected_text"), 240)
             before = _bounded_text(item.get("focused_text_before") or item.get("focused_text"), 240)
             after = _bounded_text(item.get("focused_text_after"), 240)
+            field_excerpt = _bounded_text(item.get("field_text_excerpt"), 480)
             doc = _bounded_text(item.get("focused_document_path") or item.get("focused_file_path"), 160)
-            key = (app.casefold(), title.casefold(), (selected or before or after).casefold())
+            key = (
+                app.casefold(),
+                title.casefold(),
+                (selected or before or after or field_excerpt).casefold(),
+            )
             if key in seen_snapshot_keys:
                 continue
             seen_snapshot_keys.add(key)
-            chunks.extend([app, title, selected, before, after, doc])
+            chunks.extend([app, title, selected, before, after, field_excerpt, doc])
             raw_candidates = item.get("candidate_entities") or item.get("candidate_terms")
             if isinstance(raw_candidates, list):
                 for raw in raw_candidates[:24]:
                     value = _bounded_text(raw, 80)
-                    if value:
+                    if value and (_context_candidate_allowed is None or _context_candidate_allowed(value)):
                         explicit_terms.append(value)
 
         terms: list[str] = list(explicit_terms)
@@ -2512,25 +2853,72 @@ def _post_wake_from_adjudicated(adjudicated_text: str) -> str:
 
 
 def _looks_like_action_attempt(text: str) -> bool:
-    lower = (text or "").casefold()
-    if any(q in lower for q in (" how ", " what ", " why ", " when ", " where ", "?", "how do", "how reminders")):
+    from juno_v2.turn_plan.actions import native_action_signal_present
+
+    return native_action_signal_present(text)
+
+
+def _turn_plan_allows_mixed_paste(plan: dict[str, Any]) -> bool:
+    del plan
+    return False
+
+
+def _action_source_from_live_hint(
+    final_post_wake_text: str,
+    *,
+    transcript_hint: str | None,
+    wake_verified: bool,
+) -> str | None:
+    if not wake_verified or not transcript_hint:
+        return None
+    final_source = str(final_post_wake_text or "").strip()
+    if _looks_like_action_attempt(final_source):
+        return None
+    hint_status = leading_wake_status(transcript_hint, transcript_hint)
+    hinted = _post_wake_from_adjudicated(transcript_hint) if hint_status.verified else str(transcript_hint or "").strip()
+    if not hinted or not _looks_like_action_attempt(hinted):
+        return None
+    if not _action_hint_compatible(final_source, hinted):
+        return None
+    return hinted
+
+
+def _action_hint_compatible(final_post_wake_text: str, hinted_post_wake_text: str) -> bool:
+    final_tokens = _action_source_content_tokens(final_post_wake_text)
+    hint_tokens = _action_source_content_tokens(hinted_post_wake_text)
+    if not final_tokens or not hint_tokens:
         return False
-    phrases = (
-        "remind me",
-        "set a reminder",
-        "reminder",
-        "take a note",
-        "take note",
-        "make a note",
-        "note that",
-        "save a note",
-        "set an alarm",
-        "alarm",
-        "wake me",
-        "set a timer",
-        "timer",
-    )
-    return any(p in lower for p in phrases)
+    overlap = final_tokens.intersection(hint_tokens)
+    return len(overlap) >= min(2, len(final_tokens), len(hint_tokens))
+
+
+_ACTION_SOURCE_TOKEN_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "for",
+    "is",
+    "it",
+    "juno",
+    "me",
+    "note",
+    "remind",
+    "reminder",
+    "set",
+    "take",
+    "that",
+    "the",
+    "to",
+}
+
+
+def _action_source_content_tokens(text: str) -> set[str]:
+    tokens = {
+        token
+        for token in re.findall(r"[A-Za-z0-9]+", str(text or "").casefold())
+        if len(token) >= 3 and token not in _ACTION_SOURCE_TOKEN_STOPWORDS
+    }
+    return tokens
 
 
 def _record_transcript_decision(
@@ -2677,6 +3065,49 @@ def _record_transcript_decision(
         pass
 
 
+def _turn_plan_result_summary(
+    result: Any,
+    *,
+    validation: dict[str, Any] | None,
+    mixed_paste_allowed: bool,
+    controls_actions: bool,
+) -> dict[str, Any]:
+    plan = getattr(result, "plan", None)
+    payload: dict[str, Any] = {
+        "status": getattr(result, "status", None),
+        "backend": getattr(result, "backend_name", None),
+        "decode_ms": float(getattr(result, "decode_ms", 0.0) or 0.0),
+        "errors": list(getattr(result, "errors", ()) or ()),
+        "repair_attempted": bool(getattr(result, "repair_attempted", False)),
+        "repair_status": getattr(result, "repair_status", None),
+        "initial_status": getattr(result, "initial_status", None),
+        "initial_errors": list(getattr(result, "initial_errors", ()) or ()),
+        "validation_errors_before_repair": list(
+            getattr(result, "validation_errors_before_repair", ()) or ()
+        ),
+        "validation_warnings_before_repair": list(
+            getattr(result, "validation_warnings_before_repair", ()) or ()
+        ),
+        "normalization_notes": list(getattr(result, "normalization_notes", ()) or ()),
+        "raw_output_chars": len(str(getattr(result, "raw_output", "") or "")),
+        "validation": dict(validation or {}),
+        "mixed_paste_allowed": bool(mixed_paste_allowed),
+        "controls_actions": bool(controls_actions),
+    }
+    if isinstance(plan, dict):
+        render = plan.get("render_plan") if isinstance(plan.get("render_plan"), dict) else {}
+        safety = plan.get("safety") if isinstance(plan.get("safety"), dict) else {}
+        payload.update({
+            "utterance_kind": plan.get("utterance_kind"),
+            "render_kind": render.get("render_kind"),
+            "action_count": len(plan.get("actions") or []) if isinstance(plan.get("actions"), list) else 0,
+            "uncertainty_count": len(plan.get("uncertainties") or []) if isinstance(plan.get("uncertainties"), list) else 0,
+            "commit_policy": safety.get("commit_policy"),
+            "execute_policy": safety.get("execute_policy"),
+        })
+    return payload
+
+
 def _should_run_transcript_adjudication(
     *,
     transcript_policy: str,
@@ -2717,8 +3148,6 @@ def _mode_policy_for_final_delivery(
         return mode_policy
 
     requested_policy = _formatting_policy_from_qwen_plan(adjudication_result)
-    if requested_policy is None:
-        requested_policy = _spoken_structure_formatting_policy(raw_text, adjudicated_text)
     if requested_policy is None:
         return mode_policy
 
@@ -2782,49 +3211,6 @@ def _formatting_policy_from_qwen_plan(
     return None
 
 
-_STRUCTURE_NEGATION_RE = re.compile(
-    r"\b(?:do\s+not|don't|dont|should\s+not)\s+"
-    r"(?:turn|convert|make|format|structure)\b.{0,48}\b"
-    r"(?:bullet|bullets|numbered|list|format|structure|sections?)\b",
-    re.IGNORECASE,
-)
-_STRUCTURE_EXPLICIT_RE = re.compile(
-    r"\b(?:bullet(?:s| points?)?|numbered(?: list)?|make (?:this|it) (?:a )?list|"
-    r"turn (?:this|it) into (?:a )?(?:list|bullets)|"
-    r"(?:two|three|four|five|\d+)\s+(?:points|sections|bullets|risks|decisions|steps)|"
-    r"we need (?:two|three|four|five|\d+)\s+(?:points|sections|bullets|risks|decisions|steps))\b",
-    re.IGNORECASE,
-)
-_STRUCTURE_SEQUENCE_RE = re.compile(
-    r"\bfirst\b.{0,280}\bsecond\b.{0,280}\bthird\b",
-    re.IGNORECASE | re.DOTALL,
-)
-_EMAIL_STRUCTURE_RE = re.compile(
-    r"\b(?:write|draft|compose)\s+(?:an?\s+)?email\b|\bsubject\s+line\b|\bemail\s+to\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_REWRITE_RE = re.compile(
-    r"\b(?:write|draft|compose)\s+(?:this|it)?\s*(?:as|into|like)?\s*(?:a\s+)?"
-    r"(?:concise\s+)?(?:status\s+update|summary|checklist)\b|"
-    r"\b(?:turn|convert|format)\s+(?:this|it)\s+into\s+(?:a\s+)?"
-    r"(?:status\s+update|summary|checklist|concise\s+note)\b",
-    re.IGNORECASE,
-)
-
-
-def _spoken_structure_formatting_policy(raw_text: str, adjudicated_text: str) -> str | None:
-    text = " ".join(part for part in (raw_text or "", adjudicated_text or "") if part).strip()
-    if not text or _STRUCTURE_NEGATION_RE.search(text):
-        return None
-    if _EMAIL_STRUCTURE_RE.search(text):
-        return "email"
-    if _STRUCTURE_EXPLICIT_RE.search(text) or _STRUCTURE_SEQUENCE_RE.search(text):
-        return "structured_notes"
-    if _EXPLICIT_REWRITE_RE.search(text):
-        return "explicit_rewrite"
-    return None
-
-
 def _collect_self_correction_cues(text: str) -> tuple[dict[str, Any], ...]:
     current = re.sub(r"\s+", " ", (text or "").strip())
     if not current:
@@ -2875,10 +3261,10 @@ def _final_adjudication_fast_skip_reason(
 ) -> str | None:
     # Final transcript adjudication is a product contract, not an optional
     # latency knob. The preview lane can be volatile, but the final paste must
-    # always pass through the cleanup/adjudication layer so long dictations do
-    # not ship raw Whisper casing, punctuation, or tail artifacts. Keep this
-    # helper as a policy seam for callers/tests, but do not fast-skip final
-    # cleanse based on length, audio duration, or "already clean" heuristics.
+    # pass through the cleanup/adjudication layer so long dictations and
+    # wake-gated action commands resolve corrections, punctuation, and
+    # formatting intent before turn planning. Wake verification still happens
+    # from raw/normalized ASR and cannot be created by Qwen.
     return None
 
 
@@ -2888,25 +3274,24 @@ def _reconcile_proper_nouns_from_live_hint(
     final_text: str,
     protected_terms: tuple[str, ...],
 ) -> tuple[str, list[dict[str, str]]]:
+    del protected_terms
     live_terms = _proper_noun_terms(live_hint or "")
-    for term in protected_terms:
-        if term:
-            live_terms.append(str(term))
     live_terms = list(dict.fromkeys(t for t in live_terms if _proper_noun_candidate(t)))
     if not live_terms or not final_text:
         return final_text, []
 
+    live_case_by_fold = {term.casefold(): term for term in live_terms}
     replacements: list[dict[str, str]] = []
 
     def repl(match: re.Match[str]) -> str:
         token = match.group(0)
         folded = token.casefold()
-        if any(folded == term.casefold() for term in live_terms):
+        exact_case = live_case_by_fold.get(folded)
+        if exact_case:
+            if token != exact_case:
+                replacements.append({"from": token, "to": exact_case, "source": "live_hint_case"})
+                return exact_case
             return token
-        for term in live_terms:
-            if _near_proper_noun_spelling(term, token):
-                replacements.append({"from": token, "to": term, "source": "live_hint"})
-                return term
         return token
 
     out = re.sub(r"(?<!\w)[A-Z][A-Za-z]{2,}(?!\w)", repl, final_text)
@@ -3012,6 +3397,8 @@ def _reconcile_explicit_candidate_term_confusions(
         def repl(match: re.Match[str]) -> str:
             observed = match.group(0)
             if observed.casefold() == term.casefold():
+                return observed
+            if not _observed_candidate_repair_allowed(observed):
                 return observed
             if not _candidate_term_phonetic_confusion(term, observed, soundex):
                 return observed
@@ -3126,6 +3513,17 @@ def _split_candidate_tokens_safe_for_term(observed_tokens: list[str], target: st
     return True
 
 
+def _observed_candidate_repair_allowed(observed: str) -> bool:
+    token = re.sub(r"[^A-Za-z0-9]+", "", observed or "")
+    if len(token) <= 2:
+        return False
+    if token.casefold() in _SPLIT_CANDIDATE_FUNCTION_WORDS:
+        return False
+    if common_english_single_word(token):
+        return False
+    return True
+
+
 def _repair_terminal_protected_command_terms(
     *,
     text: str,
@@ -3216,45 +3614,37 @@ def _reconcile_protected_term_near_misses(
     protected_terms: tuple[str, ...],
     ai_glossary: frozenset[str] = AI_GLOSSARY,
 ) -> tuple[str, list[dict[str, str]]]:
-    """Repair near-misses against the user's protected-term list and the
-    project AI/ML glossary.
+    """Repair near-misses against protected terms and the AI/ML glossary.
 
-    Eligible target terms come from two sources, merged with dedupe:
-
-    1. Per-utterance ``protected_terms`` (user memory entries marked
-       protected by the context compiler).
-    2. The static :data:`juno_v2.memory.ai_dictionary.AI_GLOSSARY` — model
-       and framework names with distinctive spellings that ASR mishears in
-       roughly the same way for every user (Qwen, Llama, Mixtral, GGUF, …).
-
-    The gate then applies one uniform rule: any candidate must pass
-    :func:`_protected_near_miss_term_allowed` (length ≥ 3, not in the
-    common-English filter). No shape-of-token OR-clauses, no per-term
-    negative lists.
+    The static glossary is not gated by app category. Instead, static glossary
+    candidates use a stricter observed-word check so ordinary real words are not
+    rewritten just because a domain term exists. User/context protected terms
+    remain stronger evidence and can repair in any app surface.
     """
 
     if not text:
         return text, []
 
-    candidates: list[str] = []
+    candidates: list[tuple[str, str, bool]] = []
     seen: set[str] = set()
 
-    def _add(term: str) -> None:
+    def _add(term: str, *, source: str, allow_common_target: bool = False) -> None:
         token = (term or "").strip()
-        if not token or not _protected_near_miss_term_allowed(token):
+        if not token or not _protected_near_miss_term_allowed(token, allow_common_target=allow_common_target):
             return
-        key = token.casefold()
+        key = f"{source}:{token.casefold()}"
         if key in seen:
             return
         seen.add(key)
-        candidates.append(token)
+        candidates.append((token, source, allow_common_target))
 
+    ai_glossary_keys = {term.casefold() for term in ai_glossary}
     for term in protected_terms[:32]:
-        _add(term)
+        _add(term, source="protected", allow_common_target=str(term or "").casefold() in ai_glossary_keys)
         for token in _protected_phrase_repair_tokens(term):
-            _add(token)
+            _add(token, source="protected", allow_common_target=True)
     for term in ai_glossary:
-        _add(term)
+        _add(term, source="ai_glossary", allow_common_target=True)
 
     if not candidates:
         return text, []
@@ -3267,9 +3657,8 @@ def _reconcile_protected_term_near_misses(
     # Tokens that already match a candidate verbatim are short-circuited by
     # ``_protected_term_near_miss`` itself, which returns False when observed
     # casefolds to a candidate. So we don't need a per-term "already present"
-    # pre-skip — that was a leftover from the per-term-loop shape and would
-    # actually have been wrong here (we want "Quen" → "Qwen" to fire even
-    # when "Qwen" already appears elsewhere in the text).
+    # pre-skip; near-miss repair should still work when the correct term
+    # appears elsewhere in the same text.
 
     replacements: list[dict[str, str]] = []
 
@@ -3277,8 +3666,12 @@ def _reconcile_protected_term_near_misses(
         observed = match.group(0)
         best_target: str | None = None
         best_ratio = 0.0
-        for term in candidates:
-            if not _protected_term_near_miss(term, observed):
+        for term, source, _allow_common_target in candidates:
+            if not _protected_term_near_miss(
+                term,
+                observed,
+                static_glossary=source == "ai_glossary",
+            ):
                 continue
             ratio = difflib.SequenceMatcher(
                 a=observed.casefold(), b=term.casefold(), autojunk=False
@@ -3294,7 +3687,9 @@ def _reconcile_protected_term_near_misses(
         return best_target
 
     out = re.sub(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z'-]{2,31}(?![A-Za-z0-9])", repl, text)
-    for term in candidates[:32]:
+    for term, source, _allow_common_target in candidates[:32]:
+        if source == "ai_glossary":
+            continue
         split_text, split_replacements = _reconcile_split_candidate_term(
             out,
             term,
@@ -3309,10 +3704,10 @@ def _reconcile_protected_term_near_misses(
 def _protected_phrase_repair_tokens(term: str) -> tuple[str, ...]:
     """Rare-looking tokens inside protected phrases can repair ASR spelling.
 
-    A screen/memory phrase like "Silvia Gamache" should help Qwen/final ASR
-    repair "Sylvia Gamache" without making the whole utterance deterministic.
-    Short phrase fragments are intentionally ignored: "Luma Ray" should not
-    teach the system to rewrite ordinary words like "say" into "Ray".
+    A screen/memory phrase should help final ASR repair a rare token inside
+    that phrase without making the whole utterance deterministic. Short phrase
+    fragments are intentionally ignored so ordinary words do not get rewritten
+    to short protected-token fragments.
     """
 
     raw = str(term or "").strip()
@@ -3333,7 +3728,7 @@ def _protected_phrase_repair_tokens(term: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _protected_near_miss_term_allowed(term: str) -> bool:
+def _protected_near_miss_term_allowed(term: str, *, allow_common_target: bool = False) -> bool:
     """Gate for what tokens may serve as a near-miss reconciliation target.
 
     The rule is intentionally generic: any token that is long enough, shaped
@@ -3350,15 +3745,38 @@ def _protected_near_miss_term_allowed(term: str) -> bool:
         return False
     if token.casefold() in _COMMON_PHONETIC_REPAIR_WORDS:
         return False
+    if not allow_common_target and common_english_single_word(token) and not _single_token_has_identifier_shape(token):
+        return False
     return True
 
 
-def _protected_term_near_miss(term: str, observed: str) -> bool:
+def _single_token_has_identifier_shape(value: str) -> bool:
+    token = str(value or "")
+    return bool(
+        re.fullmatch(r"[A-Z0-9]{2,}(?:[._-][A-Z0-9]{2,})*", token)
+        or re.search(r"[a-z][A-Z]", token)
+        or (any(ch.isalpha() for ch in token) and any(ch.isdigit() for ch in token))
+    )
+
+
+def _single_letter_inflection_pair(a: str, b: str) -> bool:
+    """True when ``a`` and ``b`` are the same word ± a trailing inflection
+    suffix ("action"/"actions", "branch"/"branches")."""
+    for x, y in ((a, b), (b, a)):
+        if x == y + "s" or x == y + "es":
+            return True
+    return False
+
+
+def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool = False) -> bool:
     """True if ``observed`` is a near-miss for ``term``.
 
     Constraints (all must hold):
     - Casefolded observed != target (no identity match).
     - Observed not in the common-English filter.
+    - Static glossary repairs also reject observed tokens that are real/common
+      English words; explicit protected context is stronger evidence and can
+      still repair those.
     - Same first letter as target.
     - Length differs by at most 1 character. This is tight on purpose: with
       diff ≤ 2 a 3-letter glossary term like "MoE" matches a 5-letter common
@@ -3375,6 +3793,28 @@ def _protected_term_near_miss(term: str, observed: str) -> bool:
     obs_folded = obs.casefold()
     target_folded = target.casefold()
     if obs_folded in _COMMON_PHONETIC_REPAIR_WORDS:
+        return False
+    if static_glossary and common_english_single_word(obs_folded):
+        return False
+    if (
+        common_english_single_word(obs_folded)
+        and _single_letter_inflection_pair(obs_folded, target_folded)
+        and not _single_token_has_identifier_shape(target)
+    ):
+        # A common word and its own plural/singular are not an ASR
+        # near-miss — they are the same word inflected, and "repairing"
+        # one into the other rewrites the user's grammar. Screen-term
+        # phrase tokens made Juno's own sidebar label eligible here and
+        # "take a note, action items…" became "Actions items…" — which
+        # then broke turn-plan span grounding for the note body
+        # (production 2026-06-11). Distinct words that merely look alike
+        # ("gamma" → protected "Gemma") still repair.
+        return False
+    if (
+        len(obs_folded) > len(target_folded)
+        and obs_folded.startswith(target_folded)
+        and not _single_token_has_identifier_shape(target)
+    ):
         return False
     if obs_folded[:1] != target_folded[:1] or abs(len(obs_folded) - len(target_folded)) > 1:
         return False
@@ -3400,6 +3840,36 @@ def _canonicalize_session_entities_against_memory(
                 break
         out.append(replacement or token)
     return out
+
+
+def _commit_session_entity_allowed(
+    token: str,
+    *,
+    committed_text: str,
+    spoken_evidence_text: str,
+    context: TypedContextBundle | None,
+    context_backed: bool = False,
+) -> bool:
+    context_text = ""
+    if context is not None:
+        context_text = " ".join(
+            part
+            for part in (
+                context.selected_text,
+                context.focused_text_before,
+                context.focused_text_after,
+                context.field_text_excerpt,
+                context.window_title,
+            )
+            if part
+        )
+    return commit_session_entity_allowed(
+        token,
+        committed_text=committed_text,
+        spoken_evidence_text=spoken_evidence_text,
+        context_text=context_text,
+        context_backed=context_backed,
+    )
 
 
 def _rare_memory_subterms(snapshot: MemorySnapshot) -> tuple[str, ...]:
@@ -3671,10 +4141,10 @@ def _repair_alphabet_sequence_runs(text: str) -> TranscriptEditResult:
     return TranscriptEditResult(text=out, changed=out != re.sub(r"\s+", " ", current).strip(), edits=tuple(reversed(edits)))
 
 
-_MID_UTTERANCE_EDIT_MARKER_RE = re.compile(
-    r"(?<!\w)(?:(?:scratch|delete|remove)\s+that|no\s+(?:actually|wait)|nah\s+(?:actually|wait)|sorry\s+(?:actually|rather)|actually\s+no)(?!\w)[\s,.;:!?-]*",
-    re.IGNORECASE,
-)
+# Single source of truth for spoken edit markers lives in
+# juno_core_v3.dictation.self_corrections (shared with the deterministic
+# retake application pass).
+_MID_UTTERANCE_EDIT_MARKER_RE = MID_UTTERANCE_EDIT_MARKER_RE
 
 
 def _apply_mid_utterance_edits(text: str) -> TranscriptEditResult:
@@ -4192,6 +4662,76 @@ def _unsafe_writer_surface_reason(
     if len(surface_words) <= int(len(fallback_words) * 0.45) and overlap < max(3, int(len(surface_words) * 0.35)):
         return "low_overlap_writer_output"
     return None
+
+
+def _preserve_writer_context_terms(
+    writer_text: str,
+    *,
+    fallback_text: str,
+    compiled_context: CompiledContext,
+) -> tuple[str, list[dict[str, str]]]:
+    surface = str(writer_text or "")
+    fallback = str(fallback_text or "")
+    if not surface.strip() or not fallback.strip():
+        return surface, []
+    repairs: list[dict[str, str]] = []
+    out = surface
+    for term in _writer_preservation_terms(compiled_context, fallback):
+        if term_present_in_text(term, out):
+            continue
+        out, term_repairs = _repair_writer_term_near_miss(out, term)
+        repairs.extend(term_repairs)
+    return out, repairs
+
+
+def _writer_preservation_terms(compiled_context: CompiledContext, fallback_text: str) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in list(getattr(compiled_context, "terms", ()) or [])[:64]:
+        source = str(getattr(term, "source", "") or "")
+        protected = bool(getattr(term, "protected", False))
+        if source not in {"memory", "replacement", "correction", "screen", "selection", "session", "file", "symbol"} and not protected:
+            continue
+        value = str(getattr(term, "canonical", None) or getattr(term, "text", "") or "").strip()
+        if not value or not term_present_in_text(value, fallback_text):
+            continue
+        if common_english_single_word(value) and not (protected or _single_token_has_identifier_shape(value)):
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return tuple(out)
+
+
+def _repair_writer_term_near_miss(text: str, term: str) -> tuple[str, list[dict[str, str]]]:
+    target = str(term or "").strip()
+    if not target or " " in target:
+        return text, []
+    repairs: list[dict[str, str]] = []
+
+    def repl(match: re.Match[str]) -> str:
+        observed = match.group(0)
+        if observed.casefold() == target.casefold():
+            return observed
+        if not _writer_term_near_miss(target, observed):
+            return observed
+        repairs.append({"from": observed, "to": target, "source": "writer_context_term_preservation"})
+        return target
+
+    out = re.sub(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9'-]{2,31}(?![A-Za-z0-9])", repl, text)
+    return out, repairs
+
+
+def _writer_term_near_miss(target: str, observed: str) -> bool:
+    lhs = str(target or "").strip()
+    rhs = str(observed or "").strip()
+    if not lhs or not rhs or lhs.casefold() == rhs.casefold():
+        return False
+    if lhs[:1].casefold() != rhs[:1].casefold() or abs(len(lhs) - len(rhs)) > 2:
+        return False
+    return difflib.SequenceMatcher(a=lhs.casefold(), b=rhs.casefold(), autojunk=False).ratio() >= 0.78
 
 
 def _content_word_list(text: str) -> list[str]:

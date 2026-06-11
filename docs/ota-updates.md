@@ -648,7 +648,7 @@ beta-only update.
 - `notarytool` cannot find the Keychain profile: rerun
   `xcrun notarytool store-credentials` on the release Mac, or pass the correct
   profile name to `--notary-keychain-profile`.
-- DMG is signed but macOS reports `Unnotarized Developer ID`: submit the
+- DMG is signed but macOS reports `Unnotarized Developer ID` on open: submit the
   DMG itself to `notarytool`, wait for `Accepted`, then run
   `xcrun stapler staple` on the DMG. Notarizing only `Juno.app` is not enough
   for a website DMG download.

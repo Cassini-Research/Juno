@@ -53,9 +53,9 @@ struct JunoActionsPage: View {
     /// phrase, not a sentence — Apple-style "iCloud · Photos"-shape.
     private func destinationLabel(for d: JunoActionDescriptor) -> String {
         switch d.kind {
-        case .reminder: return "Apple Reminders"
-        case .note:     return "Apple Notes · Juno folder"
-        case .alarm:    return "Apple Calendar"
+        case .reminder: return "Reminders"
+        case .note:     return "Notes · Juno folder"
+        case .alarm:    return "Alarm"
         }
     }
 
@@ -152,14 +152,7 @@ struct JunoActionsPage: View {
     private func emptyStateExampleRow(_ d: JunoActionDescriptor) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(d.accent.opacity(0.13))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: d.symbolName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(d.accent)
-                }
+                JunoActionNativeIconTile(kind: d.kind, tileSize: 28, iconSize: 24, fallbackTint: d.accent)
                 Text(d.pluralName)
                     .font(.system(.footnote, design: .rounded).weight(.semibold))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
@@ -243,14 +236,7 @@ struct JunoActionsPage: View {
         let granted = status.isGranted
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(d.accent.opacity(0.13))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: d.symbolName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(d.accent)
-                }
+                JunoActionNativeIconTile(kind: d.kind, tileSize: 28, iconSize: 24, fallbackTint: d.accent)
                 Text(d.pluralName)
                     .font(.system(.footnote, design: .rounded).weight(.semibold))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
@@ -336,9 +322,9 @@ struct JunoActionsPage: View {
     /// mode where the example utterance is held back behind the Allow.
     private func setupTeaser(for d: JunoActionDescriptor) -> String {
         switch d.kind {
-        case .reminder: return "Adds to-dos in Apple Reminders."
-        case .note:     return "Saves notes to a folder called Juno in Apple Notes."
-        case .alarm:    return "Calendar alerts that ring on time."
+        case .reminder: return "Adds to-dos in Reminders."
+        case .note:     return "Saves notes to a folder called Juno in Notes."
+        case .alarm:    return "Creates an alarm that rings on time."
         }
     }
 

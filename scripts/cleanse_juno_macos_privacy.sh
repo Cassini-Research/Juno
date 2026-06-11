@@ -15,7 +15,7 @@ usage() {
   echo
   echo "What it does:"
   echo "  - quits Juno and stops the Juno voice-engine LaunchAgent if loaded"
-  echo "  - resets Microphone, Accessibility, and Speech Recognition for Juno"
+  echo "  - resets Microphone, Accessibility, and Screen Recording for Juno"
   echo "  - resets Accessibility for packaged Juno helper binaries"
   echo "  - removes quarantine metadata from the local test app bundle"
   exit 1
@@ -78,10 +78,15 @@ reset_service() {
   fi
 }
 
+flush_tccd_cache() {
+  killall -HUP tccd 2>/dev/null || true
+  sleep 1
+}
+
 echo "== resetting app privacy rows =="
 reset_service Microphone "$APP_ID"
 reset_service Accessibility "$APP_ID"
-reset_service SpeechRecognition "$APP_ID"
+reset_service ScreenCapture "$APP_ID"
 # Voice Actions: Notes runs over AppleEvents (Automation), Reminders/Alarm
 # runs over EventKit. Without these resets a previous "Don't Allow" sticks
 # and the in-app Allow button silently no-ops because TCC already returned
@@ -102,13 +107,16 @@ while IFS= read -r helper; do
   fi
 done < <(find "$APP/Contents/MacOS" -maxdepth 1 -type f -name 'juno-*' | sort)
 
+echo "== flushing TCC daemon cache =="
+flush_tccd_cache
+
 echo "== clearing quarantine on this test bundle =="
 xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
 
 if [[ "$FAILED_RESETS" -gt 0 ]]; then
   echo
   echo "warning: $FAILED_RESETS TCC reset command(s) failed." >&2
-  echo "         macOS may keep existing Microphone/Accessibility/Speech permissions." >&2
+  echo "         macOS may keep existing Microphone/Accessibility/Screen Recording permissions." >&2
   echo "         Try running from Terminal/Conductor with Full Disk Access, or manually remove Juno from System Settings > Privacy & Security." >&2
 fi
 
@@ -116,5 +124,5 @@ echo
 echo "Cleanse complete."
 echo "Next:"
 echo "  1. Open exactly this app: open \"$APP\""
-echo "  2. Grant Microphone and Accessibility again when prompted."
+echo "  2. Grant Microphone, Accessibility, and optional Screen Recording again when prompted."
 echo "  3. If Accessibility still shows an old Juno row, remove it with the minus button and add this exact app bundle."

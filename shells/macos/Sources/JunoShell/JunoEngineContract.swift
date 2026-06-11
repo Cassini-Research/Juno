@@ -23,8 +23,13 @@ import Foundation
 ///
 /// v6 (2026-05-23): packaged production writer residency changed to
 /// on-demand with TTL reaping so background idle does not keep Qwen pinned.
+///
+/// v7 (2026-06-10): packaged production writer residency changed back to
+/// resident after the Qwen turn-planner layer moved onto the hot path for
+/// actions and short structured requests. Shell and engine must agree or
+/// onboarding will reject its own running engine before setup/status lands.
 enum JunoEngineContract {
-    static let shellEngineProtocolVersion: Int = 6
+    static let shellEngineProtocolVersion: Int = 7
 
     /// Canonical ``runtime_role`` reported by ``runtime.service`` (the
     /// production engine). Standalone ``python -m juno_v2.workbench.server``
@@ -39,7 +44,7 @@ enum JunoEngineContract {
     static let expectedPreviewBackend: String = "streaming_local_http_json"
     static let expectedFinalBackend: String = "mlx_whisper"
     static let expectedWriterBackend: String = "mlx_lm"
-    static let expectedWriterResidencyPolicy: String = "on_demand"
+    static let expectedWriterResidencyPolicy: String = "resident"
 
     /// ``Juno.app/Contents/Resources/engine`` when ``run_engine.sh`` is packaged.
     static func bundledEngineRoot() -> URL? {

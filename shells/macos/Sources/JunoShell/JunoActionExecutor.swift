@@ -497,13 +497,7 @@ final class JunoActionExecutor: ObservableObject {
                 case .success:
                     completion(self.operationSuccess(action, junoId: junoId, sinkId: targetId))
                 case .failure(let err):
-                    completion(self.operationFailure(
-                        action,
-                        junoId: junoId,
-                        sinkId: targetId,
-                        status: self.actionStatus(for: err),
-                        message: err.localizedDescription
-                    ))
+                    completion(self.operationFailure(action, junoId: junoId, sinkId: targetId, message: err.localizedDescription))
                 }
             }
         }
@@ -553,13 +547,7 @@ final class JunoActionExecutor: ObservableObject {
                     case .success:
                         completion(self.operationSuccess(action, junoId: junoId, sinkId: targetId))
                     case .failure(let err):
-                        completion(self.operationFailure(
-                            action,
-                            junoId: junoId,
-                            sinkId: targetId,
-                            status: self.actionStatus(for: err),
-                            message: err.localizedDescription
-                        ))
+                        completion(self.operationFailure(action, junoId: junoId, sinkId: targetId, message: err.localizedDescription))
                     }
                 }
             }
@@ -570,13 +558,7 @@ final class JunoActionExecutor: ObservableObject {
                     case .success:
                         completion(self.operationSuccess(action, junoId: junoId, sinkId: targetId))
                     case .failure(let err):
-                        completion(self.operationFailure(
-                            action,
-                            junoId: junoId,
-                            sinkId: targetId,
-                            status: self.actionStatus(for: err),
-                            message: err.localizedDescription
-                        ))
+                        completion(self.operationFailure(action, junoId: junoId, sinkId: targetId, message: err.localizedDescription))
                     }
                 }
             }
@@ -619,12 +601,7 @@ final class JunoActionExecutor: ObservableObject {
                         )
                     )
                 case .failure(let err):
-                    completion(self.operationFailure(
-                        action,
-                        junoId: junoId,
-                        status: self.actionStatus(for: err),
-                        message: err.localizedDescription
-                    ))
+                    completion(self.operationFailure(action, junoId: junoId, message: err.localizedDescription))
                 }
             }
         }
@@ -649,12 +626,7 @@ final class JunoActionExecutor: ObservableObject {
                     case .success:
                         completion(self.operationSuccess(action, junoId: junoId))
                     case .failure(let err):
-                        completion(self.operationFailure(
-                            action,
-                            junoId: junoId,
-                            status: self.actionStatus(for: err),
-                            message: err.localizedDescription
-                        ))
+                        completion(self.operationFailure(action, junoId: junoId, message: err.localizedDescription))
                     }
                 }
             }
@@ -693,7 +665,11 @@ final class JunoActionExecutor: ObservableObject {
                             )
                         )
                     case .failure(let err):
-                        let status = self.actionStatus(for: err)
+                        let status: JunoActionStatus = {
+                            if case .missingTime = err { return .timeParseFailed }
+                            if case .permissionDenied = err { return .permissionDenied }
+                            return .sinkError
+                        }()
                         completion(
                             JunoActionResult(
                                 junoId: junoId,
@@ -775,12 +751,11 @@ final class JunoActionExecutor: ObservableObject {
                             )
                         )
                     case .failure(let err):
-                        let status = self.actionStatus(for: err)
                         completion(
                             JunoActionResult(
                                 junoId: junoId,
                                 kind: .reminder,
-                                status: status,
+                                status: .sinkError,
                                 bodyPreview: preview,
                                 body: title,
                                 whenIso: firstFireIso,
@@ -851,12 +826,7 @@ final class JunoActionExecutor: ObservableObject {
                             )
                         )
                     case .failure(let err):
-                        completion(self.operationFailure(
-                            action,
-                            junoId: junoId,
-                            status: self.actionStatus(for: err),
-                            message: err.localizedDescription
-                        ))
+                        completion(self.operationFailure(action, junoId: junoId, message: err.localizedDescription))
                     }
                 }
             }
@@ -1066,14 +1036,13 @@ final class JunoActionExecutor: ObservableObject {
         _ action: JunoActionRequest,
         junoId: String,
         sinkId: String? = nil,
-        status: JunoActionStatus = .sinkError,
         message: String
     ) -> JunoActionResult {
         JunoActionResult(
             junoId: junoId,
             operation: action.operation,
             kind: action.kind,
-            status: status,
+            status: .sinkError,
             bodyPreview: String(action.body.prefix(80)),
             body: action.body,
             sinkId: sinkId ?? action.sinkId,
@@ -1097,13 +1066,7 @@ final class JunoActionExecutor: ObservableObject {
                 sinkUrl: updated.url?.absoluteString
             )
         case .failure(let err):
-            return operationFailure(
-                action,
-                junoId: junoId,
-                sinkId: sinkId,
-                status: actionStatus(for: err),
-                message: err.localizedDescription
-            )
+            return operationFailure(action, junoId: junoId, sinkId: sinkId, message: err.localizedDescription)
         }
     }
 
@@ -1122,31 +1085,8 @@ final class JunoActionExecutor: ObservableObject {
                 sinkUrl: updated.url?.absoluteString
             )
         case .failure(let err):
-            return operationFailure(
-                action,
-                junoId: junoId,
-                sinkId: sinkId,
-                status: actionStatus(for: err),
-                message: err.localizedDescription
-            )
+            return operationFailure(action, junoId: junoId, sinkId: sinkId, message: err.localizedDescription)
         }
-    }
-
-    private func actionStatus(for err: JunoReminderSink.SinkError) -> JunoActionStatus {
-        if case .permissionDenied = err {
-            JunoActionPermissionStore.shared.refreshAll(forceNotesProbe: false)
-            return .permissionDenied
-        }
-        return .sinkError
-    }
-
-    private func actionStatus(for err: JunoAlarmSink.SinkError) -> JunoActionStatus {
-        if case .missingTime = err { return .timeParseFailed }
-        if case .permissionDenied = err {
-            JunoActionPermissionStore.shared.refreshAll(forceNotesProbe: false)
-            return .permissionDenied
-        }
-        return .sinkError
     }
 
     private static func parseISO8601(_ iso: String) -> Date? {

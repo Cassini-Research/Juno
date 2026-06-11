@@ -137,6 +137,8 @@ class HypothesisBuffer:
         if len(committed_norm) < 5 or len(word_norm) < 5:
             match = _find_adjacent_duplicate_boundary(committed_norm, word_norm)
             if match is None:
+                match = _find_short_reanchored_prefix(committed_norm, word_norm)
+            if match is None:
                 return words, None
             drop_len, reason = match
             return words[drop_len:], f"committed_{reason}"
@@ -144,6 +146,11 @@ class HypothesisBuffer:
         match = _find_adjacent_duplicate_boundary(committed_norm, word_norm)
         if match is not None:
             drop_len, reason = match
+            return words[drop_len:], f"committed_{reason}"
+
+        short_reanchor = _find_short_reanchored_prefix(committed_norm, word_norm)
+        if short_reanchor is not None:
+            drop_len, reason = short_reanchor
             return words[drop_len:], f"committed_{reason}"
 
         replay_len = _find_replayed_prefix_len(committed_norm, word_norm)
@@ -171,12 +178,21 @@ class HypothesisBuffer:
                 break
 
         if agreement:
-            agreement, self.last_flush_replay_drop_reason = self._drop_replayed_agreement_prefix(agreement)
+            agreement, boundary_reason = self.resolve_boundary_revision_before_append(agreement)
+            if boundary_reason is not None:
+                self.last_flush_replay_drop_reason = boundary_reason
+
+        if agreement:
+            agreement, replay_reason = self._drop_replayed_agreement_prefix(agreement)
+            if replay_reason is not None:
+                self.last_flush_replay_drop_reason = replay_reason
 
         if agreement:
             old_len = len(self.committed)
             self.committed.extend(agreement)
-            agreement, _ = self._drop_adjacent_duplicate_boundary(old_len, agreement)
+            agreement, duplicate_reason = self._drop_adjacent_duplicate_boundary(old_len, agreement)
+            if duplicate_reason is not None:
+                self.last_flush_replay_drop_reason = duplicate_reason
             if agreement:
                 self.last_committed_time = agreement[-1].end
 
@@ -210,8 +226,44 @@ class HypothesisBuffer:
         self,
         old_len: int,
         appended: list[Word],
+        *,
+        allow_committed_suffix_drop: bool = False,
     ) -> tuple[list[Word], str | None]:
-        return self._drop_adjacent_duplicate_boundary(old_len, appended)
+        return self._drop_adjacent_duplicate_boundary(
+            old_len,
+            appended,
+            allow_committed_suffix_drop=allow_committed_suffix_drop,
+        )
+
+    def resolve_boundary_revision_before_append(
+        self,
+        agreement: list[Word],
+    ) -> tuple[list[Word], str | None]:
+        """Resolve agreement words that revise or replay the committed boundary.
+
+        LocalAgreement's append-only default fails when Whisper refines the last
+        committed token in the next stable hypothesis (``format`` →
+        ``formatting``) or replays it with an article (``judge`` → ``the
+        judge``). Handle those at the boundary before they become opaque text.
+        """
+
+        if not self.committed or not agreement:
+            return agreement, None
+        committed_norm = [w.normalized for w in self.committed if w.normalized]
+        agreement_norm = [w.normalized for w in agreement if w.normalized]
+        if len(committed_norm) != len(self.committed) or len(agreement_norm) != len(agreement):
+            return agreement, None
+
+        article_drop = _find_agreement_article_bridge_replay(committed_norm, agreement_norm)
+        if article_drop:
+            return agreement[article_drop:], "agreement_boundary_article_replay"
+
+        if _same_stem_repetition(committed_norm[-1], agreement_norm[0]):
+            self.committed[-1] = agreement[0]
+            self._refresh_last_committed_time()
+            return agreement[1:], "agreement_boundary_stem_revision"
+
+        return agreement, None
 
     def drop_repeated_tail_suffix(self) -> str | None:
         """Drop a repeated phrase whose second copy is fully inside tail.
@@ -234,6 +286,15 @@ class HypothesisBuffer:
         )
         if boundary_reason is not None:
             return boundary_reason
+        recent_replay = _find_tail_prefix_repeating_recent_committed_phrase(
+            committed_norm,
+            tail_norm,
+        )
+        if recent_replay is not None:
+            drop_len, reason = recent_replay
+            del self.tail[:drop_len]
+            self.last_flush_replay_drop_reason = reason
+            return reason
         boundary = len(committed_norm)
         combined = committed_norm + tail_norm
         max_width = min(12, len(combined) // 2)
@@ -294,6 +355,8 @@ class HypothesisBuffer:
         self,
         old_len: int,
         agreement: list[Word],
+        *,
+        allow_committed_suffix_drop: bool = False,
     ) -> tuple[list[Word], str | None]:
         """Drop a newly committed phrase that repeats the committed tail.
 
@@ -314,13 +377,21 @@ class HypothesisBuffer:
         match = _find_adjacent_duplicate_boundary(
             committed_norm[:old_len],
             committed_norm[old_len:],
+            allow_near_boundary=allow_committed_suffix_drop,
         )
         if match is None:
             return agreement, None
         drop_len, reason = match
         del self.committed[old_len: old_len + drop_len]
+        stale_lag = _near_boundary_replay_lag(reason) if allow_committed_suffix_drop else 0
+        if stale_lag and old_len >= stale_lag:
+            del self.committed[old_len - stale_lag: old_len]
+            self._refresh_last_committed_time()
         self.last_flush_replay_drop_reason = reason
         return agreement[drop_len:], reason
+
+    def _refresh_last_committed_time(self) -> None:
+        self.last_committed_time = self.committed[-1].end if self.committed else 0.0
 
     def committed_text(self) -> str:
         return " ".join(w.text for w in self.committed).strip()
@@ -414,6 +485,8 @@ def _find_replayed_prefix_len(committed_norm: list[str], candidate_norm: list[st
 def _find_adjacent_duplicate_boundary(
     committed_norm: list[str],
     candidate_norm: list[str],
+    *,
+    allow_near_boundary: bool = False,
 ) -> tuple[int, str] | None:
     """Return candidate-prefix length to drop when it repeats committed suffix.
 
@@ -439,12 +512,308 @@ def _find_adjacent_duplicate_boundary(
             right = candidate_norm[:right_width]
             exact_tokens = left_width == right_width and left == right
             same_compound = left_joined == "".join(right)
-            if not exact_tokens and not same_compound:
-                continue
             if exact_tokens:
                 return right_width, f"adjacent_duplicate_phrase_{right_width}"
-            return right_width, f"adjacent_duplicate_phrase_{left_width}x{right_width}"
+            if same_compound:
+                return right_width, f"adjacent_duplicate_phrase_{left_width}x{right_width}"
+            if _near_adjacent_revision_phrase(left, right):
+                return right_width, f"adjacent_revision_phrase_{left_width}x{right_width}"
+    if allow_near_boundary:
+        near_boundary = _find_near_boundary_replay_prefix(committed_norm, candidate_norm)
+        if near_boundary is not None:
+            return near_boundary
     return None
+
+
+def _find_near_boundary_replay_prefix(
+    committed_norm: list[str],
+    candidate_norm: list[str],
+) -> tuple[int, str] | None:
+    """Drop a final-tail prefix replayed just before the committed boundary.
+
+    This is intentionally available only to true utterance-final tail promotion.
+    Live commits must not remove committed words, but final drain may need to
+    correct a one-word stale carry such as ``... text our`` followed by
+    ``sentence readable and text awards``.
+    """
+
+    if len(committed_norm) < 4 or len(candidate_norm) < 4:
+        return None
+    max_lag = 3
+    max_width = min(6, len(candidate_norm) - 1, len(committed_norm) - 1)
+    for width in range(max_width, 2, -1):
+        prefix = candidate_norm[:width]
+        extended_prefix = candidate_norm[: min(len(candidate_norm), width + 2)]
+        extended_meaningful = _meaningful_replay_phrase(extended_prefix)
+        if not _meaningful_replay_phrase(prefix) and not (width >= 3 and extended_meaningful):
+            continue
+        min_prefix_chars = 8 if extended_meaningful else 10
+        if len("".join(prefix)) < min_prefix_chars:
+            continue
+        search_start = max(0, len(committed_norm) - width - max_lag)
+        search = committed_norm[search_start:]
+        for pos in range(len(search) - width - 1, -1, -1):
+            lag = len(search) - (pos + width)
+            if lag < 1 or lag > max_lag:
+                continue
+            window = search[pos: pos + width]
+            if window == prefix:
+                return width, f"near_boundary_replay_phrase_{width}_lag{lag}"
+            if "".join(window) == "".join(prefix):
+                return width, f"near_boundary_replay_phrase_{width}_lag{lag}_compound"
+            if _near_adjacent_revision_phrase(window, prefix):
+                return width, f"near_boundary_revision_phrase_{width}_lag{lag}"
+    return None
+
+
+def _find_tail_prefix_repeating_recent_committed_phrase(
+    committed_norm: list[str],
+    tail_norm: list[str],
+) -> tuple[int, str] | None:
+    """Drop an unstable tail prefix that replays the latest committed phrase.
+
+    Whisper's rolling preview window can re-anchor at a sentence boundary and
+    emit a committed phrase again with a small opener/tokenization drift, e.g.
+    ``... off-callback flow`` followed by tail ``to review the off call back
+    flow find edge cases``. The existing adjacent-boundary guard misses that
+    because the replay starts a few words before the committed suffix. Keep this
+    recent and prefix-only so intentional later repetition remains visible.
+    """
+
+    if len(committed_norm) < 4 or len(tail_norm) < 4:
+        return None
+    search = committed_norm[-14:]
+    max_tail_width = min(9, len(tail_norm))
+    for tail_width in range(max_tail_width, 2, -1):
+        prefix = tail_norm[:tail_width]
+        if not _meaningful_replay_phrase(prefix):
+            continue
+        if len("".join(prefix)) < 10:
+            continue
+        max_window_width = min(8, len(search))
+        for window_width in range(max_window_width, 2, -1):
+            for start in range(len(search) - window_width, -1, -1):
+                lag = len(search) - (start + window_width)
+                if lag > 2:
+                    continue
+                window = search[start : start + window_width]
+                if _phrase_compound_or_near_equal(window, prefix):
+                    return (
+                        tail_width,
+                        f"tail_recent_replay_phrase_{window_width}x{tail_width}_lag{lag}",
+                    )
+    return None
+
+
+def _find_agreement_article_bridge_replay(
+    committed_norm: list[str],
+    agreement_norm: list[str],
+) -> int:
+    if not committed_norm or len(agreement_norm) < 2:
+        return 0
+    first = committed_norm[-1]
+    if len(first) < 4 and not any(ch.isdigit() for ch in first):
+        return 0
+    if agreement_norm[0] not in {"a", "an", "the"}:
+        return 0
+    if agreement_norm[1] != first:
+        return 0
+    return 2
+
+
+def _same_stem_repetition(left: str, right: str) -> bool:
+    if not left or not right or left == right:
+        return False
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if len(shorter) < 4:
+        return False
+    if not longer.startswith(shorter):
+        return False
+    suffix = longer[len(shorter):]
+    if not suffix or len(suffix) > 5:
+        return False
+    return suffix in {
+        "s",
+        "es",
+        "ed",
+        "d",
+        "ing",
+        "ting",
+        "tion",
+        "ions",
+        "er",
+        "ers",
+        "ly",
+    }
+
+
+_SHORT_REANCHOR_TOKENS = {
+    "ah",
+    "hmm",
+    "mhm",
+    "mm",
+    "now",
+    "ok",
+    "okay",
+    "uh",
+    "um",
+    "yeah",
+    "yep",
+}
+
+_SHORT_REANCHOR_BRIDGE_WORDS = {
+    "and",
+    "but",
+    "like",
+    "no",
+    "now",
+    "okay",
+    "ok",
+    "so",
+    "then",
+    "well",
+}
+
+
+def _find_short_reanchored_prefix(
+    committed_norm: list[str],
+    candidate_norm: list[str],
+) -> tuple[int, str] | None:
+    """Drop a one-token filler/opening prefix replayed across a trim boundary.
+
+    This catches the production shape ``Okay now`` followed by ``Okay I'm...``.
+    Long replay matching deliberately ignores this because a single token is too
+    weak globally; here it is allowed only at the immediate boundary, only for
+    discourse markers, and only when the intervening committed words are bridge
+    words rather than content.
+    """
+
+    if len(committed_norm) < 2 or len(candidate_norm) < 3:
+        return None
+    first = candidate_norm[0]
+    if first not in _SHORT_REANCHOR_TOKENS:
+        return None
+    max_lag = min(2, len(committed_norm) - 1)
+    for lag in range(0, max_lag + 1):
+        anchor_index = len(committed_norm) - 1 - lag
+        if anchor_index < 0 or committed_norm[anchor_index] != first:
+            continue
+        bridge = committed_norm[anchor_index + 1 :]
+        if any(token not in _SHORT_REANCHOR_BRIDGE_WORDS for token in bridge):
+            continue
+        if lag == 0:
+            return 1, "short_boundary_reanchor_1"
+        return 1, f"short_near_boundary_reanchor_1_lag{lag}"
+    return None
+
+
+def _near_boundary_replay_lag(reason: str) -> int:
+    if "near_boundary_" not in reason:
+        return 0
+    marker = "_lag"
+    pos = reason.rfind(marker)
+    if pos < 0:
+        return 0
+    start = pos + len(marker)
+    end = start
+    while end < len(reason) and reason[end].isdigit():
+        end += 1
+    if end == start:
+        return 0
+    try:
+        return int(reason[start:end])
+    except ValueError:
+        return 0
+
+
+_BOUNDARY_REVISION_WEAK_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "for",
+    "in",
+    "is",
+    "it",
+    "keep",
+    "of",
+    "on",
+    "or",
+    "please",
+    "that",
+    "the",
+    "then",
+    "these",
+    "this",
+    "those",
+    "to",
+    "was",
+    "were",
+    "with",
+}
+
+
+def _near_adjacent_revision_phrase(left: list[str], right: list[str]) -> bool:
+    """Detect a short ASR boundary revision without rewriting committed text.
+
+    This is a one-way duplicate guard: it may drop the candidate prefix that
+    repeats the already committed boundary, but it never removes committed
+    words. That preserves HUD stability while avoiding visible phrases such as
+    "please keep the sentence please keep this sentence".
+    """
+
+    if len(left) != len(right) or len(left) < 3 or len(left) > 6:
+        return False
+    if left[0] != right[0]:
+        return False
+    if not _meaningful_replay_phrase(left) and not _meaningful_replay_phrase(right):
+        return False
+
+    mismatches = [(a, b) for a, b in zip(left, right, strict=True) if a != b]
+    if len(mismatches) != 1:
+        return False
+    if len(left) - len(mismatches) < 2:
+        return False
+
+    mismatch_left, mismatch_right = mismatches[0]
+    weak_mismatch = (
+        mismatch_left in _BOUNDARY_REVISION_WEAK_WORDS
+        or mismatch_right in _BOUNDARY_REVISION_WEAK_WORDS
+    )
+    if not weak_mismatch:
+        token_ratio = difflib.SequenceMatcher(
+            a=mismatch_left,
+            b=mismatch_right,
+            autojunk=False,
+        ).ratio()
+        if token_ratio < 0.72:
+            return False
+
+    phrase_ratio = difflib.SequenceMatcher(
+        a=" ".join(left),
+        b=" ".join(right),
+        autojunk=False,
+    ).ratio()
+    return phrase_ratio >= 0.82
+
+
+def _phrase_compound_or_near_equal(left: list[str], right: list[str]) -> bool:
+    if len(left) < 3 or len(right) < 3:
+        return False
+    left_joined = "".join(left)
+    right_joined = "".join(right)
+    if left_joined == right_joined:
+        return True
+    if not left_joined or not right_joined:
+        return False
+    length_ratio = min(len(left_joined), len(right_joined)) / max(len(left_joined), len(right_joined))
+    if length_ratio < 0.9:
+        return False
+    if left[0] != right[0] or left[-1] != right[-1]:
+        return False
+    return difflib.SequenceMatcher(a=left_joined, b=right_joined, autojunk=False).ratio() >= 0.94
 
 
 def _meaningful_replay_phrase(tokens: list[str]) -> bool:

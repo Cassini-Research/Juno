@@ -386,6 +386,10 @@ struct JunoActionResult: Codable, Hashable {
     let whenIso: String?
     let error: String?
     let extras: [String: String]?
+    /// False when History decoded a parsed intent payload that never received
+    /// shell execution results. UI uses this to avoid showing "Saving..."
+    /// forever for stale action rows.
+    let hasExplicitStatus: Bool
 
     init(
         junoId: String,
@@ -398,7 +402,8 @@ struct JunoActionResult: Codable, Hashable {
         sinkUrl: String? = nil,
         whenIso: String? = nil,
         error: String? = nil,
-        extras: [String: String]? = nil
+        extras: [String: String]? = nil,
+        hasExplicitStatus: Bool = true
     ) {
         self.junoId = junoId
         self.operation = operation
@@ -411,6 +416,7 @@ struct JunoActionResult: Codable, Hashable {
         self.whenIso = whenIso
         self.error = error
         self.extras = extras
+        self.hasExplicitStatus = hasExplicitStatus
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -437,11 +443,9 @@ struct JunoActionResult: Codable, Hashable {
         junoId = trimmedJunoId?.isEmpty == false ? trimmedJunoId! : UUID().uuidString
         operation = try? c.decode(JunoActionOperation.self, forKey: .operation)
         kind = try c.decode(JunoActionKind.self, forKey: .kind)
-        // Missing status means the row was stored before the shell
-        // dispatched the action (or dispatch never happened). Render as
-        // ``.pending`` so the History UI doesn't display a misleading
-        // green checkmark.
-        status = (try? c.decode(JunoActionStatus.self, forKey: .status)) ?? .pending
+        let decodedStatus = try? c.decode(JunoActionStatus.self, forKey: .status)
+        hasExplicitStatus = decodedStatus != nil
+        status = decodedStatus ?? .pending
         let decodedBody = try? c.decode(String.self, forKey: .body)
         if let preview = try? c.decode(String.self, forKey: .bodyPreview) {
             bodyPreview = preview
@@ -477,6 +481,23 @@ struct JunoActionResult: Codable, Hashable {
         try c.encodeIfPresent(whenIso, forKey: .whenIso)
         try c.encodeIfPresent(error, forKey: .error)
         try c.encodeIfPresent(extras, forKey: .extras)
+    }
+
+    func withDisplayStatus(_ status: JunoActionStatus, error: String? = nil) -> JunoActionResult {
+        JunoActionResult(
+            junoId: junoId,
+            operation: operation,
+            kind: kind,
+            status: status,
+            bodyPreview: bodyPreview,
+            body: body,
+            sinkId: sinkId,
+            sinkUrl: sinkUrl,
+            whenIso: whenIso,
+            error: error ?? self.error,
+            extras: extras,
+            hasExplicitStatus: true
+        )
     }
 }
 

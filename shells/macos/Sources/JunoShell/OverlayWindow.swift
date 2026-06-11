@@ -471,7 +471,7 @@ final class JunoOverlayCoordinator {
             return NSSize(width: 260, height: 72)
         }
         if !JunoUserDefaults.hudLiveTranscriptionsEnabled {
-            return NSSize(width: 256, height: 56)
+            return NSSize(width: 192, height: 56)
         }
         if controller.hudState == .refining {
             return NSSize(width: JunoDesignTokens.islandWidth + 24, height: 72)

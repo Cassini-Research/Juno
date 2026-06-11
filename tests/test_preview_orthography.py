@@ -55,11 +55,13 @@ def test_acronyms_preserved() -> None:
     assert committed == "Send it to NASA today"
 
 
-def test_tail_internal_sentence_boundary_capitalized() -> None:
+def test_tail_internal_sentence_boundary_not_trusted_in_preview() -> None:
     _, tail, _ = normalize_preview_orthography("first part", "more. then more")
-    # Tail start stays lowercase (mid-sentence) but a hard boundary inside
-    # the tail still starts a new sentence.
-    assert tail == "more. Then more"
+    # Live preview deliberately does NOT trust mid-stream sentence
+    # boundaries (trust_sentence_boundaries=False): Whisper emits spurious
+    # periods at rolling-window edges, and capitalizing after them makes
+    # visible words jump. Final formatting owns real sentence casing.
+    assert tail == "more. then more"
 
 
 def test_empty_inputs() -> None:
@@ -191,3 +193,60 @@ def test_strip_trailing_boh_idempotent() -> None:
     twice, removed = strip_trailing_boh(once)
     assert twice == once
     assert removed is None
+
+
+# ---------------------------------------------------------------------- #
+# Launch-stabilization cases: boundary trust and protected terms
+# ---------------------------------------------------------------------- #
+
+
+def test_preview_orthography_does_not_trust_mid_sentence_capitalization() -> None:
+    committed, tail, meta = normalize_preview_orthography(
+        "Don't say that to me there is image I don't care Make one.",
+        "",
+    )
+
+    assert committed == "Don't say that to me there is image I don't care make one."
+    assert tail == ""
+    assert meta["preview_orthography_committed_changed"] is True
+
+
+def test_preview_orthography_lowers_false_sentence_boundaries_inside_committed_text() -> None:
+    committed, _, _ = normalize_preview_orthography(
+        "based on my... Reputation. And credibility. Uh, need you to send a mail.",
+        "",
+    )
+
+    assert committed == (
+        "Based on my... reputation. and credibility. uh, need you to send a mail."
+    )
+
+
+def test_preview_orthography_preserves_protected_terms_after_false_boundary() -> None:
+    committed, _, _ = normalize_preview_orthography(
+        "use the local model. Gemma should stay capitalized. Gamma should not be forced.",
+        "",
+        protected_terms=["Gemma"],
+    )
+
+    assert committed == (
+        "Use the local model. Gemma should stay capitalized. gamma should not be forced."
+    )
+
+
+def test_preview_orthography_does_not_lower_unknown_names_without_boundary() -> None:
+    committed, _, _ = normalize_preview_orthography(
+        "I met Ishida and Lumare is in the roadmap.",
+        "",
+    )
+
+    assert committed == "I met Ishida and Lumare is in the roadmap."
+
+
+def test_preview_orthography_lowers_ordinary_mid_sentence_inflections() -> None:
+    committed, _, _ = normalize_preview_orthography(
+        "we need to fix Formatting especially Finally earlier also.",
+        "",
+    )
+
+    assert committed == "We need to fix formatting especially finally earlier also."

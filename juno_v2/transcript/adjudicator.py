@@ -62,6 +62,15 @@ class TranscriptAdjudicatorConfig:
     final_chunking_enabled: bool = field(default_factory=lambda: _env_bool("JUNO_V2_FINAL_ADJUDICATION_CHUNKING", True))
     max_final_chunk_words: int = field(default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_CHUNK_WORDS", 240))
     min_final_chunk_words: int = field(default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_CHUNK_MIN_WORDS", 280))
+    # Hard ceiling on final-stage adjudication input. The final corrector
+    # re-emits the whole transcript, so decode time scales with utterance
+    # length (observed 14-19s on 120-170 word utterances, with the output
+    # then discarded by the unsupported-phrase guard). Past this size the
+    # final paste keeps the whisper text rather than stalling behind a model
+    # pass that overwhelmingly falls back anyway. 0 disables the gate.
+    max_final_adjudication_words: int = field(
+        default_factory=lambda: _env_int("JUNO_V2_FINAL_ADJUDICATION_MAX_WORDS", 60)
+    )
 
 
 def _live_corrector_enabled_default() -> bool:
@@ -112,6 +121,25 @@ class TranscriptAdjudicator:
         if self.backend is None or not callable(getattr(self.backend, "rewrite", None)):
             print(f"[ADJ]         skipped utt={packet.utterance_id[:8]} reason=backend_unavailable", file=sys.stderr, flush=True)
             return self._rejected(packet, fallback, "backend_unavailable", base_hash=base_hash, stable_chars=stable_chars)
+
+        if packet.stage == "final":
+            word_limit = int(getattr(self.config, "max_final_adjudication_words", 0) or 0)
+            if word_limit > 0:
+                source_words = _word_count(_final_adjudication_source_text(packet))
+                if source_words > word_limit:
+                    print(
+                        f"[ADJ]         skipped utt={packet.utterance_id[:8]} "
+                        f"reason=final_input_too_long words={source_words} limit={word_limit}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return self._rejected(
+                        packet,
+                        fallback,
+                        f"final_input_too_long:{source_words}w",
+                        base_hash=base_hash,
+                        stable_chars=stable_chars,
+                    )
 
         if packet.stage == "final" and _should_chunk_final_adjudication(packet, self.config):
             return self._adjudicate_final_chunked(

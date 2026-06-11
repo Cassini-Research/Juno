@@ -316,6 +316,7 @@ class WriterIntentParser:
             mode_policy is None
             or getattr(mode_policy, 'allow_model_insert_rewrite', True)
         )
+        allow_unscoped_transform = _unscoped_transform_command_allowed(words)
 
         if allow_recent_target:
             for pattern, transform_kind in _RECENT_DETERMINISTIC_TRANSFORMS:
@@ -337,7 +338,7 @@ class WriterIntentParser:
                     if pattern.search(text):
                         return WriterIntent(kind=WriterIntentKind.RECENT_MODEL_TRANSFORM, raw_text=text, instruction=instruction)
 
-        if not narrow_command_behavior:
+        if not narrow_command_behavior and allow_unscoped_transform:
             for pattern, transform_kind in _DETERMINISTIC_TRANSFORMS:
                 if pattern.search(text):
                     return WriterIntent(kind=WriterIntentKind.DETERMINISTIC_TRANSFORM, raw_text=text, transform_kind=transform_kind)
@@ -505,6 +506,13 @@ def _looks_like_semantic_command(text: str, words: list[str]) -> bool:
         'bullet', 'numbered', 'expand', 'detailed', 'simplify', 'simpler',
     )
     return any(marker in lowered for marker in semantic_markers)
+
+
+def _unscoped_transform_command_allowed(words: list[str]) -> bool:
+    if not words:
+        return False
+    starter = re.sub(r'[^a-z]', '', words[0].lower())
+    return starter in _COMMAND_STARTERS
 
 
 def _selection_fallback_allowed(text: str, words: list[str]) -> bool:

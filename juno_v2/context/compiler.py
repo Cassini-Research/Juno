@@ -6,10 +6,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from juno_v2.context.provider import _extract_candidates
+from juno_v2.context.provider import _context_candidate_allowed, _extract_candidates
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.contracts.memory import MemoryServingPacket, MemorySnapshot
 from juno_v2.contracts.modes import ModePolicy, ModeSelection
+from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.ranking import rank_memory_for_context
 from juno_v2.personalization.seed.models import SeedBiasAttachment
 from juno_v2.runtime.deployment import _env_int
@@ -282,6 +283,23 @@ class CompiledContext:
         raw_text: str = "",
     ) -> TranscriptAdjudicationPacket:
         live = stage == "live"
+        evidence_text = _join_context_hints(
+            base_visible_text if live else None,
+            live_preview_text if live else None,
+            whisper_text,
+            memory_candidate_text,
+            raw_text,
+        )
+        context_terms = (
+            self.terms[:24]
+            if live
+            else _final_transcript_context_terms(self.terms, evidence_text=evidence_text)[:24]
+        )
+        protected_terms = (
+            tuple(t.canonical or t.text for t in self.terms if t.protected)[:32]
+            if live
+            else _final_transcript_protected_terms(context_terms, evidence_text=evidence_text)[:16]
+        )
         return TranscriptAdjudicationPacket(
             stage=stage,
             utterance_id=self.utterance_id,
@@ -291,8 +309,8 @@ class CompiledContext:
             whisper_text=whisper_text or "",
             memory_candidate_text=memory_candidate_text or whisper_text or raw_text or "",
             raw_text=raw_text or whisper_text or "",
-            context_terms=self.terms[: (24 if live else 40)],
-            protected_terms=tuple(t.canonical or t.text for t in self.terms if t.protected)[:32],
+            context_terms=context_terms,
+            protected_terms=protected_terms,
             selected_text_excerpt=_words(self.context.selected_text, 1000) if not live else self.context.selected_text[:1200],
             focused_text_before=self.context.focused_text_before[-(400 if live else 1000):],
             focused_text_after=self.context.focused_text_after[: (250 if live else 600)],
@@ -510,6 +528,8 @@ def _compile_terms(
     # tokens — they used to diverge because this compile path ran its
     # own stricter uppercase-only regex.
     for term in context.candidate_entities[:16]:
+        if not _context_candidate_allowed(term):
+            continue
         explicit = term.casefold() in explicit_candidate_terms
         add(term, source="screen", priority=82.0, protected=explicit or _looks_identifier(term) or _looks_proper_noun(term))
 
@@ -555,17 +575,88 @@ def _compile_terms(
             spoken_forms=(pair.observed,),
         )
     for term in session_terms or []:
+        if not session_entity_allowed(term):
+            continue
         add(term, source="session", priority=45.0, protected=_looks_identifier(term) or _looks_proper_noun(term))
     for ent in snapshot.session_entities:
+        if not session_entity_allowed(ent.value):
+            continue
         add(ent.value, source="session", priority=42.0 + min(8.0, float(ent.count)), protected=_looks_identifier(ent.value) or _looks_proper_noun(ent.value))
     for term in memory_packet.lexicon_terms[:12]:
         add(term, source="memory", priority=50.0)
-    if seed_attachment is not None:
-        for phrase in getattr(seed_attachment, "extra_bias_phrases", ())[:12]:
-            add(str(phrase), source="memory", priority=52.0)
 
     out.sort(key=lambda t: (-t.priority, t.text.casefold()))
     return out[:64]
+
+
+_FINAL_TRANSCRIPT_ALWAYS_HINT_SOURCES = frozenset({"screen", "selection", "file", "symbol"})
+_FINAL_TRANSCRIPT_EVIDENCE_SOURCES = frozenset(
+    {"memory", "replacement", "correction", "session", "snippet", "style"}
+)
+_FINAL_TRANSCRIPT_ALWAYS_PROTECT_SOURCES = frozenset({"selection", "file", "symbol"})
+
+
+def _final_transcript_context_terms(
+    terms: tuple[CompiledTerm, ...],
+    *,
+    evidence_text: str,
+) -> tuple[CompiledTerm, ...]:
+    out: list[CompiledTerm] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term.source in _FINAL_TRANSCRIPT_ALWAYS_HINT_SOURCES:
+            allowed = True
+        elif term.source in _FINAL_TRANSCRIPT_EVIDENCE_SOURCES:
+            allowed = _compiled_term_present_in_text(term, evidence_text)
+        else:
+            allowed = _compiled_term_present_in_text(term, evidence_text)
+        if not allowed:
+            continue
+        key = (term.canonical or term.text).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(term)
+    return tuple(out)
+
+
+def _final_transcript_protected_terms(
+    terms: tuple[CompiledTerm, ...],
+    *,
+    evidence_text: str,
+) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if not term.protected:
+            continue
+        value = (term.canonical or term.text or "").strip()
+        if not value:
+            continue
+        if term.source not in _FINAL_TRANSCRIPT_ALWAYS_PROTECT_SOURCES and not _compiled_term_present_in_text(term, evidence_text):
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return tuple(out)
+
+
+def _compiled_term_present_in_text(term: CompiledTerm, text: str) -> bool:
+    for value in (term.text, term.canonical, *term.spoken_forms):
+        if _term_present_loose(text, value):
+            return True
+    return False
+
+
+def _term_present_loose(text: str, term: str | None) -> bool:
+    tokens = re.findall(r"[A-Za-z0-9]+", term or "")
+    if not tokens:
+        return False
+    separator = r"[\W_]*" if len(tokens) >= 2 and all(len(tok) == 1 and tok.isalpha() for tok in tokens) else r"[\W_]+"
+    pattern = r"(?<![A-Za-z0-9])" + separator.join(re.escape(tok) for tok in tokens) + r"(?![A-Za-z0-9])"
+    return bool(re.search(pattern, text or "", flags=re.IGNORECASE))
 
 
 def _term_allowed(text: str) -> bool:

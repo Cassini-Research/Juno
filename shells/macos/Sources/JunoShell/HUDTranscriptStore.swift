@@ -146,8 +146,8 @@ final class HUDTranscriptStore: ObservableObject {
     }
 
     /// Apply the latest unstable tail from the engine. Tail can change
-    /// wholesale; the visual treatment (dimmed rendering) makes this an
-    /// honest "thinking" indicator instead of a glitch.
+    /// wholesale; production callers keep this empty and use a non-text
+    /// activity indicator instead.
     func applyUnstableTail(_ incoming: String) {
         _onMain { _applyUnstableTail(incoming) }
     }
@@ -237,9 +237,11 @@ final class HUDTranscriptStore: ObservableObject {
         _rebuild(origin: .corrected)
     }
 
-    /// Apply a stage="final" patch envelope so unchanged words keep their span
-    /// identity. Live-stage envelopes are NOT accepted — the live HUD is fed
-    /// exclusively by ``applyPreviewChunk`` now.
+    /// Apply a transcript patch envelope. Final patches settle the whole HUD.
+    /// Live patches are accepted only when they are anchored to the exact
+    /// visible snapshot the engine corrected, or to an append-only prefix of the
+    /// current HUD; this lets memory/screen corrections reach the HUD without
+    /// handing live correction permission to wholesale-replace unstable text.
     @discardableResult
     func applyPatchEnvelope(_ envelope: TranscriptPatchEnvelope) -> Bool {
         var result = false
@@ -249,13 +251,88 @@ final class HUDTranscriptStore: ObservableObject {
 
     private func _applyPatchEnvelope(_ envelope: TranscriptPatchEnvelope) -> Bool {
         guard envelope.schemaVersion == "transcript_patch_v1" else { return false }
-        guard envelope.stage == "final" else {
-            // Live-stage patches are no longer accepted; they used to drive the
-            // HUD-freeze bug (eight gates returning previous on drift).
-            NSLog("HUD: ignored non-final patch envelope stage=%@", envelope.stage)
+        if envelope.stage == "final" {
+            return _applyFinalReconciliationEnvelope(envelope)
+        }
+        if envelope.stage == "live" {
+            return _applyLiveCorrectionEnvelope(envelope)
+        }
+        NSLog("HUD: ignored unknown patch envelope stage=%@", envelope.stage)
+        return false
+    }
+
+    private func _applyLiveCorrectionEnvelope(_ envelope: TranscriptPatchEnvelope) -> Bool {
+        let snapshot = (envelope.baseVisibleText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let corrected = envelope.correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snapshot.isEmpty, !current.isEmpty, !corrected.isEmpty else { return false }
+        guard envelope.confidence >= 0.60 else { return false }
+        guard Self.livePatchOpsAreBounded(envelope.ops, snapshotChars: snapshot.count) else {
+            NSLog("HUD: refused live patch with unbounded ops")
             return false
         }
-        return _applyFinalReconciliationEnvelope(envelope)
+        guard Self.livePatchTokenDeltaIsBounded(snapshot: snapshot, corrected: corrected) else {
+            NSLog("HUD: refused live patch token delta current=%d corrected=%d", snapshot.count, corrected.count)
+            return false
+        }
+
+        let suffix: String
+        if current == snapshot {
+            suffix = ""
+        } else {
+            guard current.hasPrefix(snapshot) else {
+                NSLog("HUD: refused live patch snapshot drift current=%d snapshot=%d", current.count, snapshot.count)
+                return false
+            }
+            let suffixStart = current.index(current.startIndex, offsetBy: snapshot.count)
+            let rawSuffix = String(current[suffixStart...])
+            guard rawSuffix.first?.isWhitespace == true else {
+                NSLog("HUD: refused live patch mid-token drift current=%d snapshot=%d", current.count, snapshot.count)
+                return false
+            }
+            suffix = rawSuffix
+        }
+
+        if suffix.isEmpty, corrected == current {
+            return true
+        }
+        let changedRanges = applyOpsToCurrentText(envelope.ops)
+        committedText = Self.liveCorrectedText(corrected: corrected, suffix: suffix)
+        tailText = ""
+        _rebuild(origin: .committed, changedRanges: changedRanges)
+        return true
+    }
+
+    private static func livePatchOpsAreBounded(_ ops: [TranscriptPatchOpDTO], snapshotChars: Int) -> Bool {
+        guard ops.count <= 8 else { return false }
+        for op in ops {
+            guard op.confidence >= 0.60 else { return false }
+            guard op.startChar >= 0, op.endChar >= op.startChar, op.endChar <= snapshotChars else {
+                return false
+            }
+            switch op.op {
+            case "replace", "insert", "delete", "punctuate", "case":
+                continue
+            default:
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func livePatchTokenDeltaIsBounded(snapshot: String, corrected: String) -> Bool {
+        let before = previewRevisionTokens(snapshot).count
+        let after = previewRevisionTokens(corrected).count
+        guard before > 0, after > 0 else { return false }
+        if after > before + 4 { return false }
+        if after < max(1, before - 5) { return false }
+        return true
+    }
+
+    private static func liveCorrectedText(corrected: String, suffix: String) -> String {
+        let base = corrected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !suffix.isEmpty else { return base }
+        return base + suffix
     }
 
     private static func acceptsPreviewSuffixRevision(current: String, incoming: String) -> Bool {
@@ -343,17 +420,67 @@ final class HUDTranscriptStore: ObservableObject {
 
     // MARK: Span rebuild
 
+
+
+    // MARK: Display smoothing (render-only; never touches stored text)
+
+    static func smoothForDisplay(_ committed: String) -> String {
+        guard !committed.isEmpty else { return committed }
+        var out = committed
+        // Drop a single seam period followed by a lowercase continuation
+        // ("how we think. ask," → "how we think ask,"). Ellipses and
+        // initialisms are preserved.
+        if let regex = try? NSRegularExpression(pattern: "(?<![.A-Z])\\.( +)(?=[a-z])") {
+            out = regex.stringByReplacingMatches(
+                in: out, range: NSRange(out.startIndex..., in: out), withTemplate: "$1"
+            )
+        }
+        // Spoken newline cues become visible breaks unless preceded by a
+        // determiner ("the new line is short" stays literal).
+        if let cue = try? NSRegularExpression(
+            pattern: "(?:^|(?<= ))[Nn]ew +([Ll]ine|[Pp]aragraph)\\b[ .,]*",
+            options: []
+        ) {
+            let ns = out as NSString
+            var result = ""
+            var cursor = 0
+            for match in cue.matches(in: out, range: NSRange(location: 0, length: ns.length)) {
+                let before = ns.substring(to: match.range.location)
+                let prevWord = before.split(separator: " ").last.map {
+                    $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
+                } ?? ""
+                result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
+                    result += ns.substring(with: match.range)
+                } else {
+                    let cueWord = ns.substring(with: match.range).lowercased()
+                    result += cueWord.contains("paragraph") ? "\n\n" : "\n"
+                }
+                cursor = match.range.location + match.range.length
+            }
+            result += ns.substring(from: cursor)
+            out = result
+        }
+        return out
+    }
+
     private func _rebuild(origin: HUDTranscriptSpan.Origin, changedRanges: [Range<Int>] = []) {
         revision += 1
-        text = Self.compose(committed: committedText, tail: tailText)
+        text = Self.compose(committed: Self.smoothForDisplay(committedText), tail: tailText)
         lastHash = Self.visibleHash(text)
 
         var newSpans: [HUDTranscriptSpan] = []
 
-        for (i, item) in Self.wordSpans(for: committedText).enumerated() {
-            let token = Self.idToken(item.word)
+        // Display-only smoothing of rolling-window seams. The raw
+        // committedText keeps the engine's append-only contract (all
+        // invariant checks above run on it); only what the user SEES is
+        // cleaned: stray window-join periods before lowercase continuations
+        // are dropped and spoken newline cues render as actual breaks.
+        let displayCommitted = Self.smoothForDisplay(committedText)
+
+        for (i, item) in Self.wordSpans(for: displayCommitted).enumerated() {
             newSpans.append(HUDTranscriptSpan(
-                id: "c-\(i)-\(token)",
+                id: "c-\(i)",
                 text: item.word,
                 origin: .committed,
                 revision: revision,
@@ -363,12 +490,11 @@ final class HUDTranscriptStore: ObservableObject {
 
         let commLen = committedText.isEmpty ? 0 : committedText.count + 1
         for (i, item) in Self.wordSpans(for: tailText).enumerated() {
-            let token = Self.idToken(item.word)
             // Spans for tail words use a different prefix so they animate
             // independently from committed spans across updates.
             let absoluteRange = (item.range.lowerBound + commLen)..<(item.range.upperBound + commLen)
             newSpans.append(HUDTranscriptSpan(
-                id: "t-\(i)-\(token)",
+                id: "t-\(i)",
                 text: item.word,
                 origin: .tail,
                 revision: revision,
@@ -398,10 +524,6 @@ final class HUDTranscriptStore: ObservableObject {
         if committed.isEmpty { return tail }
         if tail.isEmpty { return committed }
         return committed + " " + tail
-    }
-
-    private static func idToken(_ word: String) -> String {
-        word.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     // MARK: Word-span helper (unchanged from prior implementation)

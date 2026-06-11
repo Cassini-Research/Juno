@@ -6,7 +6,6 @@ import CoreAudio
 import Darwin
 import JunoHotkeyCore
 import OSLog
-import Speech
 import SwiftUI
 
 /// Default-input-device name (e.g. "MacBook Pro Microphone"). `nil` if the system
@@ -662,8 +661,8 @@ enum JunoBroker {
         /// Whether Cmd+V is likely to land in an editable field (derived from `focusedRole`).
         let hasLikelyTextInsertionPoint: Bool
         /// Domain-specific terms derived from the current surface (identifiers, filenames,
-        /// lexicon entries). Passed to ``SFSpeechAudioBufferRecognitionRequest.contextualStrings``
-        /// so live on-device ASR is biased toward the user's active vocabulary.
+        /// lexicon entries). Passed to the local preview/final pipeline so ASR is
+        /// biased toward the user's active vocabulary.
         let recognitionHints: [String]
     }
 
@@ -1589,7 +1588,6 @@ enum JunoLocalBrokerBootstrap {
         env["JUNO_ENGINE_SOCKET"] = socketPath
         let previewEligibility = JunoPreviewEligibility.current
         env["JUNO_V2_LIVE_CAPTION_ALLOWED"] = previewEligibility.isEligible ? "1" : "0"
-        env["JUNO_V2_LIVE_CAPTION_DEFAULT_ENABLED"] = "0"
         env["JUNO_V2_LIVE_CAPTION_START_ENABLED"] = JunoUserDefaults.hudLiveTranscriptionsEnabled ? "1" : "0"
 
         if let engineRoot = JunoEngineContract.bundledEngineRoot() {
@@ -1731,7 +1729,7 @@ final class JunoEngineSupervisor {
             // Qwen writer stays on-demand; normal dictation commits should
             // not pay or keep its memory unless an explicit LLM rewrite/action
             // needs it.
-            if case .online = state, !Self.didWarmPreview, JunoUserDefaults.hudLiveTranscriptionsEnabled {
+            if case .online = state, !Self.didWarmPreview {
                 Self.didWarmPreview = true
                 JunoBroker.getJSON(path: "api/broker/preview/warm") { _ in
                     NSLog("Juno: preview warm requested on engine-online")
@@ -2269,8 +2267,7 @@ final class DictationRecorder {
     private static let silenceFrameThreshold: Int = 16_000
 
     /// Start recording. The optional ``bufferCallback`` receives **16 kHz mono
-    /// float** buffers (same as the WAV processing format) so
-    /// ``SFSpeechAudioBufferRecognitionRequest`` is fed a stable shape.
+    /// float** buffers in the same shape used by the local preview/final ASR path.
     func start(bufferCallback: ((AVAudioPCMBuffer) -> Void)? = nil) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(
             "juno-\(UUID().uuidString).wav"
@@ -2477,15 +2474,12 @@ final class JunoTargetApplicationTracker {
         "com.apple.usernotificationcenter",
         "com.apple.notificationcenterui",
         "com.apple.controlcenter",
-        "com.apple.systempreferences",
-        "com.apple.systemsettings",
         "com.apple.systemuiserver",
     ]
     private static let ignoredTargetNames: Set<String> = [
         "usernotificationcenter",
         "notification center",
         "control center",
-        "system settings",
     ]
 
     private var observer: NSObjectProtocol?
@@ -2514,11 +2508,6 @@ final class JunoTargetApplicationTracker {
         if let frontmost, isExternal(frontmost) {
             rememberIfExternal(frontmost)
             return frontmost
-        }
-        if let frontmost,
-           Self.isIgnoredSystemSurface(bundleId: frontmost.bundleIdentifier, name: frontmost.localizedName),
-           lastNonJunoApplication == nil || lastNonJunoApplication?.isTerminated == true {
-            return nil
         }
         guard let remembered = lastNonJunoApplication, !remembered.isTerminated else {
             return frontmost
@@ -2567,6 +2556,7 @@ enum JunoShortcutPreference: String, CaseIterable {
 
     private static let shortcutKey = "JunoShortcutKey"
     private static let legacyShortcutKey = "JunoShortcutKey"
+    static let defaultShortcut: JunoShortcutPreference = .rightOption
 
     static var stored: JunoShortcutPreference {
         get {
@@ -2576,8 +2566,8 @@ enum JunoShortcutPreference: String, CaseIterable {
                 ud.set(legacy, forKey: shortcutKey)
                 ud.removeObject(forKey: legacyShortcutKey)
             }
-            let raw = ud.string(forKey: shortcutKey) ?? "fn"
-            return JunoShortcutPreference(rawValue: raw) ?? .fn
+            let raw = ud.string(forKey: shortcutKey) ?? Self.defaultShortcut.rawValue
+            return JunoShortcutPreference(rawValue: raw) ?? Self.defaultShortcut
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: shortcutKey) }
     }
@@ -2694,6 +2684,7 @@ struct JunoActionHUDResult: Equatable {
     let title: String
     let subtitle: String
     let symbolName: String
+    let kind: JunoActionKind?
     let isFailure: Bool
 }
 
@@ -2707,8 +2698,7 @@ struct HUDTranscriptSpan: Identifiable, Equatable {
         case tail
         /// Final Qwen-adjudicated text. Replaces committed/tail on final.
         case corrected
-        /// Legacy: pre-LocalAgreement live preview path. Kept for any
-        /// transition-period code that still renders SFSpeech / fallback text.
+        /// Legacy: pre-LocalAgreement live preview path.
         case draft
         /// Legacy: pending typing state. Used outside the live transcript path.
         case pending
@@ -2744,24 +2734,17 @@ final class DictationController: ObservableObject {
     private let hudTranscriptStore = HUDTranscriptStore()
     private var hudCommittedRevealWork: DispatchWorkItem?
     private var hudCommittedRevealGeneration: UInt64 = 0
-    private let hudCommittedRevealInterval: TimeInterval = 0.012
+    private let hudCommittedRevealInterval: TimeInterval = 0.016
 
     // MARK: - Live caption source state machine
     //
-    // Today's HUD caption can come from two places:
-    //   1. Juno's own preview ASR (engine, via JunoPreviewStreamer)
-    //   2. Apple SFSpeech (fallback, on-device, instant but lower quality)
-    //
-    // While dictating we run the engine streamer as the primary source.
-    // SFSpeech is started in parallel but its text is held in
-    // ``sfSpeechPartialText`` and only mirrored to ``livePartialText``
-    // when ``liveSource == .sfSpeechFallback``. We commit to one source
-    // per utterance — no flapping mid-sentence.
-    enum LiveSource: String { case none, listening, engine, sfSpeechFallback }
+    // HUD captions come from Juno's local preview ASR via
+    // ``JunoPreviewStreamer``. Apple Speech is intentionally not used in
+    // production dictation because it creates a separate macOS permission,
+    // weaker homophone behavior, and a privacy prompt that conflicts with
+    // Juno's local-first product contract.
+    enum LiveSource: String { case none, listening, engine }
     @Published private(set) var liveSource: LiveSource = .none
-    /// Buffer for SFSpeech partials. Mirrored to ``livePartialText`` only
-    /// when the source committed to fallback.
-    private var sfSpeechPartialText: String = ""
     /// Buffer for engine preview partials. Mirrored to ``livePartialText``
     /// the moment we commit to ``.engine``.
     private var enginePreviewPartialText: String = ""
@@ -2888,18 +2871,16 @@ final class DictationController: ObservableObject {
     /// also covers mid-recording cancel and refining cancel where the broker call
     /// is allowed to complete in the background but its result is dropped.
     func cancelDictation() {
-        // Persist whatever the user said before they hit Esc as a "draft"
-        // history row. The broker upserts this verbatim with
-        // failure_reason="user_cancelled_hud" and paste_kind="none" so the
-        // user can find it later in History → Issues. The POST is fire-
-        // and-forget; if the broker is down or the row already exists with
-        // a transcript, the request is a no-op.
-        persistHudCancelDraftIfNeeded()
-
         switch hudState {
         case .idle:
             // Idle but copy-ready: dismissing the copy panel counts as cancel.
+            // Idle with NOTHING to cancel must be a no-op for history:
+            // ``juno-hotkey`` forwards every global Esc press system-wide, so
+            // an Esc in another app after a successful paste was retroactively
+            // stamping failure_reason="user_cancelled_hud" onto a row that
+            // pasted fine (production 2026-06-11).
             if copyableTranscript != nil {
+                persistHudCancelDraftIfNeeded()
                 copyableTranscript = nil
                 transientDoneWordCount = nil
             }
@@ -2910,12 +2891,19 @@ final class DictationController: ObservableObject {
         case .refining:
             // Recognition already torn down; let the broker call resolve but discard
             // its result on arrival via the cancel marker so it can't paste.
+            // (``persistHudCancelDraftIfNeeded`` skips refining by design —
+            // the pipeline owns history for in-flight broker calls.)
             cancelInFlightBrokerInsertion = true
             goIdleOnMain()
             return
         default:
             break
         }
+        // Mid-recording cancel: persist what the user said before Esc as a
+        // "draft" history row. The broker upserts this verbatim with
+        // failure_reason="user_cancelled_hud" and paste_kind="none" so the
+        // user can find it later in History → Issues. Fire-and-forget.
+        persistHudCancelDraftIfNeeded()
         teardownRecognition()
         micWatchdog?.cancel()
         micWatchdog = nil
@@ -2987,22 +2975,11 @@ final class DictationController: ObservableObject {
     private var targetAppBundleId: String = ""
     private var targetWindowTitle: String = ""
     private var pendingUtteranceId: String = ""
-    /// Surface-specific terms from the last capability probe, set on
-    /// ``SFSpeechAudioBufferRecognitionRequest.contextualStrings`` for live partial bias.
+    /// Surface-specific terms from the last capability probe, passed to the
+    /// local preview/final pipeline for vocabulary bias.
     private var surfaceRecognitionHints: [String] = []
     private var textmonTask: Process?
     private var textmonStdout: FileHandle?
-
-    // MARK: Live speech recognition (thread-safe)
-
-    // _recognitionRequest is read on the audio-engine thread and written on
-    // main thread; guard every access with recognitionLock.
-    private let recognitionLock = NSLock()
-    private var _recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    /// Bumped on each new recognition request and on teardown so audio-thread
-    /// ``DispatchQueue.main`` handoffs never append after ``endAudio``.
-    private var speechTapSerial: UInt64 = 0
 
     // MARK: Pause-based partial insertion
 
@@ -3017,7 +2994,7 @@ final class DictationController: ObservableObject {
     private var partialInsertFailed: Bool = false  // last partial paste failed
     private var hasInsertedTextThisDictation: Bool = false
 
-    // Broker-on-pause state (replaces the SFSpeech-paste flow). See the
+    // Broker-on-pause state. See the
     // ``reconcileWithBrokerOnRelease`` doc comment above for the full
     // design rationale.
     private var brokerSnapshotInFlight: Bool = false
@@ -3041,7 +3018,6 @@ final class DictationController: ObservableObject {
     private var liveAdjudicationSlowCount: Int = 0
     private var liveAdjudicationRevision: Int = 0
     private var liveAdjudicationBackpressureUntil: TimeInterval = 0
-    private var lastSFSpeechPartialAt: TimeInterval = 0
     private var lastLiveHUDTextChangeAt: TimeInterval = 0
     private var lastLiveHUDTextChangePCMBytes: Int = 0
     private var lastPreviewSegmentRollSpeechAt: TimeInterval = 0
@@ -3074,10 +3050,6 @@ final class DictationController: ObservableObject {
     private var textMonInitialSnapshot: String?
     /// From capability probe: focused AX role looks like a text insertion target.
     private var likelyPasteDestination: Bool = true
-    /// Outcome details from the last observed paste attempt. Finalization uses
-    /// these to keep telemetry honest when a paste was skipped before Cmd+V.
-    private var lastObservedPastePosted: Bool = false
-    private var lastObservedPasteFailureReason: String?
     /// TOCTOU pin for ``JunoSecureFieldPolicy``. Captured at dictation
     /// start and refreshed when the in-process AX snapshot is
     /// authoritative (i.e. AX-trusted + ok). Read by every privacy gate
@@ -3129,12 +3101,11 @@ final class DictationController: ObservableObject {
     private static let liveAudioCheckpointSlowResponseThreshold: TimeInterval = 4.0
     private static let liveAudioCheckpointMaxBackpressure: TimeInterval = 8.0
 
-    // Broker-on-pause architecture. SFSpeechRecognizer is HUD-only; it
-    // never pastes into the focused field. Each pause triggers a broker
-    // snapshot built from the in-memory PCM buffer (no active-file WAV
-    // race). The broker returns a writer-processed utterance; we paste
-    // that utterance once and then trim the consumed PCM so the HUD can
-    // keep listening for the next utterance in the same session.
+    // Broker-on-pause architecture. Each pause triggers a broker snapshot
+    // built from the in-memory PCM buffer (no active-file WAV race). The
+    // broker returns a writer-processed utterance; we paste that utterance
+    // once and then trim the consumed PCM so the HUD can keep listening for
+    // the next utterance in the same session.
     //
     // Coalescing: when a pause fires while a broker call is still in
     // flight, we set ``pendingBrokerSnapshot``; the completion handler
@@ -3223,7 +3194,6 @@ final class DictationController: ObservableObject {
             self.livePartialText = ""
             self.resetHUDTranscriptStore()
             self.liveSource = .none
-            self.sfSpeechPartialText = ""
             self.enginePreviewPartialText = ""
             self.transientCopyToast = nil
             self.delightSweepActive = false
@@ -3238,10 +3208,7 @@ final class DictationController: ObservableObject {
             self.pendingLiveAdjudicationSnapshot = nil
             self.liveAdjudicationSlowCount = 0
             self.lastLiveAdjudicationVisibleText = ""
-            self.lastSFSpeechPartialAt = 0
             self.lastLiveHUDTextChangeAt = 0
-            self.lastObservedPastePosted = false
-            self.lastObservedPasteFailureReason = nil
             self.lastLiveHUDTextChangePCMBytes = 0
             self.lastPreviewSegmentRollSpeechAt = 0
             self.liveAudioCheckpointInFlight = false
@@ -3253,12 +3220,8 @@ final class DictationController: ObservableObject {
 
     private func syncLiveDisplayTranscript(allowFrozen: Bool = true) {
         // Live preview is engine-driven via JunoPreviewStreamer.onPartial →
-        // hudTranscriptStore.applyPreviewRevision. This helper is retained for the
-        // SFSpeech fallback path (when the engine path gives up before the
-        // first word). SFSpeech text isn't LocalAgreement-aware; we route it
-        // through applyCommittedPrefix so the prefix invariant is preserved
-        // and any out-of-order rewrites are refused. If the engine path is
-        // healthy this never runs.
+        // hudTranscriptStore.applyPreviewRevision. This helper resolves the
+        // store back into the HUD model after final correction/copy states.
         let resolved = resolvedHUDTranscript()
         if !resolved.isEmpty {
             _ = hudTranscriptStore.applyCommittedPrefix(resolved)
@@ -3516,39 +3479,10 @@ final class DictationController: ObservableObject {
         return payload
     }
 
-    private func observedUndoSafePaste(_ text: String, beforePost: (() -> Void)? = nil) -> Bool {
-        lastObservedPastePosted = false
-        lastObservedPasteFailureReason = nil
-
-        guard likelyPasteDestination else {
-            lastObservedPasteFailureReason = "no_active_text_field"
-            return false
-        }
-        guard targetPid > 0 else {
-            likelyPasteDestination = false
-            lastObservedPasteFailureReason = "no_active_text_field"
-            return false
-        }
-        guard activateTargetForPasteIfNeeded() else {
-            likelyPasteDestination = false
-            lastObservedPasteFailureReason = "paste_target_unavailable"
-            return false
-        }
-
-        beforePost?()
+    private func observedUndoSafePaste(_ text: String) -> Bool {
         markUtteranceTimeline("paste_attempt_started_ms")
-        lastObservedPastePosted = true
         let ok = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
-        if ok,
-           let pasteFrontmost = Clipboard.lastPasteFrontmostPid,
-           pasteFrontmost != targetPid {
-            lastObservedPasteFailureReason = "paste_target_drifted"
-            return false
-        }
-        if !ok {
-            lastObservedPasteFailureReason = "undo_safe_paste_failed"
-        }
         return ok
     }
 
@@ -3717,9 +3651,8 @@ final class DictationController: ObservableObject {
         pendingUtteranceId = "macshell-\(UUID().uuidString.prefix(16))"
         if JunoUserDefaults.hudLiveTranscriptionsEnabled {
             // Begin engine preview streaming for this utterance. We start
-            // immediately on hotkey-down so the first PCM buffer arrives at
-            // the broker at the same moment SFSpeech opens its session — the
-            // race-to-first-word decides which source the HUD will commit to.
+            // immediately on hotkey-down so the local preview receives the
+            // first PCM buffer as early as the recorder does.
             beginEnginePreviewStreaming(uid: pendingUtteranceId)
         }
         isPartialMode = false
@@ -3751,8 +3684,6 @@ final class DictationController: ObservableObject {
         resetHUDTranscriptStore()
         lastNonEmptyHUDTranscript = ""
         likelyPasteDestination = true
-        lastObservedPastePosted = false
-        lastObservedPasteFailureReason = nil
         // Reset privacy TOCTOU pin. Will be set authoritatively by the
         // capability probe / in-process AX snapshot before any paste,
         // learn, history, or audio-upload gate fires for this session.
@@ -3851,17 +3782,11 @@ final class DictationController: ObservableObject {
                 bundleId: cap.appBundleId,
                 name: nil
             )
-            let storedTargetIsJunoOrSystem = JunoTargetApplicationTracker.isIgnoredSystemSurface(
-                bundleId: self.targetAppBundleId,
-                name: self.targetApp?.name
-            )
-            if capabilityTargetIsJunoOrSystem && !self.targetAppBundleId.isEmpty && !storedTargetIsJunoOrSystem {
+            if capabilityTargetIsJunoOrSystem && !self.targetAppBundleId.isEmpty {
                 NSLog(
                     "Juno: preserving existing paste target after capability focused Juno/system surface app=%@",
                     cap.appBundleId ?? "unknown"
                 )
-            } else if capabilityTargetIsJunoOrSystem {
-                self.likelyPasteDestination = false
             } else {
                 self.likelyPasteDestination = cap.hasLikelyTextInsertionPoint
             }
@@ -3885,9 +3810,6 @@ final class DictationController: ObservableObject {
             self.suppressPartialPasteForSelectionEditing = !sel.isEmpty
             self.editingSelectionCharCount = sel.count
             self.startWorkbenchStatePolling()
-            if !self.surfaceRecognitionHints.isEmpty && self.livePartialText.isEmpty {
-                self.swapRecognitionRequest()
-            }
         }
         }
         // No session-start activation any more (see comment in the
@@ -3971,7 +3893,6 @@ final class DictationController: ObservableObject {
         let snapName = (snap["frontmost_app_name"] as? String)
             ?? (snap["app_name"] as? String)
         if JunoTargetApplicationTracker.isIgnoredSystemSurface(bundleId: snapBundleId, name: snapName) {
-            likelyPasteDestination = false
             return
         }
         // PID/app/window: safe to refresh from NSWorkspace data even
@@ -4118,14 +4039,6 @@ final class DictationController: ObservableObject {
                 guard self.matchesCurrentDictationGeneration(generation) else { return }
                 let totalFrames = self.appendSessionPCMSample(from: buffer)
                 let rms = buffer.rms()
-                if let speechBuffer = Self.duplicatePCMBuffer(buffer) {
-                    self.recognitionLock.lock()
-                    if self.matchesCurrentDictationGeneration(generation),
-                       let request = self._recognitionRequest {
-                        request.append(speechBuffer)
-                    }
-                    self.recognitionLock.unlock()
-                }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.matchesCurrentDictationGeneration(generation) else { return }
@@ -4134,7 +4047,6 @@ final class DictationController: ObservableObject {
             })
             dictationStartedAt = Date()
             NSLog("Juno: recorder started input=%@", currentInputDeviceName ?? "unknown")
-            startLiveSpeechRecognition(generation: generation)
             scheduleMicWatchdog()
             startSilenceTimer()
             return true
@@ -4166,16 +4078,13 @@ final class DictationController: ObservableObject {
     // MARK: - Live caption source orchestration
 
     /// Start engine preview streaming for a fresh utterance. Wires the
-    /// streamer's callbacks to update HUD state and arms the first-word
-    /// budget timer that decides whether to fall back to SFSpeech.
+    /// streamer's callbacks to update HUD state.
     private func beginEnginePreviewStreaming(uid: String) {
-        // Reset both buffers; HUD enters the .listening placeholder until
-        // either source commits.
-        sfSpeechPartialText = ""
+        // Reset the preview buffer; HUD enters the .listening placeholder
+        // until the local engine commits text.
         enginePreviewPartialText = ""
         livePartialText = ""
         liveSource = .listening
-        lastSFSpeechPartialAt = 0
         lastLiveHUDTextChangeAt = 0
         lastLiveHUDTextChangePCMBytes = sessionPCMByteCount()
         lastPreviewSegmentRollSpeechAt = 0
@@ -4183,6 +4092,9 @@ final class DictationController: ObservableObject {
         lastLiveAudioCheckpointRequestedAt = 0
         lastLiveAudioCheckpointPCMBytes = 0
         liveAudioCheckpointBackpressureUntil = 0
+        if JunoScreenContextAccess.isEnabledAndGranted {
+            JunoScreenTermHarvester.shared.activate()
+        }
         previewStreamer.start(utteranceId: uid)
         previewStreamer.visibleTextHint = { [weak self] in
             guard let self else { return "" }
@@ -4192,7 +4104,15 @@ final class DictationController: ObservableObject {
         }
         previewStreamer.candidateEntities = { [weak self] in
             guard let self else { return [] }
-            return self.surfaceRecognitionHints
+            var hints = self.surfaceRecognitionHints
+            var seen = Set(hints.map { $0.lowercased() })
+            if JunoScreenContextAccess.isEnabledAndGranted {
+                for term in JunoScreenTermHarvester.shared.currentTerms() where !seen.contains(term.lowercased()) {
+                    hints.append(term)
+                    seen.insert(term.lowercased())
+                }
+            }
+            return hints
         }
         previewStreamer.sessionContextTape = { [weak self] in
             guard let self else { return [:] }
@@ -4201,8 +4121,6 @@ final class DictationController: ObservableObject {
         previewStreamer.onPartial = { [weak self] reportedUid, committed, tail, isFinal in
             guard let self else { return }
             guard reportedUid == self.pendingUtteranceId else { return }
-            // First non-empty engine text wins the race against any temporary
-            // SFSpeech first-word bridge.
             let hasAnyText = !committed.isEmpty || !tail.isEmpty
             if hasAnyText, self.liveSource != .engine {
                 self.liveSource = .engine
@@ -4227,13 +4145,9 @@ final class DictationController: ObservableObject {
         previewStreamer.onGiveUp = { [weak self] reportedUid, reason in
             guard let self else { return }
             guard reportedUid == self.pendingUtteranceId else { return }
-            // Engine path failed for this utterance. We used to fall back to
-            // SFSpeech here, but SFSpeech delivered lowercase / homophone-prone
-            // partials that masqueraded as Whisper output. The fallback is
-            // disabled — if the engine fails the HUD stays silent and the
-            // final paste at stop is the source of truth. SFSpeech can come
-            // back later as an opt-in debug harness; see plan doc §11.
-            NSLog("Juno preview-streamer give-up uid=\(reportedUid) reason=\(reason) [SFSpeech fallback disabled]")
+            // If local preview fails, the HUD stays in its listening state and
+            // the final paste at stop remains the source of truth.
+            NSLog("Juno preview-streamer give-up uid=\(reportedUid) reason=\(reason) [apple-speech-disabled]")
             self.engineFirstWordTimer?.cancel()
             self.engineFirstWordTimer = nil
         }
@@ -4253,18 +4167,15 @@ final class DictationController: ObservableObject {
         engineFirstWordTimer = nil
     }
 
-    /// First-word fallback budget has been disabled with the LocalAgreement-2
-    /// rewrite. LocalAgreement needs ~1.0 s for its first commit, and the
-    /// 1.6 s budget caused a race that the engine reliably lost on cold
-    /// utterances — SFSpeech then masqueraded as Whisper output with worse
-    /// quality (lowercase, homophones). The timer field is retained so other
-    /// code that cancels it still compiles; the arm is now a no-op.
+    /// First-word fallback is disabled with the LocalAgreement-2 rewrite.
+    /// LocalAgreement needs ~1.0 s for its first commit; falling back earlier
+    /// made weaker transcripts masquerade as engine output.
     private func armEngineFirstWordTimerIfNeeded() {
         // intentionally no-op
     }
 
     private func showProvisionalSpeechFallback(reason: String) {
-        // intentionally no-op — SFSpeech fallback is disabled. See plan doc §11.
+        // intentionally no-op — Apple Speech fallback is disabled.
         _ = reason
     }
 
@@ -4274,6 +4185,7 @@ final class DictationController: ObservableObject {
     private func endEnginePreviewStreaming(completion: ((_ deliveredFinal: Bool) -> Void)? = nil) {
         engineFirstWordTimer?.cancel()
         engineFirstWordTimer = nil
+        JunoScreenTermHarvester.shared.deactivate()
         previewStreamer.finish { deliveredFinal in
             completion?(deliveredFinal)
         }
@@ -4284,6 +4196,7 @@ final class DictationController: ObservableObject {
     private func cancelEnginePreviewStreaming(reason: String) {
         engineFirstWordTimer?.cancel()
         engineFirstWordTimer = nil
+        JunoScreenTermHarvester.shared.deactivate()
         previewStreamer.cancel(reason: reason)
         liveSource = .none
     }
@@ -4599,7 +4512,7 @@ final class DictationController: ObservableObject {
         // final-stop delivery behind an already-running ASR decode. Keep it as
         // a hidden diagnostic opt-in only.
         guard UserDefaults.standard.bool(forKey: "JunoLiveAudioCheckpointEnabled") else { return }
-        guard liveSource == .sfSpeechFallback || liveSource == .engine else { return }
+        guard liveSource == .engine else { return }
         guard !liveAudioCheckpointInFlight else { return }
         guard now >= liveAudioCheckpointBackpressureUntil else { return }
         guard !recorderStopped,
@@ -4614,7 +4527,7 @@ final class DictationController: ObservableObject {
         guard !visible.isEmpty else { return }
         let lastVisibleChangeAt = lastLiveHUDTextChangeAt > sessionStartTime
             ? lastLiveHUDTextChangeAt
-            : max(lastSFSpeechPartialAt, sessionStartTime)
+            : sessionStartTime
         guard now - lastVisibleChangeAt >= Self.liveAudioCheckpointStaleAfter else { return }
         let speechFresh = now - lastSpeechEnergyAt <= Self.liveAudioCheckpointSpeechFreshAfter
         let hudStaleEnoughForRecovery =
@@ -5074,13 +4987,10 @@ final class DictationController: ObservableObject {
         engineSessionFinalCandidateText = transcript
         livePartialText = transcript
 
-        // Voice Actions short-circuit. When the master toggle is on AND the
-        // broker parser produced at least one action ("juno, take a note
-        // about Q3", "juno, remind me to call Sam at 5pm"), we route the
-        // utterance to the action sinks (Reminders / Notes) and **do not
-        // paste the literal transcript**. Otherwise the user would see the
-        // command text "juno take a note about Q3" pasted into whatever
-        // field is focused — exactly the wrong thing.
+        // Voice Actions. Pure action turns suppress paste; mixed turns may
+        // carry both actions and writer-rendered text, in which case the
+        // broker sets paste_kind to insert/replace and we continue into the
+        // normal insertion path after dispatching the action batch.
         //
         // Hard rule from §"Feature is purely additive": when the toggle is
         // OFF, this block is a no-op and dictation behaves exactly as
@@ -5108,6 +5018,24 @@ final class DictationController: ObservableObject {
                         }
                     )
                 }
+                let shouldPasteMixedText =
+                    response.pasteKind != "none"
+                    && !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if !shouldPasteMixedText {
+                    lastPastedFromBroker = ""
+                    accumulatedText = ""
+                    pendingRevisionFullTranscript = nil
+                    copyableTranscript = nil
+                    syncLiveDisplayTranscript()
+                    if !isFinal {
+                        resetForNextPauseUtterance(
+                            snapshotPCMByteCount: snapshotPCMByteCount,
+                            snapshotSpeechAt: snapshotSpeechAt
+                        )
+                    }
+                    return true
+                }
+                // Continue into the normal insertion path below.
             } else {
                 // The engine made an explicit action/no-paste decision, but
                 // the concrete action payload was missing or could not be
@@ -5120,20 +5048,19 @@ final class DictationController: ObservableObject {
                     symbolName: "exclamationmark.triangle.fill",
                     isFailure: true
                 )
+                lastPastedFromBroker = ""
+                accumulatedText = ""
+                pendingRevisionFullTranscript = nil
+                copyableTranscript = nil
+                syncLiveDisplayTranscript()
+                if !isFinal {
+                    resetForNextPauseUtterance(
+                        snapshotPCMByteCount: snapshotPCMByteCount,
+                        snapshotSpeechAt: snapshotSpeechAt
+                    )
+                }
+                return true
             }
-            // Suppress paste regardless of execution path.
-            lastPastedFromBroker = ""
-            accumulatedText = ""
-            pendingRevisionFullTranscript = nil
-            copyableTranscript = nil
-            syncLiveDisplayTranscript()
-            if !isFinal {
-                resetForNextPauseUtterance(
-                    snapshotPCMByteCount: snapshotPCMByteCount,
-                    snapshotSpeechAt: snapshotSpeechAt
-                )
-            }
-            return true
         }
 
         if !isFinal, let holdReason = structuredNotesPauseHoldReason(for: transcript) {
@@ -5320,8 +5247,9 @@ final class DictationController: ObservableObject {
         // was when the hotkey fired. See ``refreshPasteTargetFromCurrentFocus``.
         refreshPasteTargetFromCurrentFocus()
         if likelyPasteDestination {
+            activateTargetForPasteIfNeeded()
+            pasteAttempted = true
             pasteSucceeded = observedUndoSafePaste(textToPaste)
-            pasteAttempted = lastObservedPastePosted
             if pasteSucceeded {
                 partialInsertFailed = false
                 hasInsertedTextThisDictation = true
@@ -5336,7 +5264,7 @@ final class DictationController: ObservableObject {
                 pendingRevisionFullTranscript = textToPaste
                 liveSpeechHint = "Text ready — paste failed, tap again to stop and copy."
                 pasteKind = "none"
-                pasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                pasteFailureReason = "undo_safe_paste_failed"
             }
         } else {
             partialInsertFailed = true
@@ -5587,8 +5515,9 @@ final class DictationController: ObservableObject {
 
         if suppressPartialPasteForSelectionEditing && !finalText.isEmpty {
             if likelyPasteDestination && finalPasteAllowed {
+                activateTargetForPasteIfNeeded()
+                finalPasteAttempted = true
                 finalPasteSucceeded = observedUndoSafePaste(finalText)
-                finalPasteAttempted = lastObservedPastePosted
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
@@ -5600,7 +5529,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = finalText
                     finalPasteKind = "none"
-                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                    finalPasteFailureReason = "undo_safe_paste_failed"
                 }
             } else {
                 Clipboard.writeString(finalText)
@@ -5610,16 +5539,16 @@ final class DictationController: ObservableObject {
             }
         } else if pendingFinalText?.isEmpty == false && !finalText.isEmpty {
             if likelyPasteDestination && finalPasteAllowed {
+                activateTargetForPasteIfNeeded()
                 let replacingPartial = !pastedText.isEmpty && !partialInsertFailed
-                finalPasteSucceeded = observedUndoSafePaste(finalText) {
-                    if replacingPartial {
-                        Clipboard.deleteLastNCharacters(pastedText.count)
-                        finalPasteKind = "replace"
-                    } else {
-                        deleteRecentReplaceTargetIfNeeded()
-                    }
+                if replacingPartial {
+                    Clipboard.deleteLastNCharacters(pastedText.count)
+                    finalPasteKind = "replace"
+                } else {
+                    deleteRecentReplaceTargetIfNeeded()
                 }
-                finalPasteAttempted = lastObservedPastePosted
+                finalPasteAttempted = true
+                finalPasteSucceeded = observedUndoSafePaste(finalText)
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = finalText
@@ -5627,12 +5556,12 @@ final class DictationController: ObservableObject {
                     presentFinalTextReveal(for: finalText)
                     triggerDraftFlash()
                 } else {
-                    if replacingPartial && lastObservedPastePosted {
+                    if replacingPartial {
                         _ = Clipboard.undoSafePaste(pastedText)
                     }
                     copyableTranscript = finalText
                     finalPasteKind = "none"
-                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                    finalPasteFailureReason = "undo_safe_paste_failed"
                 }
             } else {
                 Clipboard.writeString(finalText)
@@ -5644,10 +5573,10 @@ final class DictationController: ObservableObject {
             if likelyPasteDestination && finalPasteAllowed {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
-                finalPasteSucceeded = observedUndoSafePaste(textToPaste) {
-                    deleteRecentReplaceTargetIfNeeded()
-                }
-                finalPasteAttempted = lastObservedPastePosted
+                activateTargetForPasteIfNeeded()
+                deleteRecentReplaceTargetIfNeeded()
+                finalPasteAttempted = true
+                finalPasteSucceeded = observedUndoSafePaste(textToPaste)
                 if finalPasteSucceeded {
                     partialInsertFailed = false
                     hasInsertedTextThisDictation = true
@@ -5660,7 +5589,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = textToPaste
                     finalPasteKind = "none"
-                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                    finalPasteFailureReason = "undo_safe_paste_failed"
                 }
             } else {
                 let textToCopy = textWithInsertionBoundary(finalText)
@@ -5674,10 +5603,10 @@ final class DictationController: ObservableObject {
             if likelyPasteDestination && finalPasteAllowed {
                 let textToPaste = textWithInsertionBoundary(finalText)
                 committedFinalText = textToPaste
-                finalPasteSucceeded = observedUndoSafePaste(textToPaste) {
-                    deleteRecentReplaceTargetIfNeeded()
-                }
-                finalPasteAttempted = lastObservedPastePosted
+                activateTargetForPasteIfNeeded()
+                deleteRecentReplaceTargetIfNeeded()
+                finalPasteAttempted = true
+                finalPasteSucceeded = observedUndoSafePaste(textToPaste)
                 if finalPasteSucceeded {
                     hasInsertedTextThisDictation = true
                     lastPastedFromBroker = textToPaste
@@ -5689,7 +5618,7 @@ final class DictationController: ObservableObject {
                 } else {
                     copyableTranscript = textToPaste
                     finalPasteKind = "none"
-                    finalPasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                    finalPasteFailureReason = "undo_safe_paste_failed"
                 }
             } else {
                 let textToCopy = textWithInsertionBoundary(finalText)
@@ -5739,176 +5668,9 @@ final class DictationController: ObservableObject {
         refiningStartedAt = nil
     }
 
-    // MARK: - Live speech recognition
-
-    private func preferredSpeechRecognizer() -> SFSpeechRecognizer? {
-        let locales = preferredSpeechLocales()
-        for locale in locales {
-            if let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable {
-                return recognizer
-            }
-        }
-        for locale in locales {
-            if let recognizer = SFSpeechRecognizer(locale: locale) {
-                return recognizer
-            }
-        }
-        return SFSpeechRecognizer()
-    }
-
-    private func preferredSpeechLocales() -> [Locale] {
-        let current = Locale.current
-        let mode = JunoUserDefaults.languageMode
-        let candidates: [Locale]
-        switch mode {
-        case "en":
-            candidates = [Locale(identifier: "en_US"), current]
-        case "zh":
-            candidates = [Locale(identifier: "zh_CN"), Locale(identifier: "zh_TW"), current, Locale(identifier: "en_US")]
-        case "es":
-            candidates = [Locale(identifier: "es_ES"), Locale(identifier: "es_MX"), current, Locale(identifier: "en_US")]
-        case "pair:en,hi":
-            candidates = [Locale(identifier: "hi_IN"), Locale(identifier: "en_US"), current]
-        case "keep_original", "auto":
-            candidates = [current, Locale(identifier: "en_US")]
-        default:
-            candidates = [current, Locale(identifier: "en_US")]
-        }
-
-        var seen = Set<String>()
-        var deduped: [Locale] = []
-        for locale in candidates {
-            let id = locale.identifier
-            guard !id.isEmpty, !seen.contains(id) else { continue }
-            seen.insert(id)
-            deduped.append(locale)
-        }
-        return deduped
-    }
-
-    private func startLiveSpeechRecognition(generation: UInt64) {
-        guard JunoUserDefaults.hudLiveTranscriptionsEnabled else { return }
-        guard let recognizer = preferredSpeechRecognizer(), recognizer.isAvailable else {
-            DispatchQueue.main.async {
-                guard self.matchesCurrentDictationGeneration(generation) else { return }
-                self.liveSpeechHint = "On-device live captions unavailable. Audio still records; final text arrives when you release the key."
-            }
-            return
-        }
-        SFSpeechRecognizer.requestAuthorization { [weak self] status in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                guard self.matchesCurrentDictationGeneration(generation) else { return }
-                switch status {
-                case .authorized:
-                    self.liveSpeechHint = nil
-                    self.installRecognitionRequest(generation: generation)
-                case .denied, .restricted:
-                    self.liveSpeechHint = "Speech recognition is off — open System Settings › Privacy to enable live captions while dictating."
-                case .notDetermined:
-                    self.liveSpeechHint = nil
-                @unknown default:
-                    self.liveSpeechHint = "Speech recognition status unknown."
-                }
-            }
-        }
-    }
-
-    private func installRecognitionRequest(generation: UInt64) {
-        guard let recognizer = preferredSpeechRecognizer(), recognizer.isAvailable else { return }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        // Bias the on-device ASR toward domain-specific terms from the current surface.
-        // The list is small (≤20) and is refreshed each time the user starts dictating.
-        if !surfaceRecognitionHints.isEmpty {
-            request.contextualStrings = surfaceRecognitionHints
-        }
-
-        recognitionLock.lock()
-        speechTapSerial &+= 1
-        _recognitionRequest = request
-        recognitionLock.unlock()
-
-        recognitionTask?.cancel()
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, _ in
-            guard let self, let result else { return }
-            DispatchQueue.main.async {
-                guard self.matchesCurrentDictationGeneration(generation) else { return }
-                let text = result.bestTranscription.formattedString
-                if self.normalizedHUDText(text) != self.normalizedHUDText(self.sfSpeechPartialText) {
-                    self.lastSFSpeechPartialAt = Date.timeIntervalSinceReferenceDate
-                }
-                self.sfSpeechPartialText = text
-                // SFSpeech is the silent fallback. We only push it into the
-                // visible HUD caption when the engine has explicitly given
-                // up for this utterance (or we never had a preview backend).
-                // While `liveSource == .listening`, the HUD shows the
-                // "Listening…" placeholder; we are still racing for first
-                // word. Engine winning that race switches us to .engine and
-                // SFSpeech is dropped on the floor for the rest of this
-                // utterance.
-                if self.liveSource == .sfSpeechFallback {
-                    self.livePartialText = text
-                    self.syncLiveDisplayTranscript()
-                }
-            }
-        }
-    }
-
-    /// End the current request and start a new one so the live text resets
-    /// after an utterance commit without stopping the audio tap.
-    private func swapRecognitionRequest() {
-        recognitionLock.lock()
-        speechTapSerial &+= 1
-        let old = _recognitionRequest
-        _recognitionRequest = nil
-        recognitionLock.unlock()
-
-        old?.endAudio()
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        installRecognitionRequest(generation: dictationSessionGeneration)
-    }
-
     private func teardownRecognition() {
-        recognitionLock.lock()
-        speechTapSerial &+= 1
-        let req = _recognitionRequest
-        _recognitionRequest = nil
-        recognitionLock.unlock()
-        req?.endAudio()
-        recognitionTask?.cancel()
-        recognitionTask = nil
-    }
-
-    /// Deep-copy a PCM buffer so realtime tap memory can be handed to the main queue.
-    private static func duplicatePCMBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        let frames = Int(buffer.frameLength)
-        guard frames > 0 else { return nil }
-        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
-            return nil
-        }
-        copy.frameLength = buffer.frameLength
-        let ch = Int(buffer.format.channelCount)
-        switch buffer.format.commonFormat {
-        case .pcmFormatFloat32:
-            guard let src = buffer.floatChannelData, let dst = copy.floatChannelData else { return nil }
-            let byteCount = frames * MemoryLayout<Float>.size
-            for c in 0..<ch {
-                memcpy(dst[c], src[c], byteCount)
-            }
-            return copy
-        case .pcmFormatInt16:
-            guard let src = buffer.int16ChannelData, let dst = copy.int16ChannelData else { return nil }
-            let byteCount = frames * MemoryLayout<Int16>.size
-            for c in 0..<ch {
-                memcpy(dst[c], src[c], byteCount)
-            }
-            return copy
-        default:
-            return nil
-        }
+        // Apple Speech recognition is not part of production dictation.
+        // This hook is kept because error/cancel paths already call it.
     }
 
     // MARK: - Thread-safe last-sound time
@@ -6056,10 +5818,11 @@ final class DictationController: ObservableObject {
             pasteFailureReason = "secure_field"
             NSLog("Juno: paste suppressed by SecureFieldPolicy (secure-field privacy gate)")
         } else if likelyPasteDestination {
+            activateTargetForPasteIfNeeded()
+            pasteAttempted = true
             ok = observedUndoSafePaste(text)
-            pasteAttempted = lastObservedPastePosted
             if !ok {
-                pasteFailureReason = lastObservedPasteFailureReason ?? "undo_safe_paste_failed"
+                pasteFailureReason = "undo_safe_paste_failed"
             }
         } else {
             pasteAttempted = false
@@ -6222,7 +5985,7 @@ final class DictationController: ObservableObject {
         let isFailure = (summary.tone == .blocked || summary.tone == .failed)
 
         // For single-action all-saved, prefer the kind-specific destination
-        // subtitle (e.g. "Saved to Apple Notes \u{2192} Juno folder.") so
+        // subtitle (e.g. "Saved to Notes \u{2192} Juno folder.") so
         // the chip teaches users where each action lands. For multi-
         // action all-saved, the brand-island has no room for the verbose
         // formatter detail — collapse to the destination tail ("Apple
@@ -6247,10 +6010,12 @@ final class DictationController: ObservableObject {
         }()
 
         let displaySeconds = actionHUDDisplaySeconds(summary: summary, resultCount: results.count)
+        let nativeKind = (summary.tone == .allSaved && results.count == 1) ? results.first?.kind : nil
         showTransientActionHUD(
             title: summary.oneLine,
             subtitle: subtitle,
             symbolName: symbol,
+            kind: nativeKind,
             isFailure: isFailure,
             displaySeconds: displaySeconds
         )
@@ -6280,7 +6045,7 @@ final class DictationController: ObservableObject {
             switch kind {
             case .note:     return "Notes"
             case .reminder: return "Reminders"
-            case .alarm:    return "Calendar"
+            case .alarm:    return "Alarm"
             }
         }
         return names.joined(separator: " · ")
@@ -6290,20 +6055,20 @@ final class DictationController: ObservableObject {
         guard let result else { return "Saved by Juno." }
         switch result.kind {
         case .reminder:
-            return "Added to Apple Reminders."
+            return "Added to Reminders."
         case .note:
             // Tell the user where to look. Without this they dictate a
             // note, see "Saved", and don't realize it lives in a folder
             // called "Juno" (often under iCloud) — leading to the
             // recurring "the note never gets saved" complaint.
-            return "Saved to Apple Notes \u{2192} \(JunoNotesFolderName) folder."
+            return "Saved to Notes \u{2192} \(JunoNotesFolderName) folder."
         case .alarm:
             // Alarms are deliberately Calendar events, not a custom
             // local notification — that way the alert fires even when
             // Juno is closed or crashed. The copy makes that explicit so
             // users don't go looking in a Clock app that doesn't exist
             // on macOS.
-            return "Set in Apple Calendar — rings even when Juno is closed."
+            return "Alarm saved as a Calendar alert."
         }
     }
 
@@ -6311,6 +6076,7 @@ final class DictationController: ObservableObject {
         title: String,
         subtitle: String,
         symbolName: String,
+        kind: JunoActionKind? = nil,
         isFailure: Bool,
         displaySeconds: TimeInterval = 2.4
     ) {
@@ -6319,6 +6085,7 @@ final class DictationController: ObservableObject {
             title: title,
             subtitle: subtitle,
             symbolName: symbolName,
+            kind: kind,
             isFailure: isFailure
         )
         let work = DispatchWorkItem { [weak self] in
@@ -6385,6 +6152,14 @@ final class DictationController: ObservableObject {
         let p = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty else { return }
         if fieldSnapshot.contains(p) { return }
+        // Terminals and rich editors re-wrap pasted text inside their AX
+        // value (hard newlines at column width, NBSP), so verbatim
+        // containment false-flags any paste longer than one visual line.
+        // That reopened the HUD as copy-ready after a successful paste —
+        // which also suppressed the dictation hotkey until the user pressed
+        // Esc (production 2026-06-11). Collapse all whitespace on both sides
+        // before declaring the paste missing.
+        if Self.whitespaceCollapsed(fieldSnapshot).contains(Self.whitespaceCollapsed(p)) { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {
@@ -6392,6 +6167,13 @@ final class DictationController: ObservableObject {
         } else {
             liveSpeechHint = "Text may not have landed — use Copy if needed."
         }
+    }
+
+    static func whitespaceCollapsed(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private func shouldLearnTextMonCorrection(observed: String, expected: String) -> Bool {
@@ -6596,9 +6378,12 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
-        // **Run BEFORE legacy-defaults migration.** It preserves completed
-        // onboarding across normal updates, and only reruns setup when Juno
-        // explicitly bumps onboarding requirements. See ``JunoFreshInstallGuard``.
+        // **Run BEFORE legacy-defaults migration.** If the install was
+        // re-run (TCC wiped) but the prefs plist still says
+        // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
+        // so the welcome flow runs again — otherwise the user lands on
+        // Home with "Permissions needed" half-states. Updates with
+        // intact TCC are a no-op. See ``JunoFreshInstallGuard``.
         JunoFreshInstallGuard.runOnce()
         JunoLegacyDefaultsMigration.runOnce()
         JunoUserDefaults.migrateWhisperPreviewDefaults()

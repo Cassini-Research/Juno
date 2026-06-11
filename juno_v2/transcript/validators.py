@@ -31,7 +31,7 @@ def validate_adjudication_result(
         lambda t: evidence_proper_terms_not_mutated(packet, t),
         lambda t: numbers_dates_safe(packet, t),
         lambda t: semantic_drift_safe(packet, t),
-        lambda t: source_words_preserved(packet, t),
+        lambda t: source_words_preserved(packet, t, result=result),
         lambda t: low_signal_mid_sentence_capitalization_safe(packet, t),
         lambda t: no_formatting_in_transcript_stage(packet, t),
     ]
@@ -222,9 +222,9 @@ def _proper_term_allowed(term: str) -> bool:
 
 def _looks_like_glued_pronoun_i(term: str) -> bool:
     token = (term or "").strip()
-    # SFSpeech can glue a normal lowercase word to the pronoun I at a pause,
-    # producing artifacts like "workI" or "thingsI". Those are boundary errors,
-    # not names or identifiers, and must not become protected terms.
+    # Some live/final ASR paths can glue a normal lowercase word to the pronoun
+    # I at a pause, producing artifacts like "workI" or "thingsI". Those are
+    # boundary errors, not names or identifiers, and must not become protected terms.
     return bool(re.match(r"^[a-z]{2,}I(?:m|d|ll|ve|re)?$", token))
 
 
@@ -510,7 +510,12 @@ _DROPPABLE_DISFLUENCIES = {
 }
 
 
-def source_words_preserved(packet: TranscriptAdjudicationPacket, corrected_text: str) -> tuple[bool, str]:
+def source_words_preserved(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+    *,
+    result: TranscriptAdjudicationResult | None = None,
+) -> tuple[bool, str]:
     if getattr(packet, "stage", "") != "final":
         return True, "ok"
     source = _primary_authoritative_transcript_text(packet)
@@ -539,7 +544,9 @@ def source_words_preserved(packet: TranscriptAdjudicationPacket, corrected_text:
                 continue
         dropped = [tok for tok in src_span if tok not in set(out_span)]
         if dropped:
-            if _dropped_span_is_self_correction_cleanup(src_span):
+            if _dropped_span_is_self_correction_prefix_cleanup(source_tokens, i1, i2, output_tokens):
+                continue
+            if _dropped_span_is_self_correction_cleanup(src_span, output_tokens):
                 continue
             if _dropped_span_is_repeated_hallucination(src_span, output_tokens):
                 continue
@@ -570,10 +577,131 @@ def _dropped_span_is_duplicate_cleanup(source_span: list[str], output_tokens: li
     return _ngram_count(output_tokens, tuple(source_span)) > 0
 
 
-def _dropped_span_is_self_correction_cleanup(source_span: list[str]) -> bool:
+def _dropped_span_is_self_correction_prefix_cleanup(
+    source_tokens: list[str],
+    start: int,
+    end: int,
+    output_tokens: list[str],
+) -> bool:
+    """Allow dropping the retracted side plus cue when the corrected side remains.
+
+    Diff spans can split ``Thursday, actually Friday`` into a delete span of
+    only ``Thursday actually`` followed by an equal span of ``Friday``. The
+    broader self-correction validator sees only that short dropped span and
+    used to reject a correct Qwen cleanup as source-word loss. This helper is
+    deliberately narrow: the dropped span must include content before
+    ``actually`` / ``no actually`` and the corrected target immediately after
+    the cue must survive in the output.
+    """
+    if start < 0 or end > len(source_tokens) or start >= end:
+        return False
+    span = source_tokens[start:end]
+    cue_idx: int | None = None
+    for offset, token in enumerate(span):
+        if token == "actually":
+            cue_idx = start + offset
+            break
+    if cue_idx is None:
+        return False
+    if cue_idx <= start:
+        return False
+    if cue_idx > 0 and source_tokens[cue_idx - 1] == "no" and cue_idx - 1 < start:
+        return False
+
+    target = _tokens_after_self_correction_cue(source_tokens, cue_idx)
+    if not target:
+        return False
+    required = [tok for tok in target if _meaningful_ngram((tok,))] or target
+    output_set = set(output_tokens)
+    return any(tok in output_set for tok in required)
+
+
+def _tokens_after_self_correction_cue(source_tokens: list[str], cue_idx: int) -> list[str]:
+    target = list(source_tokens[cue_idx + 1 : cue_idx + 7])
+    scaffolding = {
+        "to",
+        "make",
+        "change",
+        "set",
+        "use",
+        "send",
+        "call",
+        "put",
+        "switch",
+        "move",
+        "it",
+        "that",
+    }
+    while target and target[0] in scaffolding:
+        target = target[1:]
+    return [tok for tok in target if tok not in _DROPPABLE_DISFLUENCIES][:4]
+
+
+def _dropped_span_is_self_correction_cleanup(source_span: list[str], output_tokens: list[str]) -> bool:
     if not source_span:
         return False
-    return bool(_SELF_CORRECTION_RE.search(" ".join(source_span)))
+    text = " ".join(source_span)
+    if not _SELF_CORRECTION_RE.search(text):
+        return False
+    corrected_target = _self_correction_target_tokens(source_span)
+    if not corrected_target:
+        return True
+    required = [tok for tok in corrected_target if _meaningful_ngram((tok,))] or corrected_target
+    output_set = set(output_tokens)
+    return any(tok in output_set for tok in required)
+
+
+def _self_correction_target_tokens(source_span: list[str]) -> list[str]:
+    """Return corrected-side tokens inside a dropped self-correction span.
+
+    The source-word validator sees only diff spans, not full syntax. This helper
+    keeps the rule deliberately conservative: if a dropped span contains
+    corrected-side content after a cue, at least one meaningful corrected token
+    must survive somewhere in the model output. If the span ends at the cue, it
+    is just the retracted side plus cue and may be deleted.
+    """
+
+    tokens = [tok.casefold() for tok in source_span if tok]
+    cue_end: int | None = None
+    for idx in range(len(tokens) - 1):
+        pair = (tokens[idx], tokens[idx + 1])
+        if pair in {
+            ("scratch", "that"),
+            ("delete", "that"),
+            ("remove", "that"),
+            ("strike", "that"),
+            ("ignore", "that"),
+            ("replace", "that"),
+            ("change", "that"),
+            ("make", "that"),
+            ("i", "mean"),
+            ("no", "actually"),
+        }:
+            cue_end = idx + 2
+    if cue_end is None:
+        for idx, tok in enumerate(tokens):
+            if tok == "actually":
+                cue_end = idx + 1
+    if cue_end is None:
+        return []
+    target = tokens[cue_end:]
+    scaffolding = {
+        "to",
+        "make",
+        "change",
+        "set",
+        "use",
+        "send",
+        "call",
+        "put",
+        "switch",
+        "move",
+        "it",
+        "that",
+    }
+    while target and target[0] in scaffolding:
+        target = target[1:]
+    return [tok for tok in target if tok not in _DROPPABLE_DISFLUENCIES]
 
 
 def _dropped_span_is_repeated_hallucination(source_span: list[str], output_tokens: list[str]) -> bool:
@@ -620,40 +748,6 @@ def low_signal_mid_sentence_capitalization_safe(packet: TranscriptAdjudicationPa
             continue
         return False, f"low_signal_mid_sentence_capitalization:{token}"
     return True, "ok"
-
-
-def repair_low_signal_mid_sentence_capitalization(
-    packet: TranscriptAdjudicationPacket,
-    corrected_text: str,
-) -> tuple[str, list[dict[str, str]]]:
-    if getattr(packet, "stage", "") != "final" or not corrected_text:
-        return corrected_text or "", []
-    source = _primary_authoritative_transcript_text(packet)
-    source_fold = (source or "").casefold()
-    protected = {
-        str(t or "").strip().casefold()
-        for t in (getattr(packet, "protected_terms", ()) or ())
-        if str(t or "").strip()
-    }
-    repairs: list[dict[str, str]] = []
-
-    def repl(match: re.Match[str]) -> str:
-        token = match.group(0)
-        folded = token.casefold()
-        if folded not in _LOW_SIGNAL_MID_SENTENCE_CAP_WORDS:
-            return token
-        if folded in protected:
-            return token
-        if folded not in source_fold:
-            return token
-        if _titlecase_common_word_allowed(corrected_text, match.start(), match.end(), folded):
-            return token
-        replacement = token.lower()
-        repairs.append({"from": token, "to": replacement})
-        return replacement
-
-    repaired = re.sub(r"\b[A-Z][a-z]{1,}\b", repl, corrected_text or "")
-    return repaired, repairs
 
 
 def restore_explicit_final_word_tail(
@@ -708,6 +802,40 @@ def remove_instructional_exclusion_phrases(
     if repairs:
         out = re.sub(r"\s{2,}", " ", out).strip()
     return out, repairs
+
+
+def repair_low_signal_mid_sentence_capitalization(
+    packet: TranscriptAdjudicationPacket,
+    corrected_text: str,
+) -> tuple[str, list[dict[str, str]]]:
+    if getattr(packet, "stage", "") != "final" or not corrected_text:
+        return corrected_text or "", []
+    source = _primary_authoritative_transcript_text(packet)
+    source_fold = (source or "").casefold()
+    protected = {
+        str(t or "").strip().casefold()
+        for t in (getattr(packet, "protected_terms", ()) or ())
+        if str(t or "").strip()
+    }
+    repairs: list[dict[str, str]] = []
+
+    def repl(match: re.Match[str]) -> str:
+        token = match.group(0)
+        folded = token.casefold()
+        if folded not in _LOW_SIGNAL_MID_SENTENCE_CAP_WORDS:
+            return token
+        if folded in protected:
+            return token
+        if folded not in source_fold:
+            return token
+        if _titlecase_common_word_allowed(corrected_text, match.start(), match.end(), folded):
+            return token
+        replacement = token.lower()
+        repairs.append({"from": token, "to": replacement})
+        return replacement
+
+    repaired = re.sub(r"\b[A-Z][a-z]{1,}\b", repl, corrected_text or "")
+    return repaired, repairs
 
 
 def _titlecase_common_word_allowed(text: str, start: int, end: int, folded: str) -> bool:

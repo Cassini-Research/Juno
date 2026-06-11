@@ -25,8 +25,6 @@ from juno_v2.itn.rules import (
     [
         ("twenty five", "25"),
         ("ninety nine problems", "99 problems"),
-        ("I have one apple", "I have 1 apple"),
-        ("zero", "0"),
         ("seventeen", "17"),
         ("forty two is the answer", "42 is the answer"),
         ("Twenty Five", "25"),  # case-insensitive
@@ -36,6 +34,23 @@ def test_apply_numeric_converts_words(text: str, expected: str) -> None:
     out, applied = apply_numeric(text)
     assert out == expected
     assert applied == ["numeric_words_to_digits"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Prose-aware numerals: standalone small numbers stay words unless
+        # numeric context is present ("chapter one" converts; "one apple"
+        # does not). See test_itn_spoken_punctuation.py for the full
+        # context-sensitivity matrix.
+        "I have one apple",
+        "zero",
+    ],
+)
+def test_apply_numeric_keeps_small_numbers_in_prose(text: str) -> None:
+    out, applied = apply_numeric(text)
+    assert out == text
+    assert applied == []
 
 
 @pytest.mark.parametrize("text", ["", "no numbers here", "onety stays", "thousand"])

@@ -4,8 +4,9 @@ Detection order:
 
 1. Strict wake gate: only leading "Juno" or "Hey Juno" is eligible.
 2. LLM extractor: intent classification plus structured action extraction.
-3. Deterministic grammar fallback: used only when no extractor is registered
-   or the extractor/provider fails without making a non-action decision.
+3. Deterministic grammar fallback: used when the extractor/provider fails
+   or when the extractor returns a non-action decision despite a grounded
+   wake-word + native action verb grammar match.
 
 Failure mode: this helper *never* raises. A broken parser, schema
 mismatch, or extractor crash must not break dictation. All exceptions
@@ -114,6 +115,23 @@ def detect_actions_for_pipeline(
         )
         return followup_actions
 
+    grammar_actions: list[Action] | None = None
+    try:
+        fallback_text = f"Juno {post_wake}" if wake_verified else normalized_text
+        grammar_actions = parse_actions(fallback_text, now=now)
+    except Exception as exc:  # noqa: BLE001 — never break the pipeline
+        _record(
+            recorder,
+            trace_kind,
+            "actions_parser_error",
+            {
+                "utterance_id": utterance_id,
+                "error": str(exc),
+                "stage": "pre_llm_grammar_signal",
+            },
+        )
+        grammar_actions = None
+
     extractor = get_llm_extractor()
     if extractor is not None:
         target_resolver = _target_resolver_for_pipeline(recorder, now=now)
@@ -165,6 +183,48 @@ def detect_actions_for_pipeline(
             return llm_result.actions
 
         if not llm_result.allow_regex_fallback:
+            if grammar_actions:
+                if emit_vnext_trace:
+                    _record(
+                        recorder,
+                        trace_kind,
+                        "action_extraction_llm_veto_overridden",
+                        {
+                            "utterance_id": utterance_id,
+                            "intent_gate_result": llm_result.intent,
+                            "rejected_reason": llm_result.rejected_reason,
+                            "action_count": len(grammar_actions),
+                            "action_types": [a.kind.value for a in grammar_actions],
+                        },
+                    )
+                    _record(
+                        recorder,
+                        trace_kind,
+                        "action_extraction_valid",
+                        {
+                            "utterance_id": utterance_id,
+                            "action_count": len(grammar_actions),
+                            "action_types": [a.kind.value for a in grammar_actions],
+                        },
+                    )
+                _record(
+                    recorder,
+                    trace_kind,
+                    "actions_detect",
+                    {
+                        "utterance_id": utterance_id,
+                        "detected": True,
+                        "source": "regex_grounded_after_llm_veto",
+                        "wake_detected": True,
+                        "llm_available": True,
+                        "intent_gate_result": llm_result.intent,
+                        "rejected_reason": llm_result.rejected_reason,
+                        "count": len(grammar_actions),
+                        "kinds": [a.kind.value for a in grammar_actions],
+                        "actions": [a.to_dict() for a in grammar_actions],
+                    },
+                )
+                return grammar_actions
             if emit_vnext_trace:
                 _record(
                     recorder,
@@ -207,21 +267,7 @@ def detect_actions_for_pipeline(
         )
 
     # Fallback parser remains available for offline/provider-failure paths.
-    try:
-        fallback_text = f"Juno {post_wake}" if wake_verified else normalized_text
-        actions = parse_actions(fallback_text, now=now)
-    except Exception as exc:  # noqa: BLE001 — never break the pipeline
-        _record(
-            recorder,
-            trace_kind,
-            "actions_parser_error",
-            {
-                "utterance_id": utterance_id,
-                "error": str(exc),
-                "stage": "regex_fallback",
-            },
-        )
-        actions = None
+    actions = grammar_actions
 
     if actions:
         if emit_vnext_trace:
@@ -381,4 +427,3 @@ def _followup_actions_for_pipeline(
         },
     )
     return [action]
-

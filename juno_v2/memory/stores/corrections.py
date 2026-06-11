@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from juno_v2.contracts.memory import CorrectionPair
+from juno_v2.memory.entity_policy import common_english_single_word
 from juno_v2.memory.fold import fold_key
 from juno_v2.memory.hallucination import looks_like_hallucination
 from juno_v2.memory.stores._base import JsonFileStore
@@ -75,7 +76,7 @@ _LOW_SIGNAL_TITLECASE_CORRECTION_WORDS = {
 
 def _contains_low_signal_titlecase(text: str) -> bool:
     for token in re.findall(r"\b[A-Z][a-z]{1,}\b", text or ""):
-        if token.casefold() in _LOW_SIGNAL_TITLECASE_CORRECTION_WORDS:
+        if token.casefold() in _LOW_SIGNAL_TITLECASE_CORRECTION_WORDS or common_english_single_word(token):
             return True
     return False
 

@@ -10,8 +10,8 @@ import SwiftUI
 //
 // State map mirrors the full HUD so behavior is consistent across both modes:
 //  - Idle:          (not shown — overlay coordinator hides the panel)
-//  - Listening:     comma + breath bars + static "Listening" label + elapsed time
-//  - Refining:      comma w/ scan shimmer + static "Transcribing" label + elapsed time
+//  - Listening:     comma + breath bars
+//  - Refining:      comma w/ scan shimmer + processing dots
 //  - Error:         danger-tinted shell + small warning glyph + shake
 //  - Copy-ready:    icon-only copy button (taps the same controller method)
 //  - Done (+N):     comma + tiny "+N" mono label, gated by hudShowDoneRowEnabled
@@ -160,7 +160,7 @@ struct JunoBrandIslandCompact: View {
     /// pinched, narrow enough that the HUD stays out of the way.
     private var pillWidth: CGFloat {
         switch bodyKind {
-        case .listening, .refining, .error: return 232
+        case .listening, .refining, .error: return 168
         case .action:                       return 220
         case .actionWorking:                return 220
         case .copyReady:                    return 260
@@ -192,14 +192,7 @@ struct JunoBrandIslandCompact: View {
                     .scaleEffect(commaScale)
                     .animation(JunoBrandKitMotion.commaBeat, value: commaScale)
                 JunoBreathBars(active: controller.state == "listening", rms: controller.currentRMS)
-                Text("Listening")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.74))
-                    .lineLimit(1)
                 Spacer(minLength: 0)
-                if let start = controller.dictationStartedAt {
-                    compactElapsedView(start: start)
-                }
             }
         case .refining:
             HStack(alignment: .center, spacing: 10) {
@@ -212,14 +205,7 @@ struct JunoBrandIslandCompact: View {
                         .offset(x: 0, y: 3)
                 }
                 ProcessingDots()
-                Text("Transcribing")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.74))
-                    .lineLimit(1)
                 Spacer(minLength: 0)
-                if let start = controller.refiningStartedAt ?? controller.dictationStartedAt {
-                    compactElapsedView(start: start)
-                }
             }
         case .error:
             HStack(alignment: .center, spacing: 10) {
@@ -231,9 +217,13 @@ struct JunoBrandIslandCompact: View {
             }
         case .action(let action):
             HStack(alignment: .center, spacing: 9) {
-                Image(systemName: action.symbolName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(action.isFailure ? Color.orange.opacity(0.95) : Color.white.opacity(0.94))
+                if let kind = action.kind, !action.isFailure {
+                    JunoActionNativeIcon(kind: kind, size: 16, fallbackColor: Color.white.opacity(0.94))
+                } else {
+                    Image(systemName: action.symbolName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(action.isFailure ? Color.orange.opacity(0.95) : Color.white.opacity(0.94))
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(action.title)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -315,17 +305,6 @@ struct JunoBrandIslandCompact: View {
             return "Saving \(inFlight.total) \(only.descriptor.pluralName.lowercased())\u{2026}"
         }
         return "Saving \(inFlight.total) actions\u{2026}"
-    }
-
-    private func compactElapsedView(start: Date) -> some View {
-        TimelineView(.periodic(from: start, by: 1)) { ctx in
-            let sec = max(0, Int(ctx.date.timeIntervalSince(start)))
-            Text(String(format: "%d:%02d", sec / 60, sec % 60))
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.34))
-                .lineLimit(1)
-                .monospacedDigit()
-        }
     }
 
     /// Icon-only copy button. Taps call the same controller method as the full

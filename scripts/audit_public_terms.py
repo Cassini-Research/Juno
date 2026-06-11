@@ -79,6 +79,7 @@ SKIP_DIRS = {
     "__pycache__",
     "build",
     "dist",
+    "node_modules",
 }
 
 

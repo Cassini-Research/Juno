@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -21,8 +22,27 @@ from juno_v2.contracts.writer import (
     WriterTransformRequest,
     WriterTransformResult,
 )
+from juno_v2.memory.entity_policy import common_english_single_word
 from juno_v2.memory.store import JsonMemoryStore
+from juno_v2.memory.term_policy import learned_term_allowed
 from juno_v2.observability.tracing import TraceRecorder
+from juno_v2.turn_plan import (
+    TurnPlanPacket,
+    TurnPlanResult,
+    TurnPlanner,
+    fallback_structural_turn_plan,
+    render_turn_plan,
+    validate_turn_plan,
+)
+from juno_v2.turn_plan.planner import structural_instruction_present
+from juno_v2.writer.dictation_editor import (
+    DICTATION_EDIT_TASK,
+    apply_edit_script,
+    build_editor_suffix,
+    capitalize_sentence_starts,
+    parse_edit_script,
+)
+from juno_v2.turn_plan.validators import span_present
 from juno_v2.writer.backends.base import WriterBackend
 from juno_v2.writer.config import WriterConfig
 from juno_v2.writer.deterministic import (
@@ -44,6 +64,17 @@ from juno_v2.writer.final_formatter import (
 from juno_v2.writer.parser import WriterIntentParser
 from juno_v2.writer.state import WriterState
 
+
+_MEMORY_COMMAND_TERMS = {
+    "juno",
+    "remember",
+    "teach",
+    "teach juno",
+    "term",
+    "terms",
+    "word",
+    "words",
+}
 
 @dataclass(slots=True)
 class WriterService:
@@ -117,6 +148,362 @@ class WriterService:
         if self.backend is not None:
             self.backend.warm()
 
+    def plan_turn(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        memory_store: JsonMemoryStore | None,
+        memory_snapshot: MemorySnapshot | None,
+        memory_packet: dict | None = None,
+        language_hint: str | None = None,
+        mode_policy: ModePolicy | None = None,
+        mode_selection: ModeSelection | None = None,
+        partial_text: str | None = None,
+        writer_tone_addon: str | None = None,
+        wake_verified: bool = False,
+        now_iso: str | None = None,
+    ) -> TurnPlanResult | None:
+        if not self.config.enable_turn_planner or self.backend is None or not self.config.enable_model_transforms:
+            return None
+        if self._skip_model_planner_for_dictation(
+            final_text=final_text,
+            context=context,
+            wake_verified=wake_verified,
+        ):
+            structural = self._structural_turn_plan_for_dictation(
+                utterance_id=utterance_id,
+                final_text=final_text,
+                context=context,
+            )
+            if structural is not None:
+                return structural
+            if not structural_instruction_present(final_text):
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "turn_plan_skipped",
+                    {
+                        "utterance_id": utterance_id,
+                        "reason": "long_dictation_without_structure",
+                        "words": _approx_word_count(final_text),
+                    },
+                )
+                return None
+            # Explicit spoken structure request ("note down five points …")
+            # that the deterministic itemizer could not split — that narrow
+            # case still earns a model decode.
+        self._apply_runtime_mode(
+            mode_policy=mode_policy,
+            mode_selection=mode_selection,
+            writer_tone_addon=writer_tone_addon,
+        )
+        packet = TurnPlanPacket(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            context=context,
+            mode_policy=self.state.mode_policy,
+            mode_selection=self.state.mode_selection,
+            memory_store=memory_store,
+            memory_snapshot=memory_snapshot,
+            memory_packet=memory_packet,
+            language_hint=language_hint,
+            partial_text=partial_text,
+            writer_tone_addon=self.state.writer_tone_addon,
+            wake_verified=wake_verified,
+            now_iso=now_iso,
+        )
+        planner = TurnPlanner(self)
+        result = planner.plan(packet)
+        validation_after_plan = None
+        if result.ok and isinstance(result.plan, dict):
+            validation_after_plan = validate_turn_plan(result.plan, source_text=final_text, context=context)
+        if result.plan is None or result.status == "invalid_json" or (
+            validation_after_plan is not None and not validation_after_plan.ok
+        ):
+            result = planner.repair(
+                packet,
+                result,
+                validation_errors=[] if validation_after_plan is None else list(validation_after_plan.errors),
+                validation_warnings=[] if validation_after_plan is None else list(validation_after_plan.warnings),
+            )
+            validation_after_plan = None
+            if result.ok and isinstance(result.plan, dict):
+                validation_after_plan = validate_turn_plan(result.plan, source_text=final_text, context=context)
+        if validation_after_plan is not None and not validation_after_plan.ok:
+            fallback = fallback_structural_turn_plan(final_text)
+            if fallback is not None:
+                fallback_validation = validate_turn_plan(fallback, source_text=final_text, context=context)
+                if fallback_validation.ok:
+                    result = TurnPlanResult(
+                        plan=fallback,
+                        status="ok",
+                        backend_name=result.backend_name,
+                        decode_ms=result.decode_ms,
+                        raw_output=result.raw_output,
+                        errors=[],
+                        repair_attempted=True,
+                        repair_status="fallback",
+                        initial_status=result.initial_status or result.status,
+                        initial_errors=list(result.initial_errors or result.errors),
+                        validation_errors_before_repair=[
+                            *result.validation_errors_before_repair,
+                            *validation_after_plan.errors,
+                        ],
+                        validation_warnings_before_repair=[
+                            *result.validation_warnings_before_repair,
+                            *validation_after_plan.warnings,
+                        ],
+                        normalization_notes=[
+                            *result.normalization_notes,
+                            "structural_render_fallback_after_validation_failure",
+                        ],
+                    )
+                    validation_after_plan = fallback_validation
+        payload: dict[str, Any] = {
+            "utterance_id": utterance_id,
+            "status": result.status,
+            "backend": result.backend_name,
+            "decode_ms": result.decode_ms,
+            "errors": list(result.errors),
+            "repair_attempted": result.repair_attempted,
+            "repair_status": result.repair_status,
+            "initial_status": result.initial_status,
+            "initial_errors": list(result.initial_errors),
+            "validation_errors_before_repair": list(result.validation_errors_before_repair),
+            "validation_warnings_before_repair": list(result.validation_warnings_before_repair),
+            "normalization_notes": list(result.normalization_notes),
+            "raw_output_chars": len(result.raw_output or ""),
+        }
+        if result.repair_attempted or not result.ok:
+            payload["raw_output_preview"] = (result.raw_output or "")[:800]
+        if validation_after_plan is not None:
+            payload.update({
+                "validation_ok": validation_after_plan.ok,
+                "validation_errors": list(validation_after_plan.errors),
+                "validation_warnings": list(validation_after_plan.warnings),
+            })
+        if isinstance(result.plan, dict):
+            payload.update({
+                "utterance_kind": result.plan.get("utterance_kind"),
+                "render_kind": (result.plan.get("render_plan") or {}).get("render_kind")
+                if isinstance(result.plan.get("render_plan"), dict)
+                else None,
+                "action_count": len(result.plan.get("actions") or [])
+                if isinstance(result.plan.get("actions"), list)
+                else 0,
+            })
+        self.recorder.record(TraceKind.WRITER, "turn_plan_generated", payload)
+        return result
+
+    def _skip_model_planner_for_dictation(
+        self,
+        *,
+        final_text: str,
+        context: TypedContextBundle,
+        wake_verified: bool,
+    ) -> bool:
+        """Decide whether this utterance is long plain dictation.
+
+        Wake-verified turns (actions), short utterances (where transforms,
+        memory mutations, and message rendering live), and selection-anchored
+        commands keep the model planner. Long plain dictation skips it: the
+        renderer never uses planner text for plain dictation, and the decode
+        cost (8-28s observed on Qwen3-4B) lands on the paste critical path.
+        """
+        if wake_verified or self.config.turn_plan_dictation_enabled:
+            return False
+        limit = int(self.config.turn_plan_max_dictation_words or 0)
+        if limit <= 0:
+            return False
+        if _approx_word_count(final_text) <= limit:
+            return False
+        if (getattr(context, "selected_text", "") or "").strip():
+            return False
+        return True
+
+    def _structural_turn_plan_for_dictation(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        context: TypedContextBundle,
+    ) -> TurnPlanResult | None:
+        """Zero-model turn plan for non-wake utterances.
+
+        Keeps explicit spoken-structure rendering (lists / checklists) alive
+        without paying a multi-second model decode on the paste path. Returns
+        ``None`` when the deterministic itemizer finds nothing to render,
+        which sends the writer down its existing deterministic/legacy lanes.
+        """
+        fallback = fallback_structural_turn_plan(final_text)
+        if fallback is None:
+            return None
+        validation = validate_turn_plan(fallback, source_text=final_text, context=context)
+        if not validation.ok:
+            return None
+        result = TurnPlanResult(
+            plan=fallback,
+            status="ok",
+            backend_name="deterministic_structural",
+            decode_ms=0.0,
+            normalization_notes=["model_planner_wake_gated"],
+        )
+        self.recorder.record(
+            TraceKind.WRITER,
+            "turn_plan_generated",
+            {
+                "utterance_id": utterance_id,
+                "status": result.status,
+                "backend": result.backend_name,
+                "decode_ms": 0.0,
+                "errors": [],
+                "repair_attempted": False,
+                "repair_status": None,
+                "normalization_notes": list(result.normalization_notes),
+                "validation_ok": True,
+                "validation_errors": [],
+                "validation_warnings": list(validation.warnings),
+                "utterance_kind": fallback.get("utterance_kind"),
+                "render_kind": (fallback.get("render_plan") or {}).get("render_kind")
+                if isinstance(fallback.get("render_plan"), dict)
+                else None,
+                "action_count": 0,
+            },
+        )
+        return result
+
+    def edit_dictation(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        memory_packet: dict | None = None,
+    ) -> WriterOutcome | None:
+        """Run the cached-prefix dictation editor. None ⇒ deterministic floor."""
+        packet = memory_packet or {}
+        memory_terms: list[str] = []
+        for value in (packet.get("lexicon_terms") or [])[:48]:
+            if str(value).strip():
+                memory_terms.append(str(value).strip())
+        for row in (packet.get("corrections") or [])[:8]:
+            if isinstance(row, dict) and str(row.get("corrected") or "").strip():
+                memory_terms.append(str(row["corrected"]).strip())
+        screen_terms: list = []
+        for entity in (getattr(context, "candidate_entities", None) or [])[:16]:
+            text = entity.get("text") if isinstance(entity, dict) else entity
+            if str(text or "").strip():
+                screen_terms.append(str(text).strip())
+        # Same decision layer as the ASR prompt and HUD repair: screen terms
+        # first, family-deduped memory terms after.
+        from juno_v2.memory.bias import _diversify_bias_phrases
+
+        terms = _diversify_bias_phrases(memory_terms, screen_terms=screen_terms, cap=24)
+        behavior = str(getattr(self.state.mode_policy, "writer_behavior", "") or "")
+        filler_policy = (
+            "light cleanup allowed" if "filler" in behavior else "keep the speaker's filler words"
+        )
+        style_hint = str(getattr(self.state.mode_policy, "prompt_prefix", "") or "") or None
+        suffix = build_editor_suffix(
+            transcript=final_text,
+            app_name=getattr(context, "app_name", None),
+            app_category=getattr(context, "app_category", None),
+            known_terms=list(dict.fromkeys(terms)),
+            filler_policy=filler_policy,
+            style_hint=style_hint,
+        )
+        request = WriterTransformRequest(
+            utterance_id=utterance_id,
+            instruction="dictation_edit",
+            source_text=final_text,
+            mode=self.state.mode,
+            context_payload={"task": DICTATION_EDIT_TASK, "payload_text": suffix},
+            metadata={
+                "kind": DICTATION_EDIT_TASK,
+                "cache_prefix": True,
+                "deadline_ms": int(self.config.dictation_editor_deadline_ms),
+                "max_tokens": 352,
+            },
+        )
+        try:
+            result = self.backend.rewrite(request)
+        except Exception as exc:  # noqa: BLE001 — editor must never break the turn
+            self.recorder.record(
+                TraceKind.WRITER,
+                "dictation_edit_floor",
+                {"utterance_id": utterance_id, "reason": f"backend_error:{exc}"},
+            )
+            return None
+        raw_output = str(getattr(result, "text", "") or "")
+        script = parse_edit_script(raw_output)
+        decode_ms = float(getattr(result, "decode_ms", 0.0) or 0.0)
+        if script is None:
+            self.recorder.record(
+                TraceKind.WRITER,
+                "dictation_edit_floor",
+                {
+                    "utterance_id": utterance_id,
+                    "reason": "unparseable_output",
+                    "decode_ms": decode_ms,
+                    "raw_output_preview": raw_output[:200],
+                },
+            )
+            return None
+        if script.verdict == "clean" and not script.has_ops:
+            edited, applied = final_text, {"edits": 0, "deletes": 0, "skipped": 0, "struct": None}
+        else:
+            applied_result = apply_edit_script(final_text, script)
+            if applied_result is None:
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "dictation_edit_floor",
+                    {
+                        "utterance_id": utterance_id,
+                        "reason": "application_rejected",
+                        "decode_ms": decode_ms,
+                    },
+                )
+                return None
+            edited, applied = applied_result
+        self.recorder.record(
+            TraceKind.WRITER,
+            "dictation_edit_generated",
+            {
+                "utterance_id": utterance_id,
+                "verdict": script.verdict,
+                "decode_ms": decode_ms,
+                "applied": applied,
+                "changed": edited != final_text,
+                **{k: v for k, v in (result.metadata or {}).items() if k in (
+                    "prompt_cache_hit", "cached_prefix_tokens", "suffix_tokens", "timed_out",
+                    "generation_api",
+                )},
+            },
+        )
+        structural = applied.get("struct") is not None
+        if str(getattr(context, "app_category", "") or "").lower() not in {"terminal", "code", "developer_tools"}:
+            edited = capitalize_sentence_starts(edited)
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.PASS_THROUGH_COMMIT,
+            output_text=edited,
+            learn_from_commit=not structural,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            deterministic_used=False,
+            model_used=True,
+            metadata={
+                "reason": "dictation_editor",
+                "raw_text": raw_text,
+                "input_text": final_text,
+                "editor": {"verdict": script.verdict, "applied": applied, "decode_ms": decode_ms},
+            },
+        )
+
     def process_transcript(
         self,
         *,
@@ -133,15 +520,85 @@ class WriterService:
         mode_selection: ModeSelection | None = None,
         partial_text: str | None = None,
         writer_tone_addon: str | None = None,
+        turn_plan_result: TurnPlanResult | None = None,
+        wake_verified: bool = False,
+        now_iso: str | None = None,
     ) -> WriterOutcome:
-        if mode_policy is not None:
-            self.state.mode_policy = mode_policy
-        if mode_selection is not None:
-            self.state.mode_selection = mode_selection
-            self.state.mode = self._writer_mode_from_string(mode_selection.effective_mode)
-        elif mode_policy is not None:
-            self.state.mode = self._writer_mode_from_string(mode_policy.base_mode)
-        self.state.writer_tone_addon = (writer_tone_addon or "").strip() or None
+        self._apply_runtime_mode(
+            mode_policy=mode_policy,
+            mode_selection=mode_selection,
+            writer_tone_addon=writer_tone_addon,
+        )
+
+        # The dictation editor is the primary AI lane for non-wake dictation:
+        # one cached-prefix edit-script pass, deterministically applied. On
+        # any failure (parse, grounding, deadline) it returns None and the
+        # lanes below act as the floor.
+        if (
+            not wake_verified
+            and self.config.dictation_editor_enabled
+            and self.backend is not None
+            and self.config.enable_model_transforms
+            and self.state.mode != WriterMode.VERBATIM
+            and not (getattr(context, "selected_text", "") or "").strip()
+            and (final_text or "").strip()
+        ):
+            editor_outcome = self.edit_dictation(
+                utterance_id=utterance_id,
+                final_text=final_text,
+                raw_text=raw_text,
+                context=context,
+                memory_packet=memory_packet,
+            )
+            if editor_outcome is not None:
+                return self._annotate_outcome(editor_outcome)
+
+        if (
+            turn_plan_result is None
+            and self.config.enable_turn_planner
+            and self.state.mode != WriterMode.VERBATIM
+        ):
+            turn_plan_result = self.plan_turn(
+                utterance_id=utterance_id,
+                final_text=final_text,
+                raw_text=raw_text,
+                context=context,
+                memory_store=memory_store,
+                memory_snapshot=memory_snapshot,
+                memory_packet=memory_packet,
+                language_hint=language_hint,
+                mode_policy=self.state.mode_policy,
+                mode_selection=self.state.mode_selection,
+                partial_text=partial_text,
+                writer_tone_addon=self.state.writer_tone_addon,
+                wake_verified=wake_verified,
+                now_iso=now_iso,
+            )
+        turn_plan_outcome = self._outcome_from_turn_plan(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            context=context,
+            anchor_selection=anchor_selection,
+            memory_store=memory_store,
+            memory_snapshot=memory_snapshot,
+            memory_packet=memory_packet,
+            turn_plan_result=turn_plan_result,
+            partial_text=partial_text,
+            wake_verified=wake_verified,
+        )
+        if turn_plan_outcome is not None:
+            return self._annotate_outcome(turn_plan_outcome)
+
+        memory_learning_outcome = self._memory_learning_outcome_from_extractor(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            partial_text=partial_text,
+            memory_store=memory_store,
+            turn_plan_result=turn_plan_result,
+        )
+        if memory_learning_outcome is not None:
+            return self._annotate_outcome(memory_learning_outcome)
 
         selection_present = bool(anchor_selection is not None and anchor_selection.start != anchor_selection.end and context.selected_text.strip())
         intent = self.parser.parse(
@@ -199,6 +656,41 @@ class WriterService:
             text = final_text
             cleanup_meta = {'pipeline': 'already_adjudicated_passthrough'}
             model_used = False
+            direct_snippet = self._direct_snippet_insert(
+                text,
+                memory_store=memory_store,
+                app_category=context.app_category,
+            )
+            if direct_snippet is not None:
+                body, snippet_meta = direct_snippet
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    'writer_snippet_direct_inserted',
+                    {
+                        'utterance_id': utterance_id,
+                        **snippet_meta,
+                    },
+                )
+                return self._annotate_outcome(WriterOutcome(
+                    utterance_id=utterance_id,
+                    action=WriterActionKind.PASS_THROUGH_COMMIT,
+                    output_text=body,
+                    learn_from_commit=True,
+                    writer_mode=self.state.mode,
+                    structure_mode=self.state.structure_mode,
+                    deterministic_used=True,
+                    model_used=False,
+                    metadata={
+                        'raw_text': raw_text,
+                        'input_text': final_text,
+                        'snippet_expanded': True,
+                        'dictation_cleanup': {
+                            'pipeline': 'snippet_direct_insert',
+                            **snippet_meta,
+                        },
+                        'grammar_postpass': None,
+                    },
+                ))
             # Snippet expansion: expand user-defined triggers (e.g. ``brb`` ->
             # ``be right back``) before structure-mode formatting so a
             # snippet body participates in bullet / numbered rendering.
@@ -479,6 +971,546 @@ class WriterService:
             ))
 
         return self._noop(utterance_id, 'unsupported_intent', intent.kind.value, extra={'intent': intent.to_dict()})
+
+    def _apply_runtime_mode(
+        self,
+        *,
+        mode_policy: ModePolicy | None,
+        mode_selection: ModeSelection | None,
+        writer_tone_addon: str | None,
+    ) -> None:
+        if mode_policy is not None:
+            self.state.mode_policy = mode_policy
+        if mode_selection is not None:
+            self.state.mode_selection = mode_selection
+            self.state.mode = self._writer_mode_from_string(mode_selection.effective_mode)
+        elif mode_policy is not None:
+            self.state.mode = self._writer_mode_from_string(mode_policy.base_mode)
+        self.state.writer_tone_addon = (writer_tone_addon or "").strip() or None
+
+    def _outcome_from_turn_plan(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        memory_store: JsonMemoryStore | None,
+        memory_snapshot: MemorySnapshot | None,
+        memory_packet: dict | None,
+        turn_plan_result: TurnPlanResult | None,
+        partial_text: str | None = None,
+        wake_verified: bool = False,
+    ) -> WriterOutcome | None:
+        if turn_plan_result is None:
+            return None
+        if not turn_plan_result.ok or not isinstance(turn_plan_result.plan, dict):
+            return None
+        if self.state.mode == WriterMode.VERBATIM:
+            return None
+
+        plan = turn_plan_result.plan
+        validation = validate_turn_plan(plan, source_text=final_text, context=context)
+        self.recorder.record(
+            TraceKind.WRITER,
+            "turn_plan_validated",
+            {
+                "utterance_id": utterance_id,
+                "ok": validation.ok,
+                "errors": list(validation.errors),
+                "warnings": list(validation.warnings),
+                "utterance_kind": plan.get("utterance_kind"),
+            },
+        )
+        if not validation.ok:
+            return None
+
+        kind = str(plan.get("utterance_kind") or "").strip()
+        safety = plan.get("safety") if isinstance(plan.get("safety"), dict) else {}
+        commit_policy = str(safety.get("commit_policy") or "commit").strip()
+        memory_source_text = _memory_learning_source_text(final_text, partial_text)
+        explicit_memory_request = (
+            kind == "memory_mutation"
+            or _explicit_memory_learning_requested(memory_source_text)
+            or _explicit_memory_learning_requested(final_text)
+        )
+        memory_plan = plan
+        explicit_vocab_request = (
+            _explicit_vocab_learning_requested(memory_source_text)
+            or _explicit_vocab_learning_requested(final_text)
+        )
+        if explicit_memory_request and explicit_vocab_request:
+            extracted = self.extract_memory_candidates(text=memory_source_text, kind="vocab", limit=8)
+            if extracted:
+                existing = plan.get("memory_candidates")
+                memory_plan = {
+                    **plan,
+                    "memory_candidates": [
+                        *(existing if isinstance(existing, list) else []),
+                        *extracted,
+                    ],
+                }
+        memory_mutation = self._apply_turn_plan_memory_candidates(
+            memory_plan,
+            source_text=memory_source_text,
+            memory_store=memory_store,
+            explicit_request=explicit_memory_request,
+        )
+        if memory_mutation is not None:
+            if memory_mutation["entries"]:
+                return WriterOutcome(
+                    utterance_id=utterance_id,
+                    action=WriterActionKind.MEMORY_MUTATION,
+                    output_text="",
+                    learn_from_commit=False,
+                    writer_mode=self.state.mode,
+                    structure_mode=self.state.structure_mode,
+                    model_used=True,
+                    memory_updated=True,
+                    metadata={
+                        "memory_action": "turn_plan_memory_candidates",
+                        **memory_mutation,
+                        "turn_plan": self._turn_plan_metadata(turn_plan_result, validation=validation),
+                    },
+                )
+            if kind == "memory_mutation":
+                return WriterOutcome(
+                    utterance_id=utterance_id,
+                    action=WriterActionKind.NOOP,
+                    output_text="",
+                    learn_from_commit=False,
+                    writer_mode=self.state.mode,
+                    structure_mode=self.state.structure_mode,
+                    model_used=True,
+                    metadata={
+                        "reason": memory_mutation["reason"],
+                        **memory_mutation,
+                        "turn_plan": self._turn_plan_metadata(turn_plan_result, validation=validation),
+                    },
+                )
+        if explicit_vocab_request:
+            return None
+        if kind != "actions" and commit_policy in {"no_commit", "confirm"}:
+            if not wake_verified and kind in {"dictation", "format_dictation", "mixed"}:
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "turn_plan_text_commit_policy_ignored",
+                    {
+                        "utterance_id": utterance_id,
+                        "utterance_kind": kind,
+                        "commit_policy": commit_policy,
+                    },
+                )
+                return None
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.NOOP,
+                output_text="",
+                learn_from_commit=False,
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                model_used=True,
+                metadata={
+                    "reason": f"turn_plan_commit_policy_{commit_policy}",
+                    "turn_plan": self._turn_plan_metadata(turn_plan_result, validation=validation),
+                },
+            )
+        if kind in {"no_op", "ambiguous"}:
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.NOOP,
+                output_text="",
+                learn_from_commit=False,
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                model_used=True,
+                metadata={
+                    "reason": f"turn_plan_{kind}",
+                    "turn_plan": self._turn_plan_metadata(turn_plan_result, validation=validation),
+                },
+            )
+
+        transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
+        transform_operation = str(transform.get("operation") or "none").strip()
+        if kind == "transform" or transform_operation != "none":
+            outcome = self._turn_plan_transform_outcome(
+                utterance_id=utterance_id,
+                plan=plan,
+                result=turn_plan_result,
+                final_text=final_text,
+                context=context,
+                anchor_selection=anchor_selection,
+                memory_snapshot=memory_snapshot,
+                memory_packet=memory_packet,
+                validation=validation,
+            )
+            if outcome is not None:
+                return outcome
+            return None
+
+        if kind in {"command", "memory_mutation"}:
+            return None
+
+        if kind == "actions":
+            # Action dispatch is pipeline-owned. By the time the writer sees
+            # an actions plan, the pipeline has already either dispatched the
+            # coerced actions (and the writer is never called) or dispatched
+            # nothing. Returning a paste-suppressing NOOP here therefore
+            # always meant "no paste AND no action" — the production
+            # data-loss black hole (2026-06-10 history rows with
+            # failure_reason=turn_plan_action_only and empty transcripts).
+            # Always fall back to text delivery.
+            actions = plan.get("actions")
+            self.recorder.record(
+                TraceKind.WRITER,
+                "turn_plan_actions_fell_back_to_text",
+                {
+                    "utterance_id": utterance_id,
+                    "wake_verified": wake_verified,
+                    "action_count": len(actions) if isinstance(actions, list) else 0,
+                    "reason": "text_delivery_guaranteed",
+                },
+            )
+            return None
+
+        render_result = render_turn_plan(plan, context=context, memory_store=memory_store)
+        if render_result.rendered and render_result.text.strip() and render_result.reason != "corrected_text_fallback":
+            render_kind = str((plan.get("render_plan") or {}).get("render_kind") or "").strip()
+            structural = render_kind in {"bulleted_list", "numbered_list", "checklist", "table", "email", "ai_prompt"}
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.PASS_THROUGH_COMMIT,
+                output_text=render_result.text,
+                learn_from_commit=not structural and kind == "dictation",
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                deterministic_used=False,
+                model_used=True,
+                metadata={
+                    "raw_text": raw_text,
+                    "input_text": final_text,
+                    "turn_plan": self._turn_plan_metadata(
+                        turn_plan_result,
+                        validation=validation,
+                        render_metadata=render_result.metadata,
+                        render_reason=render_result.reason,
+                    ),
+                },
+            )
+
+        if kind == "mixed" and wake_verified and isinstance(plan.get("actions"), list) and plan.get("actions"):
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.NOOP,
+                output_text="",
+                learn_from_commit=False,
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                model_used=True,
+                metadata={
+                    "reason": "turn_plan_action_only",
+                    "turn_plan": self._turn_plan_metadata(
+                        turn_plan_result,
+                        validation=validation,
+                        render_metadata=render_result.metadata,
+                        render_reason=render_result.reason,
+                    ),
+                },
+            )
+        return None
+
+    def _apply_turn_plan_memory_candidates(
+        self,
+        plan: dict[str, Any],
+        *,
+        source_text: str,
+        memory_store: JsonMemoryStore | None,
+        explicit_request: bool,
+    ) -> dict[str, Any] | None:
+        if not explicit_request:
+            return None
+        raw_candidates = plan.get("memory_candidates")
+        model_candidates = raw_candidates if isinstance(raw_candidates, list) else []
+        spelled_candidates = _spelled_vocab_memory_candidates(source_text)
+        source_candidates = _explicit_vocab_source_phrase_candidates(source_text)
+        spelled_keys = {
+            _memory_term_key(candidate.get("canonical_form") or candidate.get("term"))
+            for candidate in spelled_candidates
+        }
+        spelled_keys.discard("")
+        raw_candidates = [*spelled_candidates, *source_candidates, *model_candidates]
+        if not raw_candidates:
+            return None
+        if memory_store is None:
+            return {"entries": [], "skipped": [], "reason": "memory_store_unavailable"}
+
+        normalized_candidates: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        for raw in raw_candidates[:12]:
+            candidate = _normalize_turn_plan_memory_candidate(raw, source_text=source_text)
+            if candidate is None:
+                skipped.append({"reason": "invalid_or_ungrounded"})
+                continue
+            if _memory_candidate_overlaps_spelled_acronym_tail(candidate, spelled_keys=spelled_keys):
+                skipped.append({"term": candidate["canonical_form"], "reason": "overlaps_spelled_candidate"})
+                continue
+            normalized_candidates.append(candidate)
+
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for candidate in normalized_candidates:
+            if _memory_candidate_contained_by_longer_candidate(candidate, normalized_candidates):
+                skipped.append({"term": candidate["canonical_form"], "reason": "contained_in_longer_candidate"})
+                continue
+            key = _memory_term_key(candidate["canonical_form"])
+            if not key or key in seen:
+                skipped.append({"term": candidate["canonical_form"], "reason": "duplicate"})
+                continue
+            seen.add(key)
+            memory_store.add_lexicon_entry(
+                term=candidate["term"],
+                canonical_form=candidate["canonical_form"],
+                aliases=candidate["aliases"],
+                pronunciation_hint=candidate["pronunciation_hint"],
+                source="voice_teach_turn_plan",
+            )
+            entries.append(candidate)
+        if not entries:
+            return {"entries": [], "skipped": skipped, "reason": "no_valid_memory_candidates"}
+        return {"entries": entries, "skipped": skipped, "reason": "ok"}
+
+    def _memory_learning_outcome_from_extractor(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        partial_text: str | None,
+        memory_store: JsonMemoryStore | None,
+        turn_plan_result: TurnPlanResult | None,
+    ) -> WriterOutcome | None:
+        memory_source_text = _memory_learning_source_text(final_text, partial_text)
+        if not _explicit_vocab_learning_requested(memory_source_text):
+            return None
+        if memory_store is None:
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.NOOP,
+                output_text="",
+                learn_from_commit=False,
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                model_used=False,
+                metadata={"reason": "memory_store_unavailable"},
+            )
+        extracted = self.extract_memory_candidates(text=memory_source_text, kind="vocab", limit=8)
+        if extracted is None:
+            return None
+        mutation = self._apply_turn_plan_memory_candidates(
+            {"memory_candidates": extracted},
+            source_text=memory_source_text,
+            memory_store=memory_store,
+            explicit_request=True,
+        )
+        turn_plan_meta: dict[str, Any] = {}
+        if turn_plan_result is not None:
+            turn_plan_meta = {
+                "status": turn_plan_result.status,
+                "errors": list(turn_plan_result.errors),
+                "repair_attempted": turn_plan_result.repair_attempted,
+                "repair_status": turn_plan_result.repair_status,
+            }
+        if mutation is not None and mutation["entries"]:
+            return WriterOutcome(
+                utterance_id=utterance_id,
+                action=WriterActionKind.MEMORY_MUTATION,
+                output_text="",
+                learn_from_commit=False,
+                writer_mode=self.state.mode,
+                structure_mode=self.state.structure_mode,
+                model_used=True,
+                memory_updated=True,
+                metadata={
+                    "memory_action": "extractor_memory_candidates",
+                    **mutation,
+                    "turn_plan_fallback": turn_plan_meta,
+                },
+            )
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.NOOP,
+            output_text="",
+            learn_from_commit=False,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            model_used=True,
+            metadata={
+                "reason": "no_valid_memory_candidates",
+                "memory_action": "extractor_memory_candidates",
+                "extracted_count": len(extracted),
+                "turn_plan_fallback": turn_plan_meta,
+            },
+        )
+
+    def _turn_plan_transform_outcome(
+        self,
+        *,
+        utterance_id: str,
+        plan: dict[str, Any],
+        result: TurnPlanResult,
+        final_text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        memory_snapshot: MemorySnapshot | None,
+        memory_packet: dict | None,
+        validation,
+    ) -> WriterOutcome | None:
+        transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
+        target = self._turn_plan_target(plan, context=context, anchor_selection=anchor_selection)
+        if target is None:
+            return self._noop(
+                utterance_id,
+                "turn_plan_missing_transform_target",
+                "turn_plan_transform",
+                extra={"turn_plan": self._turn_plan_metadata(result, validation=validation)},
+            )
+
+        transformed = transform.get("transformed_text")
+        if not isinstance(transformed, str) or not transformed.strip():
+            if bool(transform.get("requires_second_pass")):
+                transformed = self._run_turn_plan_transform_generation(
+                    utterance_id=utterance_id,
+                    plan=plan,
+                    source_text=target["text"],
+                    context=context,
+                    target_kind=target["target"],
+                    memory_snapshot=memory_snapshot,
+                    memory_packet=memory_packet,
+                )
+            else:
+                transformed = ""
+        if not isinstance(transformed, str) or not transformed.strip():
+            return None
+
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.TRANSFORM_COMMIT,
+            output_text=transformed.strip(),
+            commit_mode=CommitMode.REPLACE_SELECTION,
+            selection_override=target["selection"],
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            model_used=True,
+            metadata={
+                "instruction": str(transform.get("instruction") or final_text),
+                "target": target["target"],
+                "target_text_chars": len(target.get("text") or ""),
+                "turn_plan": self._turn_plan_metadata(result, validation=validation),
+            },
+        )
+
+    def _turn_plan_target(
+        self,
+        plan: dict[str, Any],
+        *,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+    ):
+        target = plan.get("target") if isinstance(plan.get("target"), dict) else {}
+        kind = str(target.get("kind") or "").strip()
+        if kind == "selection":
+            return self._selected_target(context, anchor_selection)
+        if kind in {"recent_commit", "recent_clipboard"}:
+            return self._recent_target(context)
+        if kind == "explicit_span":
+            return self._selected_target(context, anchor_selection) or self._recent_target(context)
+        return None
+
+    def _run_turn_plan_transform_generation(
+        self,
+        *,
+        utterance_id: str,
+        plan: dict[str, Any],
+        source_text: str,
+        context: TypedContextBundle,
+        target_kind: str,
+        memory_snapshot: MemorySnapshot | None,
+        memory_packet: dict | None,
+    ) -> str:
+        if self.backend is None or not self.config.enable_model_transforms:
+            return ""
+        payload = {
+            "task": "transform_generation_v1",
+            "schema_version": "transform_generation_v1",
+            "turn_plan": plan,
+            "source_text": source_text,
+            "target_kind": target_kind,
+            "context": {
+                "app_name": context.app_name,
+                "window_title": context.window_title,
+                "app_category": context.app_category,
+                "selected_text": context.selected_text,
+                "field_text_excerpt": context.field_text_excerpt,
+                "candidate_entities": list(context.candidate_entities or [])[:32],
+            },
+            "memory": {
+                "packet": memory_packet or {},
+                "snapshot_counts": None if memory_snapshot is None else {
+                    "lexicon": len(memory_snapshot.lexicon),
+                    "replacements": len(memory_snapshot.replacements),
+                    "corrections": len(memory_snapshot.corrections),
+                    "session_entities": len(memory_snapshot.session_entities),
+                },
+            },
+        }
+        response = self._rewrite_with_backend(WriterTransformRequest(
+            utterance_id=utterance_id,
+            instruction="Generate transformed_text for this typed turn plan.",
+            source_text=source_text,
+            mode=self.state.mode,
+            target_selection=None,
+            context_payload={"task": "transform_generation_v1", "payload": payload},
+            metadata={"kind": "transform_generation_v1", "max_tokens": max(512, self.config.max_tokens)},
+        ))
+        obj = _json_object_from_model_text(response.text)
+        if isinstance(obj, dict):
+            text = obj.get("transformed_text")
+            return str(text or "").strip()
+        return ""
+
+    def _turn_plan_metadata(
+        self,
+        result: TurnPlanResult,
+        *,
+        validation,
+        render_metadata: dict[str, Any] | None = None,
+        render_reason: str | None = None,
+    ) -> dict[str, Any]:
+        plan = result.plan if isinstance(result.plan, dict) else {}
+        render = plan.get("render_plan") if isinstance(plan.get("render_plan"), dict) else {}
+        return {
+            "enabled": True,
+            "backend": result.backend_name,
+            "decode_ms": result.decode_ms,
+            "status": result.status,
+            "errors": list(result.errors),
+            "repair_attempted": result.repair_attempted,
+            "repair_status": result.repair_status,
+            "initial_status": result.initial_status,
+            "initial_errors": list(result.initial_errors),
+            "validation_errors_before_repair": list(result.validation_errors_before_repair),
+            "validation_warnings_before_repair": list(result.validation_warnings_before_repair),
+            "raw_output_chars": len(result.raw_output or ""),
+            "utterance_kind": plan.get("utterance_kind"),
+            "render_kind": render.get("render_kind"),
+            "action_count": len(plan.get("actions") or []) if isinstance(plan.get("actions"), list) else 0,
+            "commit_policy": (plan.get("safety") or {}).get("commit_policy") if isinstance(plan.get("safety"), dict) else None,
+            "execute_policy": (plan.get("safety") or {}).get("execute_policy") if isinstance(plan.get("safety"), dict) else None,
+            "validation_errors": list(validation.errors),
+            "validation_warnings": list(validation.warnings),
+            "render": render_metadata or {},
+            "render_reason": render_reason,
+        }
 
     def _execute_deterministic_command(
         self,
@@ -1396,6 +2428,42 @@ class WriterService:
             return [s.split(':', 1)[1].strip(), 'global']
         return [_snippet_scope_from_category(app_category), 'global']
 
+    def _direct_snippet_insert(
+        self,
+        text: str,
+        *,
+        memory_store: JsonMemoryStore | None,
+        app_category: str | None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        if self.state.mode == WriterMode.VERBATIM:
+            return None
+        if not text or memory_store is None or getattr(memory_store, "snippets", None) is None:
+            return None
+        if (app_category or '').strip().lower() in {'code', 'terminal'}:
+            return None
+        match = _DIRECT_SNIPPET_INSERT_RE.match(text)
+        if match is None:
+            return None
+        raw_trigger = re.sub(r"\s+", " ", (match.group("trigger") or "").strip(" .,!?:;\"'"))
+        if not raw_trigger:
+            return None
+        trigger_candidates = _direct_snippet_trigger_candidates(raw_trigger)
+        if not trigger_candidates:
+            return None
+        scopes = self._snippet_scopes_for_policy(app_category)
+        for scope in scopes:
+            for trigger in trigger_candidates:
+                snippet = memory_store.snippets.resolve(trigger, scope=scope)
+                body = str(getattr(snippet, "body", "") or "") if snippet is not None else ""
+                if body:
+                    return body, {
+                        'trigger': trigger,
+                        'spoken_trigger': raw_trigger,
+                        'scope': scope,
+                        'body_chars': len(body),
+                    }
+        return None
+
     def _deterministic_transform(self, transform_kind: str, text: str) -> str:
         if transform_kind == 'bullets':
             return render_bullets(text)
@@ -1433,6 +2501,565 @@ def _style_card_to_prompt(card: object | None) -> str:
     """Returns the empty string. See :func:`_resolve_style_card`."""
     _ = card
     return ""
+
+
+def _approx_word_count(text: str) -> int:
+    return len((text or "").split())
+
+
+def _explicit_memory_learning_requested(text: str) -> bool:
+    value = str(text or "")
+    return bool(
+        re.search(r"\b(?:teach|remember|learn)\s+(?:juno\b)?", value, flags=re.IGNORECASE)
+        or re.search(r"\b(?:should|must)\s+be\s+(?:remembered|learned)\b", value, flags=re.IGNORECASE)
+        or re.search(r"\badd\s+.+\s+to\s+(?:my\s+)?(?:dictionary|lexicon|vocab(?:ulary)?|wordlist)\b", value, flags=re.IGNORECASE)
+    )
+
+
+def _explicit_vocab_learning_requested(text: str) -> bool:
+    value = str(text or "")
+    if re.search(
+        r"\bremember\s+(?:that\s+)?[\"']?.+?[\"']?\s+(?:is|means|equals|should\s+be)\s+[\"']?.+?[\"']?\s*$",
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    if re.search(
+        r"\b(?:always\s+)?(?:replace|change|use)\s+[\"']?.+?[\"']?\s+(?:with|as|to)\s+[\"']?.+?[\"']?\s*$",
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    return _explicit_memory_learning_requested(value)
+
+
+def _normalize_turn_plan_memory_candidate(raw: Any, *, source_text: str) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    canonical = _clean_memory_term(
+        raw.get("canonical")
+        or raw.get("canonical_form")
+        or raw.get("term")
+        or raw.get("surface")
+    )
+    surface = _clean_memory_term(raw.get("surface") or raw.get("term") or canonical)
+    if not canonical:
+        return None
+    if _memory_candidate_overlaps_source_spelling(canonical, source_text=source_text):
+        return None
+    if not _memory_candidate_allowed(canonical, source_text=source_text):
+        return None
+    if not span_present(canonical, source_text) and not span_present(surface, source_text):
+        return None
+    aliases = []
+    raw_aliases = raw.get("aliases")
+    if isinstance(raw_aliases, list):
+        for alias in raw_aliases:
+            cleaned = _clean_memory_term(alias)
+            if (
+                cleaned
+                and _memory_alias_allowed(cleaned, canonical=canonical, source_text=source_text)
+                and span_present(cleaned, source_text)
+            ):
+                aliases.append(cleaned)
+    pronunciation_hint = str(raw.get("pronunciation_hint") or raw.get("phonetic") or "").strip() or None
+    return {
+        "term": surface or canonical,
+        "canonical_form": canonical,
+        "aliases": list(dict.fromkeys(aliases)),
+        "pronunciation_hint": pronunciation_hint,
+    }
+
+
+def _memory_learning_source_text(final_text: str, partial_text: str | None) -> str:
+    final = str(final_text or "").strip()
+    partial = str(partial_text or "").strip()
+    if not partial or not _explicit_vocab_learning_requested(partial):
+        return final
+    if not _explicit_vocab_learning_requested(final):
+        return partial
+    partial_spelled = len(re.findall(r"\bspelled\b", partial, flags=re.IGNORECASE))
+    final_spelled = len(re.findall(r"\bspelled\b", final, flags=re.IGNORECASE))
+    if partial_spelled >= final_spelled:
+        return partial
+    return final
+
+
+def _normalize_spelled_learning_text(source_text: str) -> str:
+    text = re.sub(r"\s+", " ", str(source_text or "")).strip()
+    if not text:
+        return ""
+    if re.search(r"\bspelled\b", text, flags=re.IGNORECASE):
+        text = re.sub(r"(?<=[A-Za-z])-(?=[A-Za-z])", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _spelled_vocab_memory_candidates(source_text: str) -> list[dict[str, Any]]:
+    if not _explicit_vocab_learning_requested(source_text):
+        return []
+    text = _normalize_spelled_learning_text(source_text)
+    if not text:
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"\b(?:is\s+)?spelled\b", text, flags=re.IGNORECASE):
+        surface = _spelled_vocab_surface_before_marker(text[: match.start()])
+        letters, raw_spelling = _consume_spelled_letters(text[match.end() :], surface=surface)
+        if len(letters) < 2:
+            continue
+        canonical = _canonical_from_spelled_vocab_surface(surface, letters)
+        if not canonical:
+            continue
+        candidate = {
+            "term": surface or canonical,
+            "canonical_form": canonical,
+            "aliases": [surface] if surface and _memory_term_key(surface) != _memory_term_key(canonical) else [],
+            "pronunciation_hint": f"spelled {raw_spelling}",
+        }
+        key = _memory_term_key(canonical)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(candidate)
+    return out
+
+
+def _explicit_vocab_source_phrase_candidates(source_text: str) -> list[dict[str, Any]]:
+    if not _explicit_vocab_learning_requested(source_text):
+        return []
+    text = _normalize_spelled_learning_text(source_text)
+    if not text:
+        return []
+    text = re.sub(
+        r"(?i)^\s*(?:teach|remember|learn|save|add)\s+(?:juno\s+)?"
+        r"(?:(?:these|this|the)\s+)?(?:terms?|words?|names?|vocabulary|vocab)?\s*[:.]?\s*",
+        "",
+        text,
+    )
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_part in re.split(r"[,.;]\s*", text):
+        for part in _explicit_vocab_source_phrase_parts(raw_part):
+            if not part or len(part.split()) > 5:
+                continue
+            if not _explicit_vocab_phrase_has_term_signal(part):
+                continue
+            if not _memory_candidate_allowed(part, source_text=source_text):
+                continue
+            term_key = _memory_term_key(part)
+            if term_key and term_key not in seen:
+                seen.add(term_key)
+                out.append({"term": part, "canonical_form": part, "aliases": []})
+    return out
+
+
+def _explicit_vocab_source_phrase_parts(raw_part: str) -> list[str]:
+    part = _clean_memory_term(raw_part)
+    if not part or re.search(r"(?i)\bspelled\b", part):
+        return []
+    part = re.sub(r"(?i)^\s*(?:and|or)\s+", "", part).strip()
+    part = re.sub(
+        r"(?i)\b(?:is|are)\s+(?:a\s+|an\s+)?(?:term|word|name)\b.*$",
+        "",
+        part,
+    ).strip()
+    if not part:
+        return []
+    pieces = [
+        _clean_memory_term(piece)
+        for piece in re.split(r"\b(?:and|or)\b", part, flags=re.IGNORECASE)
+    ]
+    pieces = [piece for piece in pieces if piece]
+    if len(pieces) > 1 and all(_explicit_vocab_phrase_has_term_signal(piece) for piece in pieces):
+        return pieces
+    return [part]
+
+
+def _explicit_vocab_phrase_has_term_signal(value: str) -> bool:
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9._-]*", str(value or ""))
+    if not tokens:
+        return False
+    for token in tokens:
+        if token.isupper() and len(token) >= 2:
+            return True
+        if re.search(r"[a-z][A-Z]", token):
+            return True
+        if token[:1].isupper() and token[1:].islower() and not common_english_single_word(token):
+            return True
+        if re.search(r"\d", token):
+            return True
+    return False
+
+
+def _spelled_vocab_surface_before_marker(before_marker: str) -> str:
+    value = re.sub(r"\s+", " ", str(before_marker or "")).strip(" ,.;:-")
+    if not value:
+        return ""
+    if re.search(r"\bspelled\b", value, flags=re.IGNORECASE):
+        value = re.split(r"\bspelled\b", value, flags=re.IGNORECASE)[-1].strip(" ,.;:-")
+    parts = re.split(r"[,.;:]|\b(?:and|or)\b", value, flags=re.IGNORECASE)
+    surface = parts[-1] if parts else value
+    surface = re.sub(
+        r"(?i)\b(?:teach|remember|learn)\s+(?:juno\s+)?(?:these|this|the)?\s*"
+        r"(?:terms?|words?|names?|vocabulary|vocab)?\b",
+        " ",
+        surface,
+    )
+    surface = re.sub(
+        r"(?i)\b(?:add|save)\s+(?:these|this|the)?\s*(?:terms?|words?|names?)\b",
+        " ",
+        surface,
+    )
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9._-]*", surface)
+    if not tokens:
+        return ""
+    letter_suffix: list[str] = []
+    for token in reversed(tokens):
+        if len(token) == 1 and token.isalpha():
+            letter_suffix.append(token)
+            continue
+        break
+    if len(letter_suffix) >= 2:
+        suffix = list(reversed(letter_suffix))
+        return " ".join(suffix[-8:])
+    return " ".join(tokens[-4:])
+
+
+def _consume_spelled_letters(after_marker: str, *, surface: str = "") -> tuple[list[str], str]:
+    text = str(after_marker or "")
+    idx = 0
+    letters: list[str] = []
+    while idx < len(text):
+        while idx < len(text) and text[idx] in " \t\r\n-":
+            idx += 1
+        if idx >= len(text):
+            break
+        match = re.match(r"[A-Za-z]+", text[idx:])
+        if match is None:
+            break
+        token = match.group(0)
+        if len(token) != 1:
+            break
+        letters.append(token.upper())
+        idx += len(token)
+    letters = _anchor_spelled_letters_to_surface(letters, surface=surface)
+    return letters, " ".join(letters)
+
+
+def _anchor_spelled_letters_to_surface(letters: list[str], *, surface: str) -> list[str]:
+    if len(letters) < 3:
+        return letters
+    anchors = _spelled_surface_anchor_keys(surface)
+    if not anchors:
+        return letters
+    best_len = 0
+    best_score: tuple[int, int] | None = None
+    joined = "".join(letters).casefold()
+    for anchor in anchors:
+        if not anchor:
+            continue
+        max_distance = max(1, min(2, round(len(anchor) * 0.25)))
+        if (
+            len(letters) > len(anchor)
+            and joined[: len(anchor)] == anchor
+            and joined[len(anchor) : len(anchor) + 1] in {"a", "e", "i", "o", "u", "y"}
+            and max_distance >= 1
+        ):
+            n = len(anchor) + 1
+            score = (0, -n)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_len = n
+        min_len = max(2, len(anchor) - max_distance)
+        max_len = min(len(letters), len(anchor) + max_distance)
+        for n in range(min_len, max_len + 1):
+            prefix = joined[:n]
+            distance = _small_edit_distance(prefix, anchor, max_distance=max_distance)
+            if distance > max_distance:
+                continue
+            score = (distance, -n)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_len = n
+    if best_len >= 2 and best_len < len(letters):
+        return []
+    return letters
+
+
+def _spelled_surface_anchor_keys(surface: str) -> list[str]:
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9._-]*", str(surface or ""))
+    keys: list[str] = []
+
+    def add(value: str) -> None:
+        cleaned = re.sub(r"[^a-z0-9]+", "", value.casefold())
+        if cleaned and cleaned not in keys:
+            keys.append(cleaned)
+
+    if tokens:
+        add("".join(tokens))
+        if len(tokens[0]) > 1:
+            add(tokens[0])
+    return keys
+
+
+def _small_edit_distance(left: str, right: str, *, max_distance: int) -> int:
+    if abs(len(left) - len(right)) > max_distance:
+        return max_distance + 1
+    previous = list(range(len(right) + 1))
+    for i, ch_left in enumerate(left, start=1):
+        current = [i]
+        row_min = i
+        for j, ch_right in enumerate(right, start=1):
+            cost = 0 if ch_left == ch_right else 1
+            value = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > max_distance:
+            return max_distance + 1
+        previous = current
+    return previous[-1]
+
+
+def _memory_candidate_overlaps_spelled_acronym_tail(
+    candidate: dict[str, Any],
+    *,
+    spelled_keys: set[str],
+) -> bool:
+    if not spelled_keys:
+        return False
+    canonical = str(candidate.get("canonical_form") or candidate.get("term") or "")
+    candidate_key = _memory_term_key(canonical)
+    if not candidate_key:
+        return False
+    for spelled_key in spelled_keys:
+        if candidate_key == spelled_key:
+            continue
+        if candidate_key.startswith(spelled_key) and not candidate_key.startswith(f"{spelled_key} "):
+            compressed_tail = candidate_key[len(spelled_key) :].strip()
+            if compressed_tail and (
+                _looks_like_acronym_word(compressed_tail)
+            ):
+                return True
+        if not candidate_key.startswith(f"{spelled_key} "):
+            continue
+        tail = candidate_key[len(spelled_key) :].strip()
+        tail_words = tail.split()
+        if tail_words and all(_looks_like_acronym_word(word) for word in tail_words):
+            return True
+    return False
+
+
+def _memory_candidate_overlaps_source_spelling(candidate: str, *, source_text: str) -> bool:
+    spelled_keys = {
+        _memory_term_key(item.get("canonical_form") or item.get("term"))
+        for item in _spelled_vocab_memory_candidates(source_text)
+    }
+    spelled_keys.discard("")
+    if not spelled_keys:
+        return False
+    probe = {
+        "term": candidate,
+        "canonical_form": candidate,
+        "aliases": [],
+        "pronunciation_hint": None,
+    }
+    return _memory_candidate_overlaps_spelled_acronym_tail(probe, spelled_keys=spelled_keys)
+
+
+def _memory_candidate_contained_by_longer_candidate(
+    candidate: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> bool:
+    key = _memory_term_key(candidate.get("canonical_form") or candidate.get("term"))
+    words = key.split()
+    if not words:
+        return False
+    for other in candidates:
+        if other is candidate:
+            continue
+        other_key = _memory_term_key(other.get("canonical_form") or other.get("term"))
+        other_words = other_key.split()
+        if len(other_words) <= len(words):
+            continue
+        for idx in range(0, len(other_words) - len(words) + 1):
+            if other_words[idx : idx + len(words)] == words:
+                return True
+    return False
+
+
+def _looks_like_acronym_word(word: str) -> bool:
+    value = re.sub(r"[^a-z0-9]", "", str(word or "").casefold())
+    if len(value) < 2 or len(value) > 6:
+        return False
+    return not re.search(r"[aeiouy]", value)
+
+
+
+def _canonical_from_spelled_vocab_surface(surface: str, letters: list[str]) -> str:
+    spelled = "".join(ch for ch in letters if ch).upper()
+    if not spelled:
+        return ""
+    cleaned_surface = _clean_memory_term(surface)
+    if cleaned_surface:
+        pieces = cleaned_surface.split()
+        if pieces and all(len(piece) == 1 and piece.isalpha() for piece in pieces):
+            surfaced = "".join(pieces).upper()
+            if surfaced == spelled:
+                return spelled
+            return ""
+        if len(pieces) > 1 and all(re.fullmatch(r"[A-Z0-9]{2,}", piece) for piece in pieces):
+            surfaced = "".join(pieces).upper()
+            if surfaced == spelled:
+                return " ".join(pieces)
+        if pieces and _memory_term_key(pieces[0]) == _memory_term_key(spelled):
+            return " ".join([_preferred_spelled_piece_casing(pieces[0], spelled), *pieces[1:]])
+        leading_initials = []
+        for piece in pieces:
+            if len(piece) == 1 and piece.isalpha():
+                leading_initials.append(piece)
+                continue
+            break
+        if leading_initials and len(pieces) > len(leading_initials):
+            initials = "".join(leading_initials).casefold()
+            target = spelled.casefold()
+            max_distance = max(1, min(2, len(target) - len(initials)))
+            if _small_edit_distance(initials, target[: len(initials)], max_distance=max_distance) <= max_distance:
+                return " ".join([
+                    _spelled_letters_default_canonical(spelled),
+                    *pieces[len(leading_initials) :],
+                ])
+            return ""
+        if len(pieces) > 1 and _spelled_letters_replace_surface_piece(pieces[0], spelled):
+            return " ".join([_spelled_letters_default_canonical(spelled), *pieces[1:]])
+        if _memory_term_key(cleaned_surface) == _memory_term_key(spelled):
+            return _preferred_spelled_piece_casing(cleaned_surface, spelled)
+    return _spelled_letters_default_canonical(spelled)
+
+
+def _spelled_letters_replace_surface_piece(surface_piece: str, spelled: str) -> bool:
+    piece = re.sub(r"[^A-Za-z0-9]+", "", str(surface_piece or ""))
+    target = re.sub(r"[^A-Za-z0-9]+", "", str(spelled or ""))
+    if len(piece) < 3 or len(target) < 3:
+        return False
+    if piece[:1].casefold() != target[:1].casefold():
+        return False
+    if abs(len(piece) - len(target)) > 2:
+        return False
+    return True
+
+
+def _preferred_spelled_piece_casing(surface_piece: str, spelled: str) -> str:
+    piece = str(surface_piece or "").strip()
+    if piece and piece.isupper():
+        return spelled
+    if piece and re.search(r"[a-z][A-Z]", piece):
+        return piece
+    if piece and piece[:1].isupper():
+        return piece[:1].upper() + piece[1:]
+    return _spelled_letters_default_canonical(spelled)
+
+
+def _spelled_letters_default_canonical(spelled: str) -> str:
+    value = str(spelled or "").strip().upper()
+    if not value:
+        return ""
+    if len(value) <= 4 and not re.search(r"[AEIOUY]", value[1:], flags=re.IGNORECASE):
+        return value
+    return value[:1] + value[1:].lower()
+
+
+def _memory_candidate_allowed(term: str, *, source_text: str) -> bool:
+    value = _clean_memory_term(term)
+    if not value or not learned_term_allowed(value):
+        return False
+    key = _memory_term_key(value)
+    if key in _MEMORY_COMMAND_TERMS:
+        return False
+    words = value.split()
+    if words and all(common_english_single_word(word) for word in words):
+        return False
+    if key.startswith("teach juno") or key.endswith(" product terms"):
+        return False
+    if len(key.split()) > 8:
+        return False
+    source_key = _memory_term_key(source_text)
+    if source_key and source_key == key:
+        return False
+    return True
+
+
+def _memory_alias_allowed(alias: str, *, canonical: str, source_text: str) -> bool:
+    value = _clean_memory_term(alias)
+    if not value or not learned_term_allowed(value):
+        return False
+    key = _memory_term_key(value)
+    if not key or key in _MEMORY_COMMAND_TERMS or key == _memory_term_key(canonical):
+        return False
+    if key.startswith("teach juno") or key.endswith(" product terms"):
+        return False
+    if len(key.split()) > 8:
+        return False
+    source_key = _memory_term_key(source_text)
+    if source_key and source_key == key:
+        return False
+    return True
+
+
+def _clean_memory_term(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip(" ,.;:-\"'"))
+    text = re.sub(r"^(?:teach|remember|learn)\s+juno\s+(?:that\s+|these\s+|this\s+)?", "", text, flags=re.IGNORECASE)
+    return text.strip(" ,.;:-\"'")
+
+
+def _memory_term_key(value: Any) -> str:
+    text = str(value or "").casefold()
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
+    return " ".join(text.split())
+
+
+_DIRECT_SNIPPET_INSERT_RE = re.compile(
+    r"^\s*(?:insert|paste|use|add)\s+(?:the\s+)?(?P<trigger>.+?)\s*[.!?]?\s*$",
+    flags=re.IGNORECASE,
+)
+
+
+def _direct_snippet_trigger_candidates(raw_trigger: str) -> list[str]:
+    trigger = re.sub(r"\s+", " ", (raw_trigger or "").strip())
+    if not trigger:
+        return []
+    words = trigger.casefold().split()
+    candidates: list[str] = []
+
+    def add(value: str) -> None:
+        cleaned = re.sub(r"\s+", " ", value.strip(" .,!?:;\"'"))
+        if cleaned and cleaned.casefold() not in {item.casefold() for item in candidates}:
+            candidates.append(cleaned)
+
+    add(trigger)
+    if "snippet" in words:
+        add(re.sub(r"(?i)^snippet\s+", "", trigger))
+        add(re.sub(r"(?i)\s+snippet$", "", trigger))
+    return candidates
+
+
+def _json_object_from_model_text(text: str) -> dict[str, Any] | None:
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if "\n" in raw:
+            raw = raw.split("\n", 1)[1].strip()
+    try:
+        obj = json.loads(raw)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    if match is None:
+        return None
+    try:
+        obj = json.loads(match.group(0))
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        return None
 
 
 def _snippet_scope_from_category(category: str | None) -> str:

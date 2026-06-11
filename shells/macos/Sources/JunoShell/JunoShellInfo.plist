@@ -15,9 +15,7 @@
 	<key>NSAppSleepDisabled</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Juno uses the microphone to transcribe your voice when you use the dictation shortcut or optional “Listen for Juno” wake mode, and for live on-device captions while dictating. Wake mode keeps a lightweight on-device detector running only while enabled in Settings.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Juno uses on-device speech recognition to show a live transcript while you dictate, so you can see what is being captured before it is inserted.</string>
+	<string>Juno uses the microphone to transcribe your voice when you use the dictation shortcut or optional “Listen for Juno” wake mode. Wake mode keeps a lightweight on-device detector running only while enabled in Settings.</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>Juno needs Accessibility access to read the focused text field and insert dictated text into any app.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

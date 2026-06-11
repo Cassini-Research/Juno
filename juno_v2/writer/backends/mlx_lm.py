@@ -25,6 +25,118 @@ class MlxLmWriterBackend(WriterBackend):
         self._loaded = False
         self._model = None
         self._tokenizer = None
+        # Static-prefix KV caches keyed by prefix hash. Reserved for hot,
+        # lean prefixes (the dictation editor) — KV memory is ~150KB/token
+        # on Qwen3-4B, so each cached prefix must stay ~1k tokens.
+        self._kv_caches: dict[str, dict[str, Any]] = {}
+        self._split_prefix_memo: dict[str, str | None] = {}
+
+    def _static_chat_prefix(self, system_prompt: str) -> str | None:
+        """Rendered chat prefix (system + user-block opening) for caching."""
+        key = str(hash(system_prompt))
+        if key in self._split_prefix_memo:
+            return self._split_prefix_memo[key]
+        prefix: str | None = None
+        try:
+            if getattr(self._tokenizer, "chat_template", None) is not None:
+                marker = "\x01JUNO_SPLIT\x01"
+                rendered = _apply_chat_template_no_thinking(
+                    self._tokenizer,
+                    [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": marker},
+                    ],
+                )
+                idx = rendered.find(marker)
+                prefix = rendered[:idx] if idx > 0 else None
+            else:
+                prefix = system_prompt + "\n\n"
+        except Exception:
+            prefix = None
+        self._split_prefix_memo[key] = prefix
+        return prefix
+
+    def _generate_with_prefix_cache(
+        self,
+        *,
+        full_prompt: str,
+        prefix_str: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        deadline_s: float | None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Generate using a reusable KV cache for ``prefix_str``.
+
+        Returns ``None`` on any incompatibility (tokenizer boundary mismatch,
+        non-trimmable cache, API drift) so the caller falls back to the
+        plain path — caching must never be able to break production output.
+        """
+        try:
+            import hashlib
+
+            from mlx_lm import stream_generate  # type: ignore
+            from mlx_lm.models.cache import (  # type: ignore
+                can_trim_prompt_cache,
+                make_prompt_cache,
+                trim_prompt_cache,
+            )
+            from mlx_lm.sample_utils import make_sampler  # type: ignore
+
+            tok = self._tokenizer
+            full_ids = tok.encode(full_prompt)
+            key = hashlib.sha256(prefix_str.encode("utf-8")).hexdigest()[:16]
+            entry = self._kv_caches.get(key)
+            if entry is None:
+                prefix_ids = tok.encode(prefix_str)
+                cache = make_prompt_cache(self._model)
+                for _ in stream_generate(
+                    self._model, tok, prompt=prefix_ids, max_tokens=1, prompt_cache=cache
+                ):
+                    pass
+                if not can_trim_prompt_cache(cache):
+                    return None
+                offset = int(getattr(cache[0], "offset", 0))
+                trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+                entry = {"ids": list(prefix_ids), "cache": cache}
+                self._kv_caches[key] = entry
+            prefix_ids = entry["ids"]
+            if list(full_ids[: len(prefix_ids)]) != prefix_ids:
+                return None
+            suffix_ids = list(full_ids[len(prefix_ids):])
+            if not suffix_ids:
+                return None
+            cache = entry["cache"]
+            sampler = make_sampler(temp=float(temperature), top_p=float(top_p))
+            pieces: list[str] = []
+            timed_out = False
+            started = time.perf_counter()
+            for resp in stream_generate(
+                self._model,
+                tok,
+                prompt=suffix_ids,
+                max_tokens=int(max_tokens),
+                prompt_cache=cache,
+                sampler=sampler,
+            ):
+                pieces.append(resp.text)
+                if deadline_s is not None and (time.perf_counter() - started) > deadline_s:
+                    timed_out = True
+                    break
+            # Rewind the cache to the static prefix for the next call.
+            offset = int(getattr(cache[0], "offset", 0))
+            trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+            return "".join(pieces), {
+                "generation_api": "cached_stream",
+                "prompt_cache_hit": True,
+                "cached_prefix_tokens": len(prefix_ids),
+                "suffix_tokens": len(suffix_ids),
+                "timed_out": timed_out,
+            }
+        except Exception as exc:  # noqa: BLE001 — cache must never break output
+            print(f"[WRITER]      prompt_cache_fallback err={exc}", file=sys.stderr, flush=True)
+            self._kv_caches.clear()
+            return None
 
     def warm(self) -> None:
         if self._loaded:
@@ -79,20 +191,38 @@ class MlxLmWriterBackend(WriterBackend):
         )
         started = time.perf_counter()
         max_tokens = _max_tokens_for_request(req, self.config.max_tokens)
+        deadline_ms = (req.metadata or {}).get("deadline_ms")
+        deadline_s = (float(deadline_ms) / 1000.0) if deadline_ms else None
+        cached_out: tuple[str, dict[str, Any]] | None = None
         # Issue #7: serialize MLX decode against preview/final lanes on
         # other threads. Without the guard, overlapping decodes from
         # different worker threads can crash with
         # ``RuntimeError: There is no Stream(gpu, N) in current thread``.
         with mlx_decode_guard():
-            text, generation_meta = _generate_with_sampling(
-                generate,
-                self._model,
-                self._tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=self.config.temperature,
-                top_p=self.config.top_p,
-            )
+            if (req.metadata or {}).get("cache_prefix"):
+                prefix_str = self._static_chat_prefix(system_prompt)
+                if prefix_str:
+                    cached_out = self._generate_with_prefix_cache(
+                        full_prompt=prompt,
+                        prefix_str=prefix_str,
+                        max_tokens=max_tokens,
+                        temperature=self.config.temperature,
+                        top_p=self.config.top_p,
+                        deadline_s=deadline_s,
+                    )
+            if cached_out is not None:
+                text, generation_meta = cached_out
+            else:
+                text, generation_meta = _generate_with_sampling(
+                    generate,
+                    self._model,
+                    self._tokenizer,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=self.config.temperature,
+                    top_p=self.config.top_p,
+                    deadline_s=deadline_s,
+                )
         decode_ms = (time.perf_counter() - started) * 1000.0
         text_preview = (str(text or "")).replace("\n", " ")[:120]
         print(
@@ -243,7 +373,7 @@ class MlxLmWriterBackend(WriterBackend):
                 if not trigger or not rep:
                     continue
                 out.append({"trigger": trigger[:60], "replacement": rep[:120]})
-        return out
+        return _filter_memory_extraction_candidates(kind=kind, source_text=clipped, candidates=out, limit=n)
 
     def classify_dictation_vs_edit_selection(
         self, *, spoken: str, selection_excerpt: str
@@ -340,6 +470,7 @@ def _generate_with_sampling(
     max_tokens: int,
     temperature: float,
     top_p: float,
+    deadline_s: float | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Call mlx_lm.generate with the sampler API (mlx_lm >= 0.22.0)."""
     try:
@@ -351,12 +482,41 @@ def _generate_with_sampling(
         }
         return generate(model, tokenizer, prompt=prompt, **kwargs), {"generation_api": "legacy"}
 
+    sampler = make_sampler(temp=float(temperature), top_p=float(top_p))
+    if deadline_s is not None:
+        try:
+            from mlx_lm import stream_generate  # type: ignore
+
+            pieces: list[str] = []
+            timed_out = False
+            started = time.perf_counter()
+            for resp in stream_generate(
+                model,
+                tokenizer,
+                prompt=prompt,
+                max_tokens=int(max_tokens),
+                sampler=sampler,
+            ):
+                pieces.append(resp.text)
+                if (time.perf_counter() - started) > deadline_s:
+                    timed_out = True
+                    break
+            return "".join(pieces), {
+                "generation_api": "stream_sampler",
+                "timed_out": timed_out,
+            }
+        except Exception as exc:  # noqa: BLE001 — generation fallback must preserve output
+            print(f"[WRITER]      stream_deadline_fallback err={exc}", file=sys.stderr, flush=True)
+
     kwargs = {
         "max_tokens": int(max_tokens),
         "verbose": False,
-        "sampler": make_sampler(temp=float(temperature), top_p=float(top_p)),
+        "sampler": sampler,
     }
-    return generate(model, tokenizer, prompt=prompt, **kwargs), {"generation_api": "sampler"}
+    meta: dict[str, Any] = {"generation_api": "sampler"}
+    if deadline_s is not None:
+        meta["deadline_unenforced"] = True
+    return generate(model, tokenizer, prompt=prompt, **kwargs), meta
 
 
 def _apply_chat_template_no_thinking(tokenizer: Any, messages: list[dict[str, str]]) -> Any:
@@ -364,22 +524,38 @@ def _apply_chat_template_no_thinking(tokenizer: Any, messages: list[dict[str, st
     kwargs: dict[str, Any] = {"add_generation_prompt": True}
     try:
         sig = inspect.signature(apply_chat_template)
+        supports_tokenize = (
+            "tokenize" in sig.parameters
+            or any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
+        )
         supports_enable_thinking = (
             "enable_thinking" in sig.parameters
             or any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
         )
     except (TypeError, ValueError):
+        supports_tokenize = True
         supports_enable_thinking = True
+    if supports_tokenize:
+        # Keep the writer backend's generation contract string-in. Several
+        # chat tokenizers default to token ids; MLX can generate from those,
+        # but prompt observability and strict JSON behavior become opaque.
+        kwargs["tokenize"] = False
     if supports_enable_thinking:
         kwargs["enable_thinking"] = False
     try:
         return apply_chat_template(messages, **kwargs)
     except TypeError:
-        if "enable_thinking" not in kwargs:
-            raise
         fallback_kwargs = dict(kwargs)
-        fallback_kwargs.pop("enable_thinking", None)
-        return apply_chat_template(messages, **fallback_kwargs)
+        if "enable_thinking" in fallback_kwargs:
+            fallback_kwargs.pop("enable_thinking", None)
+            try:
+                return apply_chat_template(messages, **fallback_kwargs)
+            except TypeError:
+                pass
+        if "tokenize" in fallback_kwargs:
+            fallback_kwargs.pop("tokenize", None)
+            return apply_chat_template(messages, **fallback_kwargs)
+        raise
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -403,6 +579,324 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         return None
 
 
+def _filter_memory_extraction_candidates(
+    *,
+    kind: str,
+    source_text: str,
+    candidates: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Apply product memory policy to model-suggested candidates.
+
+    The model is useful for spotting terms, but persistence/UI boundaries
+    must enforce the same "worth biasing ASR" policy as the rest of memory.
+    This keeps common words and invented snippet bodies out without adding
+    utterance-specific rules.
+    """
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    def append_candidate(normalized: dict[str, Any]) -> None:
+        key = json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(normalized)
+
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        normalized: dict[str, Any] | None = None
+        if kind == "vocab":
+            term = str(item.get("term") or "").strip()
+            note = str(item.get("note") or "").strip()
+            for vocab_term in _vocab_candidate_terms(term, note=note, source_text=source_text):
+                if _vocab_candidate_allowed(vocab_term, source_text=source_text):
+                    append_candidate({"term": vocab_term, "note": note[:80]})
+                    if len(out) >= max(1, int(limit)):
+                        return out
+            continue
+        elif kind == "replacement":
+            trigger = str(item.get("trigger") or "").strip()
+            replacement = str(item.get("replacement") or "").strip()
+            if _replacement_candidate_allowed(trigger, replacement, source_text=source_text):
+                normalized = {"trigger": trigger[:60], "replacement": replacement[:120]}
+        elif kind == "snippet":
+            trigger = str(item.get("trigger") or "").strip()
+            body = str(item.get("body") or "").strip()
+            if _snippet_candidate_allowed(trigger, body, source_text=source_text):
+                normalized = {"trigger": trigger[:32], "body": body[:280]}
+        if normalized is None:
+            continue
+        append_candidate(normalized)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
+def _vocab_candidate_terms(term: str, *, note: str = "", source_text: str) -> list[str]:
+    value = _strip_vocab_relation_tail((term or "").strip())
+    if not value:
+        return []
+    expanded = _strip_vocab_relation_tail(
+        _expand_vocab_phrase_from_note(value, note=note, source_text=source_text)
+        or _expand_source_vocab_phrase(value, source_text=source_text)
+    )
+    split = _split_composite_vocab_phrase(expanded, source_text=source_text)
+    return split or [expanded]
+
+
+def _strip_vocab_relation_tail(term: str) -> str:
+    value = re.sub(r"\s+", " ", (term or "").strip())
+    if not value:
+        return ""
+    value = re.sub(
+        r"\s+(?:(?:is|are|was|were|may|might|can|could|should)\s+)?"
+        r"(?:sound(?:s|ed)?|pronounced|spelled|means|called|known)\b.*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    return value.strip(" ,.;:-")
+
+
+def _expand_source_vocab_phrase(term: str, *, source_text: str) -> str:
+    value = (term or "").strip()
+    if not value or not source_text:
+        return value
+    # If the model returns only the first token of a spoken acronym sequence
+    # ("MLX" from "MLX LM"), keep the phrase the user actually said.
+    pattern = re.compile(
+        rf"(?<![A-Za-z0-9])({re.escape(value)}(?:\s+[A-Z0-9]{{2,}})+)(?![A-Za-z0-9])"
+    )
+    match = pattern.search(source_text)
+    if match:
+        return re.sub(r"\s+", " ", match.group(1)).strip()
+    expanded = _expand_source_descriptive_vocab_phrase(value, source_text=source_text)
+    if expanded:
+        return expanded
+    return value
+
+
+def _expand_source_descriptive_vocab_phrase(term: str, *, source_text: str) -> str:
+    if not _explicit_teach_context(source_text):
+        return ""
+    value = (term or "").strip()
+    if not value:
+        return ""
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])")
+    for match in pattern.finditer(source_text):
+        tail = source_text[match.end():]
+        descriptors = _leading_vocab_descriptors(tail)
+        if descriptors:
+            return re.sub(r"\s+", " ", " ".join([value, *descriptors])).strip()
+    return ""
+
+
+def _expand_vocab_phrase_from_note(term: str, *, note: str, source_text: str) -> str:
+    if not _explicit_teach_context(source_text):
+        return ""
+    value = (term or "").strip()
+    raw_note = (note or "").strip()
+    if not value or not raw_note:
+        return ""
+    for clause in re.split(r"[,;()\n]|\bnot\b", raw_note, maxsplit=3, flags=re.IGNORECASE):
+        clause = re.sub(r"\s+", " ", clause).strip(" .,:;-")
+        if not clause:
+            continue
+        match = re.search(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])", clause)
+        if not match:
+            continue
+        descriptors = _leading_vocab_descriptors(clause[match.end():])
+        if not descriptors:
+            continue
+        candidate = re.sub(r"\s+", " ", " ".join([value, *descriptors])).strip()
+        if _candidate_grounded(candidate, source_text):
+            return candidate
+    return ""
+
+
+def _leading_vocab_descriptors(text: str) -> list[str]:
+    descriptors: list[str] = []
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9._-]*", text or ""):
+        if token.casefold() in _VOCAB_DESCRIPTOR_STOPWORDS:
+            break
+        if _looks_like_standalone_vocab_piece(token):
+            break
+        if not token[:1].islower():
+            break
+        descriptors.append(token)
+        if len(descriptors) >= 3:
+            break
+    return descriptors
+
+
+_VOCAB_DESCRIPTOR_STOPWORDS = {
+    "and",
+    "as",
+    "is",
+    "are",
+    "be",
+    "like",
+    "means",
+    "or",
+    "should",
+    "these",
+    "this",
+    "term",
+    "terms",
+    "word",
+    "words",
+}
+
+
+def _split_composite_vocab_phrase(term: str, *, source_text: str) -> list[str]:
+    value = re.sub(r"\s+", " ", (term or "").strip())
+    if not value:
+        return []
+    if not _explicit_teach_context(source_text):
+        return [value]
+    pieces = value.split()
+    if len(pieces) <= 2:
+        return [value]
+    # Qwen sometimes merges adjacent spoken names into one candidate. Split
+    # runs of TitleCase personal/product-looking words while preserving
+    # acronym phrases such as "MLX LM".
+    if all(_looks_like_standalone_vocab_piece(piece) for piece in pieces):
+        return pieces
+    out: list[str] = []
+    idx = 0
+    while idx < len(pieces):
+        piece = pieces[idx]
+        if re.fullmatch(r"[A-Z0-9]{2,}", piece):
+            run = [piece]
+            idx += 1
+            while idx < len(pieces) and re.fullmatch(r"[A-Z0-9]{2,}", pieces[idx]):
+                run.append(pieces[idx])
+                idx += 1
+            out.append(" ".join(run))
+            continue
+        if _looks_like_standalone_vocab_piece(piece):
+            out.append(piece)
+        idx += 1
+    if len(out) == 1 and len(pieces) > 1:
+        return [value]
+    return out or [value]
+
+
+def _looks_like_standalone_vocab_piece(value: str) -> bool:
+    piece = (value or "").strip()
+    if not piece:
+        return False
+    if re.fullmatch(r"[A-Z0-9]{2,}(?:[._-][A-Z0-9]{2,})*", piece):
+        return True
+    if re.search(r"[a-z][A-Z]", piece):
+        return True
+    if any(ch.isalpha() for ch in piece) and any(ch.isdigit() for ch in piece):
+        return True
+    return bool(re.fullmatch(r"[A-Z][a-z]{2,}[A-Za-z]*", piece))
+
+
+def _vocab_candidate_allowed(term: str, *, source_text: str) -> bool:
+    value = (term or "").strip()
+    if not value or not _candidate_grounded(value, source_text):
+        return False
+    if _memory_command_phrase(value):
+        return False
+    from juno_v2.memory.entity_policy import session_entity_allowed
+
+    if session_entity_allowed(value):
+        return True
+    if _explicit_teach_context(source_text) and _has_named_or_identifier_piece(value):
+        return True
+    return False
+
+
+def _replacement_candidate_allowed(trigger: str, replacement: str, *, source_text: str) -> bool:
+    trig = (trigger or "").strip()
+    repl = (replacement or "").strip()
+    if not trig or not repl or not _candidate_grounded(trig, source_text):
+        return False
+    if _memory_command_phrase(trig):
+        return False
+    from juno_v2.memory.entity_policy import session_entity_allowed
+    from juno_v2.memory.stores.corrections import is_safe_correction_pair
+
+    if not is_safe_correction_pair(trig, repl):
+        return False
+    if session_entity_allowed(trig):
+        return True
+    if _looks_like_abbreviation_trigger(trig):
+        return True
+    if re.search(r"\b(?:replace|means|expand|spell|autocorrect)\b", source_text or "", re.IGNORECASE):
+        return True
+    return False
+
+
+def _snippet_candidate_allowed(trigger: str, body: str, *, source_text: str) -> bool:
+    trig = (trigger or "").strip()
+    text = (body or "").strip()
+    if not trig or not text:
+        return False
+    if len(text) > 280 or _memory_command_phrase(trig):
+        return False
+    # Snippet extraction must not invent reusable boilerplate. The body has
+    # to be a phrase the user actually said unless the request explicitly
+    # says it is defining a snippet.
+    if _candidate_grounded(text, source_text):
+        return True
+    return bool(re.search(r"\b(?:save|create|add)\s+(?:this\s+)?snippet\b", source_text or "", re.IGNORECASE))
+
+
+def _candidate_grounded(candidate: str, source_text: str) -> bool:
+    from juno_v2.memory.entity_policy import term_present_in_text
+
+    return term_present_in_text(candidate, source_text)
+
+
+def _explicit_teach_context(source_text: str) -> bool:
+    text = source_text or ""
+    return bool(
+        re.search(r"\b(?:teach|remember|learn)\s+(?:juno\b)?", text, re.IGNORECASE)
+        or re.search(r"\badd\s+(?:these\s+)?(?:terms?|words?|names?)\b", text, re.IGNORECASE)
+        or re.search(r"\b(?:should|must)\s+be\s+(?:remembered|learned)\b", text, re.IGNORECASE)
+    )
+
+
+def _memory_command_phrase(value: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"(?i)\s*(?:teach|remember|learn|add|save)\s+juno(?:\s+(?:this|these|term|terms|word|words))?\s*",
+            value or "",
+        )
+    )
+
+
+def _has_named_or_identifier_piece(value: str) -> bool:
+    pieces = re.findall(r"[A-Za-z][A-Za-z0-9._-]*", value or "")
+    if not pieces:
+        return False
+    for piece in pieces:
+        if re.fullmatch(r"[A-Z0-9]{2,}(?:[._-][A-Z0-9]{2,})*", piece):
+            return True
+        if re.search(r"[a-z][A-Z]", piece):
+            return True
+        if any(ch.isalpha() for ch in piece) and any(ch.isdigit() for ch in piece):
+            return True
+        if re.fullmatch(r"[A-Z][a-z]{2,}[A-Za-z]*", piece):
+            return True
+    return False
+
+
+def _looks_like_abbreviation_trigger(value: str) -> bool:
+    compact = re.sub(r"[^A-Za-z0-9]", "", value or "")
+    return 2 <= len(compact) <= 8 and (
+        compact.isupper()
+        or any(ch.isdigit() for ch in compact)
+        or compact.casefold() == compact
+    )
+
+
 def _max_tokens_for_request(req: WriterTransformRequest, configured_max_tokens: int) -> int:
     context = req.context_payload or {}
     task = str(context.get("task") or req.metadata.get("kind") or "").strip()
@@ -411,6 +905,9 @@ def _max_tokens_for_request(req: WriterTransformRequest, configured_max_tokens: 
     if task == "voice_action_extraction":
         override = int(meta_override) if isinstance(meta_override, int) and meta_override > 0 else 0
         return max(int(configured_max_tokens), override, _ACTION_EXTRACTION_MAX_TOKENS)
+    if task in {"turn_planning_v1", "turn_repair_v1", "transform_generation_v1"}:
+        override = int(meta_override) if isinstance(meta_override, int) and meta_override > 0 else 0
+        return max(int(configured_max_tokens), override, 1536)
     if isinstance(meta_override, int) and meta_override > 0:
         return int(meta_override)
     return int(configured_max_tokens)
@@ -420,6 +917,10 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
     task = ""
     if req is not None:
         task = str((req.context_payload or {}).get("task") or req.metadata.get("kind") or "").strip()
+    if task == "dictation_edit_v1":
+        from juno_v2.writer.dictation_editor import DICTATION_EDIT_SYSTEM_PROMPT
+
+        return DICTATION_EDIT_SYSTEM_PROMPT
     if task == "voice_action_extraction":
         schema_version = "actions_intent_v2"
         if req is not None:
@@ -434,6 +935,55 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "Do not execute anything; only describe validated candidate actions. "
             "If the utterance is not an explicit reminder/note/alarm/action request, return no actions."
         )
+    if task == "turn_planning_v1":
+        return (
+            "You are Juno's local final turn planner. "
+            "You are not a chatbot and you do not execute actions. "
+            "Return exactly one strict JSON object matching schema_version=turn_plan_v1. "
+            "Do not copy the contract, schema, examples, enum lists, or input payload. "
+            "For every enum field, choose exactly one allowed value, never a pipe-delimited list. "
+            "Your job is to decide the user's intended final turn from ASR evidence, app context, memory, snippets, "
+            "target state, permissions, and current time. "
+            "Qwen decides meaning; deterministic code will validate, render, normalize time, resolve snippets, and execute. "
+            "If actions.wake_verified is true, treat the utterance as addressed to Juno and classify the intended operation from the whole transcript; do not rely on keyword vetoes. "
+            "Do not add facts, names, dates, times, numbers, tasks, list items, or action bodies that are not grounded in ASR/context. "
+            "Resolve explicit self-corrections and false starts by keeping the latest intended wording. "
+            "Resolve corrections before filling action bodies, schedule.source_span, render text, or transform instructions. "
+            "Preserve literal mentions of commands when the speech is quoted, described, or asks to write the words. "
+            "Screen candidate_entities, selected text, window titles, and memory terms are reference context, not replacement commands; never replace ordinary pronouns or common words just because a screen term sounds similar. "
+            "For formatting, put structure in render_plan.content_units; do not rely on prose instructions downstream. "
+            "If the user claims a count but speaks fewer items, set claimed_item_count and spoken_item_count and include only spoken items. "
+            "If the user says to write, type, dictate, insert, paste, or note down points, that content is cursor text, not a native Note action. "
+            "Emit a native note action only for explicit note-app commands such as take a note, create a note, save a note, or add a note. "
+            "For wake-verified native note/reminder/alarm turns, set utterance_kind='actions', render_plan.render_kind='none', render_plan.content_units=[], and safety.commit_policy='no_commit'. "
+            "Do not emit mixed native-action plus paste plans: valid native actions are executed by Juno and never pasted into the focused field. "
+            "If the user says to write, type, insert, paste, draft, format, or transform text, classify it as text/transform unless they also clearly ask Juno to create a native note, reminder, or alarm. "
+            "For selected/recent transforms, first resolve target; if target is missing or ambiguous, mark uncertainty instead of rewriting. "
+            "For actions, emit planned actions only when the user is clearly directing Juno to perform them; include evidence_span, body, schedule.source_span, missing_fields, and execute_policy. "
+            "Reminders may be unscheduled when the user gives a body but no time; use schedule.kind='none'. Alarms require a grounded time; if missing or ambiguous, mark missing_fields/uncertainties instead of inventing. "
+            "For code, terminal, file paths, env vars, branch names, identifiers, dates, and times, preserve exact spelling, punctuation, casing, slashes, underscores, hyphens, and numbers when evidence supports them. "
+            "For markdown, obey target_capabilities.markdown_allowed; never emit **bold** or markdown headings when markdown is not allowed. "
+            "For memory_candidates, propose only uncommon personal/product/project/jargon/code terms or explicit teach/remember instructions; never propose common words, filler words, command words, or retracted variants. "
+            "If uncertain, represent uncertainty in JSON. Do not explain outside JSON."
+        )
+    if task == "turn_repair_v1":
+        return (
+            "You repair a previously invalid Juno turn_plan_v1 JSON object. "
+            "Return exactly one corrected strict JSON object. No prose, no markdown. "
+            "Do not return the repair request, invalid object wrapper, allowed_values, schema, or explanation. "
+            "Only fix schema/validation issues described in the payload; do not change grounded user meaning. "
+            "For list formatting, never invent missing entries to satisfy a claimed count; keep only spoken source items, "
+            "remove ungrounded numbered/bulleted units, and record claimed/spoken count mismatch in uncertainties. "
+            "For every enum field, choose exactly one allowed value."
+        )
+    if task == "transform_generation_v1":
+        return (
+            "You transform selected or recent user text according to a typed Juno turn plan. "
+            "Return exactly one JSON object with schema_version=transform_generation_v1 and transformed_text. "
+            "Do not include the instruction, original text, markdown fences, or explanation. "
+            "Preserve required names, numbers, dates, identifiers, and protected terms. "
+            "Do not add facts or promises not present in source text or explicit instruction."
+        )
     if task == "transcript_adjudication_v1":
         return (
             "You are Juno's local final speech resolver. "
@@ -447,21 +997,10 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "base_visible, and never drop later dictation that base_visible has not caught up to yet. "
             "Removing the speaker's own self-corrections and false starts is REQUIRED cleanup, not truncation: when the "
             "speaker revises themselves mid-utterance, keep only the corrected wording and drop both the retracted "
-            "words and the correction cue. For example, "
-            "'set up a meeting at 4 pm, actually make that 5 pm' -> 'Set up a meeting at 5 pm.'; "
-            "'send it to John, no, to Sarah' -> 'Send it to Sarah.'; "
-            "'Japan, no actually Korea, is the customer meeting location' -> "
-            "'Korea is the customer meeting location.'; "
-            "'let's meet Tuesday, I mean Wednesday' -> \"Let's meet Wednesday.\" "
-            "'no actually write LumaRay as one product word' means the user is correcting the instruction; "
-            "do not invert it into 'do not write LumaRay'. "
-            "'do not include the words scratch that in the final note' is an instruction for the current note; "
-            "exclude that instruction and the phrase unless the user explicitly quotes it as literal content. "
-            "Do not treat literal mentions as commands: if the user says phrases such as 'the words blank space', "
-            "'text should stay as text', or describes a correction rule, preserve the literal content unless the "
-            "surrounding speech clearly asks to apply it to the current utterance. "
-            "Phrases such as 'at the end say the final word is complete' are dictated content, not evaluator metadata; "
-            "preserve the requested final-word text in corrected_text. "
+            "words and the correction cue. Do not invert the meaning of an explicit correction. "
+            "Do not treat literal mentions of editing phrases as commands: preserve literal content when the surrounding "
+            "speech is describing, quoting, or asking to write the phrase itself. "
+            "Preserve explicitly requested closing text as dictated content, not evaluator metadata. "
             "For final-stage adjudication, set ops to [] so the caller computes the diff; do not spend output tokens listing per-character operations. "
             "You may include optional intent, formatting_plan, self_corrections, terms_used, and uncertainty fields as evidence for downstream code. "
             "Use formatting_plan for spoken requests like bullets, numbered points, sections, email, or no formatting; do not apply that structure inside corrected_text. "
@@ -508,6 +1047,9 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "Do not treat the instruction as dictation for insertion. "
             "Return only the replacement text. Never include the original. "
             "Keep the language of the input. Do not translate unless explicitly asked. "
+            "Preserve the input's structural shape unless the instruction explicitly requests a list, bullets, "
+            "numbering, table, sections, or another format change. If the source is a paragraph and the user only "
+            "asks for tone, clarity, brevity, or directness, return a paragraph, not bullets. "
             "Match any requested length budget: 'shorter' trims by at least 20%, "
             "'longer' expands by at least 30%; otherwise preserve length within "
             "roughly plus-or-minus 15%."
@@ -541,7 +1083,15 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
 def _build_writer_prompt(req: WriterTransformRequest) -> str:
     context = req.context_payload or {}
     task = str(context.get("task") or req.metadata.get("kind") or "").strip()
+    if task == "dictation_edit_v1":
+        return str(context.get("payload_text") or req.source_text or "")
     if task == "transcript_adjudication_v1":
+        payload = context.get("payload") if isinstance(context.get("payload"), dict) else context
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if task in {"turn_planning_v1", "turn_repair_v1"}:
+        payload = context.get("payload") if isinstance(context.get("payload"), dict) else context
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if task == "transform_generation_v1":
         payload = context.get("payload") if isinstance(context.get("payload"), dict) else context
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if task == "live_transcript_correction_v1":
@@ -602,13 +1152,13 @@ def _build_writer_prompt(req: WriterTransformRequest) -> str:
         payload = {
             "task": "final_formatting_v1",
             "policy": context.get("policy"),
-            "target": {
+            "reference_only_target": {
                 "app_name": context.get("app_name"),
                 "app_category": context.get("app_category"),
                 "window_title": context.get("window_title"),
                 "mode_name": context.get("mode_name"),
             },
-            "context": {
+            "reference_only_context": {
                 "focused_text_before": context.get("focused_text_before"),
                 "focused_text_after": context.get("focused_text_after"),
                 "selected_text_excerpt": context.get("selected_text_excerpt"),
@@ -619,7 +1169,9 @@ def _build_writer_prompt(req: WriterTransformRequest) -> str:
                 "recent_screen_terms": context.get("recent_screen_terms") or [],
                 "formatting_contract": (
                     "Apply structure only. Preserve content units, names, dates, numbers, identifiers, "
-                    "and required_preserved_terms exactly unless punctuation-only changes are needed."
+                    "and required_preserved_terms exactly unless punctuation-only changes are needed. "
+                    "The target/context fields are reference-only; never include app names, window titles, "
+                    "font names, toolbar/status words, or screen terms unless they also appear in corrected_transcript."
                 ),
             },
             "corrected_transcript": req.source_text,
@@ -716,13 +1268,25 @@ def _clean_writer_output(text: Any, *, req: "WriterTransformRequest | None" = No
     task = ""
     if req is not None:
         task = str((req.context_payload or {}).get("task") or req.metadata.get("kind") or "").strip()
-    expect_json = task in {"transcript_adjudication_v1", "voice_action_extraction"}
+    expect_json = task in {
+        "transcript_adjudication_v1",
+        "voice_action_extraction",
+        "turn_planning_v1",
+        "turn_repair_v1",
+        "transform_generation_v1",
+    }
     output = _strip_thinking_artifacts(output, expect_json=expect_json)
     if output.startswith("```"):
         output = output.strip("`").strip()
         if "\n" in output:
             output = output.split("\n", 1)[1].strip()
-    if task in {"transcript_adjudication_v1", "voice_action_extraction"}:
+    if task in {
+        "transcript_adjudication_v1",
+        "voice_action_extraction",
+        "turn_planning_v1",
+        "turn_repair_v1",
+        "transform_generation_v1",
+    }:
         return output
     for prefix in (
         "Output:",

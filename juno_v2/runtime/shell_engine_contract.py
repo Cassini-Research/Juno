@@ -29,7 +29,12 @@ from __future__ import annotations
 #
 # v6 (2026-05-23): packaged production writer residency changed to on-demand
 # with TTL reaping so background idle does not keep Qwen pinned.
-SHELL_ENGINE_PROTOCOL_VERSION: int = 6
+#
+# v7 (2026-06-10): packaged production writer residency changed back to
+# resident after the Qwen turn-planner layer moved onto the hot path for
+# actions and short structured requests. Shell and engine must agree so
+# onboarding/setup-status does not reject a healthy bundled runtime.
+SHELL_ENGINE_PROTOCOL_VERSION: int = 7
 
 # Canonical role string the shell requires before attaching to an engine.
 # Standalone workbench (the dev tool) reports a different role and is

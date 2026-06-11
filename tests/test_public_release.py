@@ -38,9 +38,7 @@ def test_public_scripts_exist_and_are_executable() -> None:
     for rel in (
         "scripts/bootstrap.sh",
         "scripts/bootstrap_full.sh",
-        "scripts/build_juno_ota_release.sh",
         "scripts/doctor.sh",
-        "scripts/generate_juno_sparkle_keys.sh",
         "scripts/run_live.sh",
         "scripts/run_workbench.sh",
         "scripts/install_macos.sh",
@@ -58,6 +56,58 @@ def test_readme_script_commands_exist() -> None:
     assert commands
     missing = [cmd for cmd in commands if not (ROOT / cmd).exists()]
     assert not missing
+
+
+def test_env_example_default_is_not_missing_replay_fixture() -> None:
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    values: dict[str, str] = {}
+    for line in env.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    assert values.get("JUNO_V2_MODE") != "replay" or values.get("JUNO_V2_REPLAY_WAV")
+    assert values.get("JUNO_V2_PLATFORM_NAME", "") != "linux"
+    assert values.get("JUNO_V2_FINAL_BACKEND") != "mlx_whisper"
+
+
+def test_doctor_ci_runs() -> None:
+    result = run("./scripts/doctor.sh", "--ci", "--json")
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+
+
+def test_workbench_help_runs() -> None:
+    result = run("./scripts/run_workbench.sh", "--help")
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Juno workbench" in result.stdout
+
+
+def test_workbench_stays_alive_until_stopped() -> None:
+    proc = subprocess.Popen(
+        ["./scripts/run_workbench.sh", "--port", "9876"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        time.sleep(1.5)
+        assert proc.poll() is None, (proc.stdout.read() if proc.stdout else "") + (proc.stderr.read() if proc.stderr else "")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+
+
+def test_forbidden_public_terms_are_allowlisted() -> None:
+    result = run(sys.executable, "scripts/audit_public_terms.py")
+    assert result.returncode == 0, result.stderr + result.stdout
 
 
 def test_macos_ota_plist_configures_sparkle(tmp_path: Path) -> None:
@@ -158,55 +208,3 @@ def test_macos_ota_plist_rejects_partial_configuration(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "OTA requires both" in result.stderr
-
-
-def test_env_example_default_is_not_missing_replay_fixture() -> None:
-    env = (ROOT / ".env.example").read_text(encoding="utf-8")
-    values: dict[str, str] = {}
-    for line in env.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key] = value
-    assert values.get("JUNO_V2_MODE") != "replay" or values.get("JUNO_V2_REPLAY_WAV")
-    assert values.get("JUNO_V2_PLATFORM_NAME", "") != "linux"
-    assert values.get("JUNO_V2_FINAL_BACKEND") != "mlx_whisper"
-
-
-def test_doctor_ci_runs() -> None:
-    result = run("./scripts/doctor.sh", "--ci", "--json")
-    assert result.returncode == 0, result.stderr + result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["ok"] is True
-
-
-def test_workbench_help_runs() -> None:
-    result = run("./scripts/run_workbench.sh", "--help")
-    assert result.returncode == 0, result.stderr + result.stdout
-    assert "Juno workbench" in result.stdout
-
-
-def test_workbench_stays_alive_until_stopped() -> None:
-    proc = subprocess.Popen(
-        ["./scripts/run_workbench.sh", "--port", "9876"],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    try:
-        time.sleep(1.5)
-        assert proc.poll() is None, (proc.stdout.read() if proc.stdout else "") + (proc.stderr.read() if proc.stderr else "")
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
-
-
-def test_forbidden_public_terms_are_allowlisted() -> None:
-    result = run(sys.executable, "scripts/audit_public_terms.py")
-    assert result.returncode == 0, result.stderr + result.stdout

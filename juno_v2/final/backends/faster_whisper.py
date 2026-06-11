@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from juno_v2.contracts.final import FinalDecodeRequest, FinalDecodeResult, FinalSegment
-from juno_v2.final.backends.base import FinalAsrBackend
+from juno_v2.final.backends.base import FinalAsrBackend, effective_decode_language
 from juno_v2.final.config import FinalAsrConfig
 
 
@@ -47,7 +47,7 @@ class FasterWhisperFinalBackend(FinalAsrBackend):
         started = time.perf_counter()
         segments, info = self._model.transcribe(
             audio,
-            language=req.language or self.config.language,
+            language=effective_decode_language(req, self.config.language),
             initial_prompt=req.initial_prompt or self.config.initial_prompt,
             beam_size=self.config.beam_size,
             best_of=self.config.best_of,

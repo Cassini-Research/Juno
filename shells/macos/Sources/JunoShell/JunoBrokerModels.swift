@@ -100,10 +100,6 @@ struct UtteranceHistoryEntry: Codable, Identifiable, Hashable {
     // decoding into `Int?` throws `typeMismatch` and silently fails the
     // whole `entries` array decode, leaving the History tab empty.
     let processingMs: Double?
-    /// Actual final ASR decode/transcription time. This intentionally excludes
-    /// writer/adjudication/post-processing so diagnostics can separate model
-    /// transcription cost from total stop-to-paste processing.
-    let finalTranscriptionMs: Double?
     let words: Int?
     let replayAvailable: Bool?
     // Action records (notes / reminders). The broker stores either the

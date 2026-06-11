@@ -11,6 +11,7 @@ from juno_v2.contracts.modes import ModePolicy
 from juno_v2.memory.fold import fold_match_pattern
 from juno_v2.memory.profile import build_personalization_profile
 from juno_v2.memory.ranking import rank_memory_for_context
+from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.store import _looks_like_hallucination
 from juno_v2.memory.stores.corrections import is_safe_correction_pair
 from juno_v2.memory.term_policy import learned_term_allowed
@@ -88,13 +89,20 @@ _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
         "clear",
         "clearly",
         "code",
+        "context",
         "create",
+        "customer",
+        "deadline",
         "design",
         "decode",
         "did",
+        "document",
         "do",
         "does",
+        "edited",
         "every",
+        "focus",
+        "font",
         "formatting",
         "fresh",
         "for",
@@ -121,6 +129,12 @@ _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
         "my",
         "no",
         "not",
+        "owner",
+        "regular",
+        "status",
+        "style",
+        "task",
+        "title",
         "one",
         "of",
         "ok",
@@ -204,7 +218,11 @@ class RecognitionBiasEngine:
         if seed_attachment is not None:
             seed_phrases = self._seed_asr_phrases(seed_attachment, context=context)
             phrases = self._merge_seed_bias_phrases(phrases, seed_phrases)
-        capped_phrases = phrases[: self.max_bias_phrases]
+        capped_phrases = _diversify_bias_phrases(
+            phrases,
+            screen_terms=list(getattr(context, "candidate_entities", None) or []),
+            cap=self.max_bias_phrases,
+        )
         prompt_parts: list[str] = []
         base_s = base_prompt.strip() if base_prompt else ''
         selection_fragment = ''
@@ -668,12 +686,7 @@ def _is_session_entity_candidate(value: str) -> bool:
         return False
     if _looks_like_hallucination(v):
         return False
-    alpha_tokens = re.findall(r"[A-Za-z]+", v)
-    if len(alpha_tokens) == 1:
-        token = alpha_tokens[0].casefold()
-        if token in _LOW_SIGNAL_SESSION_ENTITY_WORDS:
-            return False
-    return True
+    return session_entity_allowed(v)
 
 
 def is_biasable_runtime_context_candidate(value: str) -> bool:
@@ -748,3 +761,42 @@ def _phrase_pattern(phrase: str) -> str:
     if phrase[:1].isalnum() and phrase[-1:].isalnum():
         return rf'(?<!\w){escaped}(?!\w)'
     return escaped
+
+
+def _diversify_bias_phrases(
+    phrases: list[str],
+    *,
+    screen_terms: list,
+    cap: int,
+) -> list[str]:
+    """Per-utterance bias selection: screen terms first, then memory terms
+    with family de-duplication.
+
+    A flat first-N cap let one pack family flood the prompt (ten "Claude *"
+    variants) so distinct terms never biased recognition. Family key = first
+    token; max 3 per family. Screen terms are what the user is looking at —
+    they outrank everything.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    family_counts: dict[str, int] = {}
+
+    def _take(term: str, *, family_limit: int) -> None:
+        text = str(term).strip() if not isinstance(term, dict) else str(term.get("text") or "").strip()
+        if not text or len(out) >= cap:
+            return
+        key = text.casefold()
+        if key in seen:
+            return
+        family = key.split()[0]
+        if family_counts.get(family, 0) >= family_limit:
+            return
+        seen.add(key)
+        family_counts[family] = family_counts.get(family, 0) + 1
+        out.append(text)
+
+    for term in screen_terms[:16]:
+        _take(term, family_limit=4)
+    for phrase in phrases:
+        _take(phrase, family_limit=3)
+    return out

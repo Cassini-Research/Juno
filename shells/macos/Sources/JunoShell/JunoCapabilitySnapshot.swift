@@ -21,12 +21,83 @@ enum JunoCapabilitySnapshot {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return JunoLocalCapability.snapshot()
         }
+        let local = JunoLocalCapability.snapshot()
         if (obj["has_ax_trust"] as? Bool) == false {
-            let local = JunoLocalCapability.snapshot()
             if (local["has_ax_trust"] as? Bool) == true {
                 return local
             }
         }
-        return obj
+        return mergeHelperSnapshot(obj, withLocalContext: local)
+    }
+
+    private static func mergeHelperSnapshot(
+        _ helper: [String: Any],
+        withLocalContext local: [String: Any]
+    ) -> [String: Any] {
+        guard (local["has_ax_trust"] as? Bool) == true else { return helper }
+        let helperBundle = ((helper["frontmost_app_bundle_id"] as? String)
+            ?? (helper["app_bundle_id"] as? String)
+            ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let localBundle = ((local["frontmost_app_bundle_id"] as? String)
+            ?? (local["app_bundle_id"] as? String)
+            ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard helperBundle.isEmpty || localBundle.isEmpty || helperBundle == localBundle else {
+            return helper
+        }
+
+        var merged = helper
+        let secure = (helper["focused_is_secure"] as? Bool) == true
+            || (local["focused_is_secure"] as? Bool) == true
+        if secure {
+            merged["focused_is_secure"] = true
+            merged["selected_text"] = ""
+            merged["focused_text_before"] = ""
+            merged["focused_text_after"] = ""
+            merged["field_text_excerpt"] = ""
+            merged["clipboard_text"] = ""
+            merged["candidate_entities"] = []
+            merged["candidate_terms"] = []
+            return merged
+        }
+
+        for key in [
+            "selected_text",
+            "focused_text_before",
+            "focused_text_after",
+            "field_text_excerpt",
+            "focused_document_path",
+            "focused_file_path",
+        ] {
+            let helperText = ((merged[key] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let localText = ((local[key] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if helperText.isEmpty, !localText.isEmpty {
+                merged[key] = localText
+            }
+        }
+
+        let helperCandidates = (merged["candidate_entities"] as? [Any]) ?? []
+        let localCandidates = (local["candidate_entities"] as? [Any]) ?? []
+        if !localCandidates.isEmpty {
+            var out: [String] = []
+            var seen: Set<String> = []
+            for raw in helperCandidates + localCandidates {
+                let value = String(describing: raw)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { continue }
+                let key = value.lowercased()
+                guard !seen.contains(key) else { continue }
+                seen.insert(key)
+                out.append(value)
+                if out.count >= 40 { break }
+            }
+            merged["candidate_entities"] = out
+        }
+        return merged
     }
 }

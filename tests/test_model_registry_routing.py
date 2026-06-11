@@ -299,16 +299,17 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_default_registry_unsigned(_hermetic_env: None) -> None:
     reg = build_default_registry(sign=False)
     ids = {p.package_id for p in reg.list()}
+    # Qwen ASR packages were removed with the launch stabilization: ASR is
+    # Whisper end-to-end; Qwen serves the writer/planner lanes only.
     assert {
         "tiny.functiongemma",
         "preview.faster-whisper-small-en",
-        "preview.qwen3-asr-0.6b",
         "final.faster-whisper-medium-en",
         "final.mlx-whisper-large-v3",
-        "final.qwen3-asr-1.7b",
         "writer.gemma4-e2b",
         "writer.gemma4-e4b",
     } <= ids
+    assert not {pid for pid in ids if "qwen3-asr" in pid}
     assert all(p.signature is None for p in reg.list())
 
 
@@ -339,21 +340,11 @@ def test_build_default_registry_routing_defaults(_hermetic_env: None) -> None:
     assert final_en.chosen is not None
     assert final_en.chosen.package_id == "final.faster-whisper-medium-en"
 
-    # Chinese streaming preview: only the Qwen3 0.6B candidate supports zh.
+    # Chinese streaming preview: the Qwen ASR packages were removed with
+    # the launch stabilization (ASR is Whisper end-to-end), and the staged
+    # Whisper preview package is en-only — zh has no eligible package.
     preview_zh = chooser.choose(
         RouteRequest(slot=ModelSlot.PREVIEW_ASR, language="zh", requires_streaming=True)
     )
-    assert preview_zh.chosen is not None
-    assert preview_zh.chosen.package_id == "preview.qwen3-asr-0.6b"
-
-    # The zh preview package disallows keyboard extensions: no eligible fallback.
-    preview_zh_kb = chooser.choose(
-        RouteRequest(
-            slot=ModelSlot.PREVIEW_ASR,
-            language="zh",
-            requires_streaming=True,
-            surface=SurfaceClass.KEYBOARD_EXTENSION,
-        )
-    )
-    assert preview_zh_kb.chosen is None
-    assert preview_zh_kb.reason == "no_eligible_packages"
+    assert preview_zh.chosen is None
+    assert preview_zh.reason == "no_eligible_packages"

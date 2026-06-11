@@ -13,13 +13,9 @@ from juno_v2.writer.deterministic import (
     normalize_explicit_numbered_markers,
     normalize_plain_dictation,
     render_bullets,
-    render_list_from_ordinal_sentences,
-    render_list_from_ordinals,
     render_lowercase,
     render_numbered,
-    render_three_things_agenda,
     render_title_case,
-    render_two_bullet_points,
     render_uppercase,
     resolve_backtrack,
     run_pipeline,
@@ -329,54 +325,11 @@ def test_strip_fillers(text: str, expected: str) -> None:
 # ---------------------------------------------------------------------- #
 # Layers 6b/7: list rendering
 # ---------------------------------------------------------------------- #
-
-
-def test_render_two_bullet_points() -> None:
-    out = render_two_bullet_points("add two bullet points first, buy milk second, walk dog")
-    assert out == "- Buy milk.\n- Walk dog."
-
-
-def test_render_two_bullet_points_ignores_plain_prose() -> None:
-    text = "first, buy milk second, walk dog"
-    assert render_two_bullet_points(text) == text
-    assert render_two_bullet_points("") == ""
-
-
-def test_render_list_from_ordinals() -> None:
-    out = render_list_from_ordinals(
-        "My goals are first finish report, second send deck, and third book calls."
-    )
-    assert out == "My goals are:\n1. Finish report.\n2. Send deck.\n3. Book calls."
-
-
-def test_render_list_from_ordinals_requires_three_items() -> None:
-    text = "first do this, second do that."
-    assert render_list_from_ordinals(text) == text
-    assert render_list_from_ordinals("") == ""
-
-
-def test_render_list_from_ordinal_sentences() -> None:
-    out = render_list_from_ordinal_sentences(
-        "Here is the plan. First, ship X. Second, ship Y. Third, ship Z."
-    )
-    assert out == "Here is the plan:\n1. Ship X.\n2. Ship Y.\n3. Ship Z.\n"
-
-
-def test_render_list_from_ordinal_sentences_no_op() -> None:
-    assert render_list_from_ordinal_sentences("Just one sentence.") == "Just one sentence."
-    assert render_list_from_ordinal_sentences("") == ""
-
-
-def test_render_three_things_agenda() -> None:
-    out = render_three_things_agenda(
-        "we will cover three things. first, scope. second, budget. third, timeline."
-    )
-    assert out == "we will cover three things:\n1. Scope.\n2. Budget.\n3. Timeline."
-
-
-def test_render_three_things_agenda_no_op() -> None:
-    assert render_three_things_agenda("nothing here") == "nothing here"
-    assert render_three_things_agenda("") == ""
+# The deterministic ordinal/list renderers (render_list_from_ordinals,
+# render_list_from_ordinal_sentences, render_three_things_agenda,
+# render_two_bullet_points) were replaced by the turn-plan structural
+# fallback in the launch-stabilization branch; that lane is covered by
+# the structural-fallback tests in test_qwen_turn_planner.py.
 
 
 # ---------------------------------------------------------------------- #

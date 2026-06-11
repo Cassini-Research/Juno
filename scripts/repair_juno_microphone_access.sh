@@ -67,7 +67,7 @@ echo "== unregistering stale LaunchServices entries for com.juno.shell =="
 APP="$APP" "$ROOT/scripts/juno_lsregister_refresh.sh" "$APP"
 
 echo "== resetting TCC rows for com.juno.shell =="
-for svc in Microphone Accessibility SpeechRecognition; do
+for svc in Microphone Accessibility ScreenCapture; do
   echo "  tccutil reset $svc com.juno.shell"
   tccutil reset "$svc" com.juno.shell >/dev/null 2>&1 || true
 done
