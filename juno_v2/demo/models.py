@@ -22,6 +22,62 @@ def is_hf_model_cached(repo_id: str, *, filename: str = "config.json") -> bool:
         return False
 
 
+# Weight artifacts any of our model repos can ship (mlx_whisper uses
+# weights.npz, mlx_lm uses [sharded] safetensors, faster-whisper uses
+# model.bin, gguf covers llama.cpp-style packages).
+_WEIGHT_FILE_GLOBS = ("*.safetensors", "*.npz", "*.bin", "*.gguf")
+
+
+def _snapshot_file_ok(path: Path) -> bool:
+    # Snapshot entries are symlinks into blobs/; a dangling link (blob
+    # deleted) or zero-byte blob means the snapshot is not usable.
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def is_hf_model_cache_complete(repo_id: str) -> bool:
+    """True iff the HF cache holds a *usable* snapshot of ``repo_id`` —
+    config plus weights — without any network call.
+
+    ``is_hf_model_cached`` probes only ``config.json``, which is one of
+    the first (tiny) files a snapshot download writes. A download killed
+    mid-flight leaves config.json cached while the multi-GB weights are
+    still missing; treating that as "cached" makes the engine warm from
+    — or pin ``HF_HUB_OFFLINE`` to — a broken snapshot, and makes
+    provisioning skip the repair it was asked to do. This probe
+    additionally requires at least one non-empty weight artifact in the
+    snapshot, and when the repo ships a sharded-weights index, every
+    shard the index names.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        cfg = try_to_load_from_cache(repo_id=repo_id, filename="config.json")
+    except ImportError:
+        return False
+    if not isinstance(cfg, str):
+        return False
+    snapshot_dir = Path(cfg).parent
+
+    index_path = snapshot_dir / "model.safetensors.index.json"
+    if _snapshot_file_ok(index_path):
+        try:
+            import json
+            weight_map = json.loads(index_path.read_text(encoding="utf-8")).get("weight_map", {})
+            shards = set(weight_map.values())
+        except (OSError, ValueError):
+            return False
+        if not shards:
+            return False
+        return all(_snapshot_file_ok(snapshot_dir / shard) for shard in shards)
+
+    for pattern in _WEIGHT_FILE_GLOBS:
+        if any(_snapshot_file_ok(candidate) for candidate in snapshot_dir.rglob(pattern)):
+            return True
+    return False
+
+
 def is_writer_model_cached(repo_id: str) -> bool:
     return is_hf_model_cached(repo_id)
 
@@ -58,7 +114,9 @@ def provision_hf_model_cache(
     repo = str(repo_id or "").strip()
     if not repo:
         return
-    if is_hf_model_cached(repo) and not force:
+    # Completeness, not just config.json presence: a previous download
+    # killed mid-flight must be finished here, not skipped.
+    if is_hf_model_cache_complete(repo) and not force:
         return
     try:
         from huggingface_hub import snapshot_download
