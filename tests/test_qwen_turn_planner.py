@@ -4250,3 +4250,128 @@ def test_sloppy_planner_alarms_never_dispatch_timeless() -> None:
     assert "note" in kinds
     assert kinds.count("alarm") >= 1
     assert any("time_parse_failed" in r for r in parsed.skipped_reasons)
+
+
+# --------------------------------------------------------------------- #
+# Segment realignment and ordinal expansion (production 2026-06-12)
+# --------------------------------------------------------------------- #
+
+
+def test_misaligned_segments_never_discard_model_actions() -> None:
+    # Production utterance macshell-12A45392: the model emitted six valid
+    # actions; the verb scanner saw only two segments ("add a note…",
+    # "remind me…") because ordinal clauses carry no verbs. The old rebuild
+    # deleted four correctly-timed alarms. Misalignment must keep the model
+    # batch untouched.
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno! Set up 3 alarms. First, to call my wife at 5 pm today. "
+        "Second, to call my son at 6 pm today. Third, to call my mom at 8 pm today. "
+        "Fourth, to call my brother at 9 pm today. Please add a note to fix all the "
+        "Juno issues and remind me to call my friend Darpan 9pm today."
+    )
+    model_actions = [
+        {"kind": "alarm", "operation": "create", "body": f"call {x}",
+         "evidence_span": f"call {x}", "schedule": {"kind": "instant", "source_span": t}}
+        for x, t in [("my wife", "5 pm today"), ("my son", "6 pm today"),
+                     ("my mom", "8 pm today"), ("my brother", "9 pm today")]
+    ] + [
+        {"kind": "note", "operation": "create", "body": "fix all the Juno issues",
+         "evidence_span": "add a note to fix all the Juno issues"},
+        {"kind": "reminder", "operation": "create", "body": "call my friend Darpan",
+         "evidence_span": "remind me to call my friend Darpan 9pm today",
+         "schedule": {"kind": "instant", "source_span": "9pm today"}},
+    ]
+    segments = P.segment_native_actions(source)
+    assert len(segments) != len(model_actions)  # genuinely misaligned
+
+    kept, notes = P._realign_actions_to_segments(model_actions, segments, source_text=source)
+
+    assert kept is model_actions or kept == model_actions
+    assert "segment_realign_skipped_misaligned" in notes
+    assert "actions_rebuilt_from_segments" not in notes
+
+
+def test_segment_temporal_clause_prefers_clock_and_handles_clock_before_day() -> None:
+    from juno_v2.turn_plan import planner as P
+
+    # Clock-before-day speech order must keep the clock.
+    assert P._segment_temporal_clause(
+        "remind me to call my friend Darpan 9pm today"
+    ) == "9pm today"
+    # Day-before-clock still works.
+    assert P._segment_temporal_clause("call mom tomorrow at 8 pm") == "tomorrow at 8 pm"
+    # "within 5 minutes" must not read as "in 5 minutes".
+    assert P._segment_temporal_clause(
+        "note that we finish within 5 minutes of the call"
+    ) == ""
+
+
+def test_ordinal_expansion_synthesizes_under_emitted_alarms() -> None:
+    # Production utterance macshell-26819FF2: two spoken alarms, the model
+    # emitted zero usable ones (one broken-span, one kind-confused). The
+    # ordinal expansion must add the missing alarms from the spoken clauses
+    # — never touching existing actions — and the final dispatch must carry
+    # the exact spoken times.
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno, set up two alarms. First, to call my brother at 10 pm today. "
+        "Second, to call my wife at 11 pm today. Please take a note to fix all "
+        "the bugs. And remind me to call my mother at 9 pm today."
+    )
+    bad_model = [
+        {"kind": "alarm", "operation": "create", "body": "call my",
+         "evidence_span": "call my", "schedule": {"kind": "vague", "source_span": ""}},
+        {"kind": "alarm", "operation": "create", "body": "call my mother",
+         "evidence_span": "call my mother at 9 pm today",
+         "schedule": {"kind": "instant", "source_span": "9 pm today"}},
+        {"kind": "note", "operation": "create", "body": "fix all the bugs",
+         "evidence_span": "take a note to fix all the bugs"},
+    ]
+
+    expanded, notes = P._expand_missing_ordinal_actions(bad_model, source_text=source)
+
+    assert "actions_expanded_from_ordinals" in notes
+    assert expanded[:3] == bad_model  # existing actions untouched
+    synthesized = expanded[3:]
+    assert [(a["kind"], a["schedule"]["source_span"]) for a in synthesized] == [
+        ("alarm", "10 pm today"),
+        ("alarm", "11 pm today"),
+    ]
+
+    parsed = actions_from_turn_plan(
+        {"utterance_kind": "actions", "actions": expanded,
+         "safety": {"execute_policy": "execute"}},
+        source_text=source,
+        now=datetime(2026, 6, 12, 9, 30),
+    )
+    assert parsed.actions is not None
+    times = sorted(a.when.iso for a in parsed.actions if a.kind.value == "alarm" and a.when)
+    assert [t[11:16] for t in times] == ["21:00", "22:00", "23:00"]
+    # The broken vague alarm skipped; nothing timeless dispatched.
+    assert any("time_parse_failed" in r for r in parsed.skipped_reasons)
+    for a in parsed.actions:
+        if a.kind.value == "alarm":
+            assert a.when is not None
+
+
+def test_ordinal_expansion_noop_when_model_batch_complete() -> None:
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno, set up two alarms. First, to call my brother at 10 pm today. "
+        "Second, to call my wife at 11 pm today."
+    )
+    complete = [
+        {"kind": "alarm", "operation": "create", "body": "call my brother",
+         "evidence_span": "call my brother at 10 pm today",
+         "schedule": {"kind": "instant", "source_span": "10 pm today"}},
+        {"kind": "alarm", "operation": "create", "body": "call my wife",
+         "evidence_span": "call my wife at 11 pm today",
+         "schedule": {"kind": "instant", "source_span": "11 pm today"}},
+    ]
+    expanded, notes = P._expand_missing_ordinal_actions(complete, source_text=source)
+    assert expanded == complete
+    assert notes == []

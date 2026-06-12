@@ -552,10 +552,37 @@ def _try_dateparser(clause: str, now: datetime | None) -> datetime | None:
     if _dateparser is None:
         return None
     try:
-        return _dateparser.parse(clause, settings=_settings(now))
+        parsed = _dateparser.parse(clause, settings=_settings(now))
     except Exception:  # noqa: BLE001 - third-party can raise anything
         logger.exception("dateparser raised for clause=%r", clause)
         return None
+    return _anchor_to_reference_tz(parsed, now)
+
+
+def _anchor_to_reference_tz(parsed: datetime | None, now: datetime | None) -> datetime | None:
+    """Reinterpret dateparser's wall clock into the caller's timezone.
+
+    dateparser computes wall-clock fields against ``RELATIVE_BASE`` (the
+    broker ``now``, in the user's tz) but attaches the SYSTEM tz to the
+    result. When the two differ, "Friday at 2pm" came back as 14:00 in the
+    machine's zone — the right wall clock anchored to the wrong zone, i.e.
+    an alarm firing hours off whenever broker time and system time diverge
+    (the deterministic tier-0/tier-2 lanes already anchor via
+    ``_reference_now``). The wall clock is what the speaker meant, so we
+    reinterpret rather than convert. Only do this when the parsed tz equals
+    the system default — an explicit zone in the clause ("2pm UTC") is
+    dateparser telling us something, and we keep it.
+    """
+    if parsed is None or now is None or now.tzinfo is None:
+        return parsed
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=now.tzinfo)
+    system_offset = datetime.now().astimezone().utcoffset()
+    if parsed.utcoffset() == now.utcoffset():
+        return parsed
+    if parsed.utcoffset() == system_offset:
+        return parsed.replace(tzinfo=now.tzinfo)
+    return parsed
 
 
 # Salvage patterns: substrings the user almost certainly intended as the

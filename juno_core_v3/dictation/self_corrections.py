@@ -144,20 +144,37 @@ def apply_unambiguous_retakes(text: str) -> tuple[str, list[dict[str, Any]]]:
                 after_slots[prefix_len] = slot
         slot_pick: tuple[int, int] | None = None
         if after_slots:
+            # Among symmetric (span_len == prefix_len) slot pairs, the pair
+            # whose two spans are most SIMILAR wins — a retake repeats the
+            # slot's shape. Taking the first (shortest) symmetric pair made
+            # "June 5th → June 12th" pair "5th" with "June" (both slot
+            # "date"), remove only "5th", and paste the duplicated
+            # "June June 12th"; taking the longest blindly swallows
+            # prepositions ("on the 5th" ↔ "the 12th of"). Similarity
+            # ("june 5th" ~ "june 12th" ≫ "5th" ~ "june") picks the right
+            # boundary in both shapes. Asymmetric matches stay a fallback.
+            symmetric_pick: tuple[int, int] | None = None
+            symmetric_score = -1.0
+            fallback_pick: tuple[int, int] | None = None
             for span_len in range(1, min(4, len(before)) + 1):
-                cand_slot = _slot_class(_norm_key([t[2] for t in before[-span_len:]]))
+                cand_key = _norm_key([t[2] for t in before[-span_len:]])
+                cand_slot = _slot_class(cand_key)
                 if cand_slot is None:
                     continue
                 for prefix_len, slot in sorted(after_slots.items()):
                     if slot != cand_slot:
                         continue
                     if span_len == prefix_len:
-                        slot_pick = (span_len, prefix_len)
-                        break
-                    if slot_pick is None:
-                        slot_pick = (span_len, prefix_len)
-                if slot_pick is not None and slot_pick[0] == slot_pick[1]:
-                    break
+                        prefix_key = _norm_key(after_tokens[:prefix_len])
+                        score = difflib.SequenceMatcher(
+                            a=cand_key, b=prefix_key, autojunk=False
+                        ).ratio()
+                        if score > symmetric_score:
+                            symmetric_score = score
+                            symmetric_pick = (span_len, prefix_len)
+                    elif fallback_pick is None:
+                        fallback_pick = (span_len, prefix_len)
+            slot_pick = symmetric_pick or fallback_pick
         if slot_pick is not None:
             best = (1.0, slot_pick[0])
         target_len = len(after_tokens)

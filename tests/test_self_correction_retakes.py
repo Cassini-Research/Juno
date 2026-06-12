@@ -99,3 +99,18 @@ def test_scratched_at_outside_temporal_context_stays_literal(literal: str) -> No
     out, applied = apply_unambiguous_retakes(literal)
     assert out == literal
     assert applied == []
+
+
+def test_multi_token_slot_retake_does_not_duplicate_tokens() -> None:
+    # Regression (review F31): the slot picker preferred the SHORTEST
+    # symmetric span, pairing "5th" with "June" (both slot "date") and
+    # pasting "June June 12th". The longest symmetric pair must win.
+    out, applied = apply_unambiguous_retakes("Move it to June 5th, no wait June 12th")
+    assert out == "Move it to June 12th"
+    assert len(applied) == 1
+
+    out, applied = apply_unambiguous_retakes(
+        "Move the meeting to June 5th scratch that June 12th please"
+    )
+    assert out == "Move the meeting to June 12th please"
+    assert len(applied) == 1
