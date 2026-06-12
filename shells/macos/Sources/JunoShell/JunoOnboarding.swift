@@ -939,7 +939,58 @@ private struct OnboardingSetupStep: View {
             } else {
                 downloadProgressIndeterminate
             }
+            if let repo = setup.downloadCurrentRepo, setup.downloadReposTotal > 0 {
+                currentModelLine(repo: repo)
+            }
+            if !setup.downloadLog.isEmpty {
+                downloadStatusLog
+            }
         }
+    }
+
+    /// "Now: <model> (2 of 4)" — which artifact the installer is on.
+    private func currentModelLine(repo: String) -> some View {
+        let position = min(setup.downloadReposDone + 1, max(setup.downloadReposTotal, 1))
+        return HStack(spacing: 5) {
+            Image(systemName: "shippingbox")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.accent)
+            Text("Now: \(Self.shortModelName(repo)) (\(position) of \(setup.downloadReposTotal))")
+                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .foregroundStyle(JunoTheme.secondaryText(scheme))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Last few broker install-log lines — the user-visible answer to
+    /// "is it actually doing anything?", and the breadcrumb we ask for
+    /// when someone reports a stuck setup.
+    private var downloadStatusLog: some View {
+        let lines = Array(setup.downloadLog.suffix(3))
+        return VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Circle()
+                        .fill(JunoTheme.secondaryText(scheme).opacity(index == lines.count - 1 ? 0.8 : 0.35))
+                        .frame(width: 4, height: 4)
+                        .padding(.top, 1)
+                    Text(line)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(
+                            JunoTheme.secondaryText(scheme)
+                                .opacity(index == lines.count - 1 ? 1.0 : 0.55)
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private static func shortModelName(_ repo: String) -> String {
+        repo.split(separator: "/").last.map(String.init) ?? repo
     }
 
     /// "Warming engine" — models on disk, MLX kernels loading into memory.
@@ -1082,6 +1133,9 @@ private struct OnboardingSetupStep: View {
                 Text("\(Self.formatBytes(soFar)) / \(Self.formatBytes(total))")
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
+                Text("(\(Int((fraction * 100).rounded()))%)")
+                    .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(JunoTheme.secondaryText(scheme))
                 Text("\u{00B7}")
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.55))

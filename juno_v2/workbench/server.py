@@ -2678,8 +2678,14 @@ class WorkbenchApp:
         }
 
     @staticmethod
-    def _is_cached_hf_repo(repo_id: str, *, filename: str = "config.json") -> bool:
-        """Best-effort local HF cache probe without any network access."""
+    def _is_cached_hf_repo(repo_id: str) -> bool:
+        """Best-effort local HF cache probe without any network access.
+
+        Probes snapshot *completeness* (config + weights), not just
+        config.json presence: setup status uses this to tell onboarding
+        a lane is ready, and a config.json left behind by an interrupted
+        download must read as "needs install", not "ready".
+        """
         raw = str(repo_id or "").strip()
         if not raw:
             return False
@@ -2688,9 +2694,9 @@ class WorkbenchApp:
 
             if not is_hf_repo_id(raw):
                 return False
-            from huggingface_hub import try_to_load_from_cache
+            from juno_v2.demo.models import is_hf_model_cache_complete
 
-            return isinstance(try_to_load_from_cache(repo_id=raw, filename=filename), str)
+            return is_hf_model_cache_complete(raw)
         except Exception:
             return False
 
@@ -2708,7 +2714,22 @@ class WorkbenchApp:
         raw_path = str(model_path or "").strip()
 
         if backend_norm in {"local_http_json", "streaming_local_http_json"}:
-            return bool(endpoint)
+            if not endpoint:
+                return False
+            # The local service loads repo-id model paths from the shared
+            # HF cache: a configured endpoint alone can't serve until that
+            # snapshot is complete. Reporting "ready" here on a fresh
+            # install would stop onboarding from ever starting the
+            # download.
+            if raw_path and not Path(raw_path).exists():
+                try:
+                    from juno_core_v3.dictation.transcriber import is_hf_repo_id
+
+                    if is_hf_repo_id(raw_path):
+                        return cls._is_cached_hf_repo(raw_path)
+                except Exception:
+                    return True
+            return True
         if backend_norm == "mlx_whisper":
             return cls._is_cached_hf_repo(raw_path)
         if raw_path and Path(raw_path).exists():
@@ -3099,9 +3120,10 @@ class WorkbenchApp:
                     }
                     try:
                         from juno_v2.demo.config import DEFAULT_DEMO_PROFILE, DemoPaths, load_demo_config
+                        from juno_v2.runtime.paths import juno_profile_root
 
                         _cfg = load_demo_config(
-                            paths=DemoPaths(root_dir=Path(os.getcwd()) / ".juno_v2_demo"),
+                            paths=DemoPaths(root_dir=juno_profile_root()),
                             profile_name=DEFAULT_DEMO_PROFILE,
                         )
                         out_cached.update(self.__class__._setup_model_ui_fields_from_config(_cfg))
@@ -3122,9 +3144,9 @@ class WorkbenchApp:
         try:
             from juno_v2.demo.config import DEFAULT_DEMO_PROFILE, DemoPaths, load_demo_config
             from juno_v2.demo.models import is_hf_model_cached, is_model_ready, is_writer_model_cached
+            from juno_v2.runtime.paths import juno_profile_root
 
-            root_dir = Path(os.getcwd()) / ".juno_v2_demo"
-            paths = DemoPaths(root_dir=root_dir)
+            paths = DemoPaths(root_dir=juno_profile_root())
             config = load_demo_config(paths=paths, profile_name=DEFAULT_DEMO_PROFILE)
             preview_service_backend = str(getattr(config, "preview_service_backend", "") or "").strip().lower()
             preview_backend_value = str(getattr(config, "preview_backend", "") or "").strip().lower()
@@ -3257,8 +3279,6 @@ class WorkbenchApp:
         ``broker_setup_status`` to render a real progress bar — bytes, speed,
         ETA — instead of an indeterminate spinner.
         """
-        import os
-
         with self._setup_install_lock:
             if self._setup_install_state == "downloading":
                 return {"ok": True, "install_state": "downloading", "message": "Install already in progress"}
@@ -3273,6 +3293,10 @@ class WorkbenchApp:
                 "started_at": time.time(),
                 "elapsed_seconds": 0.0,
                 "repos": [],
+                "current_repo": None,
+                "current_lane": None,
+                "repos_done": 0,
+                "log": [],
             }
 
         stop_event = threading.Event()
@@ -3282,9 +3306,12 @@ class WorkbenchApp:
             try:
                 from juno_v2.demo.config import DEFAULT_DEMO_PROFILE, DemoPaths, load_demo_config
                 from juno_v2.demo.models import provision_demo_models
+                from juno_v2.runtime.paths import juno_profile_root
 
-                root_dir = Path(os.getcwd()) / ".juno_v2_demo"
-                paths = DemoPaths(root_dir=root_dir)
+                # Writable root: the packaged engine's cwd is inside the
+                # sealed .app bundle — provisioning scratch must live in
+                # Application Support (see juno_profile_root).
+                paths = DemoPaths(root_dir=juno_profile_root())
                 cfg = load_demo_config(paths=paths, profile_name=DEFAULT_DEMO_PROFILE)
 
                 # Kick off the progress poller in parallel — it self-stops
@@ -3292,6 +3319,9 @@ class WorkbenchApp:
                 repos = self.__class__._setup_install_repos_from_demo_config(cfg)
                 with self._setup_install_lock:
                     self._setup_install_progress["repos"] = [r for r, _ in repos]
+                self._setup_install_log(
+                    f"Starting download of {len(repos)} model(s)"
+                )
                 poller = threading.Thread(
                     target=self._poll_setup_install_progress,
                     args=(repos, stop_event),
@@ -3306,14 +3336,34 @@ class WorkbenchApp:
                 # the hub. Restored on exit.
                 with hub_online_for_explicit_download():
                     provision_demo_models(cfg, paths=paths, force=force)
+                self._setup_install_log("All model files downloaded")
                 lifecycle = getattr(self, "lifecycle_manager", None)
                 warm_component = getattr(lifecycle, "warm_component", None)
+                warm_errors: list[str] = []
                 if callable(warm_component):
-                    for role in ("live_corrector", "writer"):
+                    # Fresh install: the engine deliberately skipped warming
+                    # ASR lanes whose weights weren't on disk at startup
+                    # (see _initial_warm_skip_roles). Now that the download
+                    # landed, warm them here — preview first so the HUD
+                    # shows words on the first utterance — so the engine
+                    # becomes ready without a restart.
+                    self._setup_install_log("Loading models into memory")
+                    for role in ("preview_asr", "final_asr", "live_corrector", "writer"):
                         try:
                             warm_component(role)
-                        except Exception:
+                        except Exception as exc:
                             logger.exception("setup_install_component_warm_failed role=%s", role)
+                            warm_errors.append(f"{role}: {type(exc).__name__}: {exc}")
+                    set_warm_state = getattr(self, "set_warm_state", None)
+                    if callable(set_warm_state):
+                        try:
+                            if warm_errors:
+                                set_warm_state("error", error="; ".join(warm_errors))
+                            else:
+                                set_warm_state("ready")
+                        except Exception:
+                            logger.exception("setup_install_set_warm_state_failed")
+                self._setup_install_log("Setup complete")
                 with self._setup_install_lock:
                     self._setup_install_state = "ready"
                     # One final snapshot at 100% so the UI shows a clean
@@ -3326,6 +3376,7 @@ class WorkbenchApp:
                         self._setup_install_progress["bytes_per_second"] = 0.0
                         self._setup_install_progress["eta_seconds"] = 0.0
             except Exception as exc:
+                self._setup_install_log(f"Install failed: {exc}")
                 with self._setup_install_lock:
                     self._setup_install_state = f"failed:{exc!s}"
             finally:
@@ -3359,17 +3410,25 @@ class WorkbenchApp:
             _add(getattr(cfg, "live_corrector_model_path", None), "live_corrector")
         return out
 
-    def _poll_setup_install_progress(
-        self,
-        repos: "list[tuple[str, str]]",
-        stop_event: threading.Event,
-    ) -> None:
-        """Background thread: every 2s sample the HF cache size for each
-        target repo, then compute (bytes_so_far, bytes_total, bytes_per_second,
-        eta_seconds) and publish the dict so ``broker_setup_status`` can read
-        it. Self-terminates when ``stop_event`` is set.
+    def _setup_install_log(self, line: str) -> None:
+        """Append a human-readable line to the install status log.
+
+        Copy-on-write (a new list each append) so ``broker_setup_status``'s
+        shallow ``dict(...)`` snapshot can be serialized concurrently
+        without racing an in-place append. Bounded so a pathological
+        install can't grow the payload without limit.
         """
-        bytes_total = 0
+        with self._setup_install_lock:
+            if self._setup_install_progress is None:
+                return
+            log = list(self._setup_install_progress.get("log") or [])
+            log.append({"t": time.time(), "line": str(line)})
+            self._setup_install_progress["log"] = log[-30:]
+
+    @staticmethod
+    def _fetch_repos_total_bytes(repos: "list[tuple[str, str]]") -> int:
+        """Network probe of the summed repo sizes; 0 when unavailable."""
+        total = 0
         try:
             from huggingface_hub import HfApi  # type: ignore[import-not-found]
 
@@ -3378,24 +3437,64 @@ class WorkbenchApp:
                 try:
                     info = api.repo_info(repo_id=repo_id, files_metadata=True)
                     siblings = getattr(info, "siblings", None) or []
-                    bytes_total += sum(int(getattr(s, "size", 0) or 0) for s in siblings)
+                    total += sum(int(getattr(s, "size", 0) or 0) for s in siblings)
                 except Exception:
-                    # Offline / private / wrong-API path — fall back to "no
-                    # total known" for this repo. The UI degrades gracefully:
-                    # we still show bytes-downloaded and elapsed time.
-                    continue
+                    # Offline / private / wrong-API path: report "no total
+                    # known" so the caller keeps retrying.
+                    return 0
         except Exception:
-            bytes_total = 0
+            return 0
+        return total
 
-        with self._setup_install_lock:
-            if self._setup_install_progress is not None:
-                self._setup_install_progress["bytes_total"] = bytes_total
+    def _poll_setup_install_progress(
+        self,
+        repos: "list[tuple[str, str]]",
+        stop_event: threading.Event,
+    ) -> None:
+        """Background thread: every 2s sample the HF cache size for each
+        target repo, then compute (bytes_so_far, bytes_total, bytes_per_second,
+        eta_seconds) plus the lane currently downloading, and publish the
+        dict so ``broker_setup_status`` can read it. Self-terminates when
+        ``stop_event`` is set.
+
+        The total-size probe needs the network; a transient failure at
+        install start must not freeze the UI at "indeterminate" for the
+        whole download, so it is retried inside the loop until it
+        succeeds.
+        """
+        bytes_total = 0
+        next_total_attempt = 0.0
+        current_repo: str | None = None
 
         history: list[tuple[float, int]] = []
         while not stop_event.is_set():
             try:
-                bytes_so_far = self.__class__._hf_cache_bytes_for_repos([r for r, _ in repos])
                 now = time.time()
+                if bytes_total <= 0 and now >= next_total_attempt:
+                    bytes_total = self._fetch_repos_total_bytes(repos)
+                    next_total_attempt = now + 15.0
+                    if bytes_total > 0:
+                        gb = bytes_total / 1e9
+                        self._setup_install_log(f"Download size: {gb:.1f} GB total")
+
+                # First repo (in provisioning order) whose snapshot is not
+                # complete is the one provision_demo_models is working on.
+                active_repo: str | None = None
+                active_lane: str | None = None
+                repos_done = 0
+                for repo_id, lane in repos:
+                    if self.__class__._is_cached_hf_repo(repo_id):
+                        repos_done += 1
+                        continue
+                    if active_repo is None:
+                        active_repo, active_lane = repo_id, lane
+                if active_repo is not None and active_repo != current_repo:
+                    current_repo = active_repo
+                    self._setup_install_log(
+                        f"Downloading {active_repo} ({repos_done + 1} of {len(repos)})"
+                    )
+
+                bytes_so_far = self.__class__._hf_cache_bytes_for_repos([r for r, _ in repos])
                 history.append((now, bytes_so_far))
                 # Keep only the last 10s of samples for a stable rolling rate.
                 history = [(t, b) for (t, b) in history if now - t <= 10.0]
@@ -3418,10 +3517,14 @@ class WorkbenchApp:
                         # starts; bail out cleanly if it's been cleared.
                         return
                     started_at = self._setup_install_progress.get("started_at") or now
+                    self._setup_install_progress["bytes_total"] = bytes_total
                     self._setup_install_progress["bytes_so_far"] = bytes_so_far
                     self._setup_install_progress["bytes_per_second"] = speed
                     self._setup_install_progress["eta_seconds"] = eta
                     self._setup_install_progress["elapsed_seconds"] = max(now - started_at, 0)
+                    self._setup_install_progress["current_repo"] = active_repo
+                    self._setup_install_progress["current_lane"] = active_lane
+                    self._setup_install_progress["repos_done"] = repos_done
             except Exception:
                 # Never let the poller crash the install thread.
                 pass
