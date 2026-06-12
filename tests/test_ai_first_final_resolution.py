@@ -2034,3 +2034,48 @@ def _adjudication_result(
         stable_prefix_chars=None,
         protected_terms_used=protected_terms_used,
     )
+
+
+# --------------------------------------------------------------------- #
+# Screen-term prompt hygiene
+# --------------------------------------------------------------------- #
+
+
+def test_screen_terms_filtered_before_whisper_prompt() -> None:
+    from juno_v2.memory.bias import _diversify_bias_phrases
+
+    # Production 2026-06-11: with WhatsApp Web on screen the Whisper prompt
+    # filled with UI chrome, OCR junk, and chat-contact handles — and a
+    # replay showed the junk prompt driving a faint utterance into a
+    # "team team team…" repetition loop.
+    screen_terms = [
+        "WhatsApp",            # proper app name — keep
+        "High",                # common English UI word — drop
+        "Back",                # common English UI word — drop
+        "Reload",              # common English UI word — drop
+        "lTr",                 # OCR junk — drop
+        "Mwrk5pace",           # OCR junk with digit — drop
+        "Adi41",               # contact handle with digit — drop
+        "FusionX Bookmarks New Tab Back Forward Reload Bookmark",  # run-on — drop
+        "Cassini Research",    # name phrase — keep
+        "VPN",                 # acronym — keep
+    ]
+    out = _diversify_bias_phrases([], screen_terms=screen_terms, cap=24)
+
+    assert "WhatsApp" in out
+    assert "Cassini Research" in out
+    assert "VPN" in out
+    for junk in ("High", "Back", "Reload", "lTr", "Mwrk5pace", "Adi41"):
+        assert junk not in out, junk
+    assert not any("Bookmarks New Tab" in t for t in out)
+
+
+def test_memory_phrases_not_subject_to_screen_gate() -> None:
+    from juno_v2.memory.bias import _diversify_bias_phrases
+
+    # Memory-lane phrases are policy-gated at learn time; serving keeps them
+    # even when they would fail the screen-term shape gate.
+    out = _diversify_bias_phrases(
+        ["o4-mini-high", "luma-mode"], screen_terms=[], cap=24
+    )
+    assert out == ["o4-mini-high", "luma-mode"]

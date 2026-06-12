@@ -4100,3 +4100,153 @@ def test_compound_six_actions_segment_authoritative_semantics() -> None:
         # No body may carry a sibling's native-action anchor.
         for anchor in ("take a note", "remind me", "set an alarm"):
             assert anchor not in action.body
+
+def _complex_five_action_source() -> str:
+    # Production 2026-06-11 23:40 (utterance macshell-44FD9D72): five actions
+    # in one breath, including a dotted clock and a trailing compound.
+    return (
+        "Hey Juno, set up two alarms. First, to call my wife at 10 pm tomorrow. "
+        "Second, to call my brother at 11 pm tomorrow. Third, to call my friend "
+        "at 11.30 pm tomorrow. Add a note to fix all the issues and put Juno on "
+        "product hunt tomorrow 12pm. And remind me to call Darpan tomorrow 3pm."
+    )
+
+
+def test_complex_compound_alarms_all_carry_correct_times() -> None:
+    # The well-formed plan for the production utterance: every alarm must
+    # dispatch with the exact spoken time — including the dotted "11.30 pm".
+    source = _complex_five_action_source()
+
+    def alarm(body: str, span: str, evidence: str) -> dict:
+        return {
+            "kind": "alarm",
+            "operation": "create",
+            "body": body,
+            "evidence_span": evidence,
+            "schedule": {"kind": "instant", "source_span": span},
+            "missing_fields": [],
+        }
+
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            alarm("call my wife", "10 pm tomorrow", "call my wife at 10 pm tomorrow"),
+            alarm("call my brother", "11 pm tomorrow", "call my brother at 11 pm tomorrow"),
+            alarm("call my friend", "11.30 pm tomorrow", "call my friend at 11.30 pm tomorrow"),
+            {
+                "kind": "note",
+                "operation": "create",
+                "body": "fix all the issues and put Juno on product hunt tomorrow 12pm",
+                "evidence_span": "Add a note to fix all the issues and put Juno on product hunt tomorrow 12pm",
+                "missing_fields": [],
+            },
+            {
+                "kind": "reminder",
+                "operation": "create",
+                "body": "call Darpan",
+                "evidence_span": "remind me to call Darpan tomorrow 3pm",
+                "schedule": {"kind": "instant", "source_span": "tomorrow 3pm"},
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 23, 40))
+
+    assert parsed.actions is not None
+    assert parsed.skipped_reasons == []
+    assert [a.kind.value for a in parsed.actions] == ["alarm", "alarm", "alarm", "note", "reminder"]
+    times = [(a.when.iso if a.when else None) for a in parsed.actions]
+    # Every alarm and the reminder carry an exact instant; only the note is untimed.
+    assert times[0] is not None and times[0].startswith("2026-06-12T22:00")
+    assert times[1] is not None and times[1].startswith("2026-06-12T23:00")
+    assert times[2] is not None and times[2].startswith("2026-06-12T23:30"), (
+        f"dotted '11.30 pm' must parse exactly: {times[2]}"
+    )
+    assert times[3] is None
+    assert times[4] is not None and times[4].startswith("2026-06-12T15:00")
+    # The invariant behind all of this: no alarm ever dispatches timeless.
+    for action in parsed.actions:
+        if action.kind.value == "alarm":
+            assert action.when is not None
+
+
+def test_sloppy_planner_alarms_never_dispatch_timeless() -> None:
+    # The model variant production actually emitted that night: mangled
+    # bodies, "vague" schedule kinds, and time spans reduced to "tomorrow".
+    # The shell hard-fails timeless alarms ("An alarm needs a time."), so
+    # coercion must SKIP them — never ship them — while valid siblings and
+    # untimed notes still go through.
+    source = _complex_five_action_source()
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                # Mangled body, vague schedule, no span: must SKIP, not ship.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "call my",
+                "evidence_span": "call my",
+                "schedule": {"kind": "vague", "source_span": ""},
+                "missing_fields": [],
+            },
+            {
+                # Valid sibling: must still dispatch with its exact time.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "call my brother",
+                "evidence_span": "call my brother at 11 pm tomorrow",
+                "schedule": {"kind": "instant", "source_span": "11 pm tomorrow"},
+                "missing_fields": [],
+            },
+            {
+                # Mangled body but a real time hiding in the evidence: the
+                # grounded-span inference may rescue it — and if it cannot,
+                # the action must skip rather than ship timeless.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "all the issues",
+                "evidence_span": "all the issues",
+                "schedule": {"kind": "vague", "source_span": ""},
+                "missing_fields": [],
+            },
+            {
+                "kind": "note",
+                "operation": "create",
+                "body": "fix all the issues",
+                "evidence_span": "fix all the issues",
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 23, 40))
+
+    assert parsed.actions is not None
+    # The hard invariant: NO dispatched alarm may lack a time.
+    for action in parsed.actions:
+        if action.kind.value == "alarm":
+            assert action.when is not None, f"timeless alarm dispatched: {action.body!r}"
+    # The valid alarm and the note survived; the unparseable alarms skipped.
+    kinds = [a.kind.value for a in parsed.actions]
+    assert "note" in kinds
+    assert kinds.count("alarm") >= 1
+    assert any("time_parse_failed" in r for r in parsed.skipped_reasons)

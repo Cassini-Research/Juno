@@ -763,6 +763,44 @@ def _phrase_pattern(phrase: str) -> str:
     return escaped
 
 
+# Single screen tokens must look like a name the user could plausibly say:
+# a capitalized word or an acronym, letters only. Harvested screen text is
+# full of OCR junk ("lTr", "Mwrk5pace"), UI chrome with digits ("Adi41"),
+# and truncations — none of which belong in a Whisper prompt.
+_SCREEN_TERM_TOKEN_RE = re.compile(r"^(?:[A-Z][a-zA-Z]{1,23}|[A-Z]{2,8})$")
+_SCREEN_TERM_MAX_WORDS = 3
+
+
+def _screen_term_prompt_worthy(text: str) -> bool:
+    """Gate for screen-harvested terms entering the Whisper initial prompt.
+
+    Production 2026-06-11: with WhatsApp Web on screen the prompt filled
+    with "High, Back, Forward, Reload, Show, Update, Saved, lTr,
+    Mwrk5pace, Adi41, …" — common UI words bias recognition away from
+    the user's actual speech, junk tokens degrade decoding on quiet
+    audio (replay: the same prompt turned a faint utterance into a
+    "team team team…" repetition loop), and chat-contact names leak
+    into a model prompt. Memory-lane phrases are policy-gated at learn
+    time; screen terms get the equivalent gate here at serving time.
+    """
+    words = (text or "").split()
+    if not words or len(words) > _SCREEN_TERM_MAX_WORDS:
+        return False
+    from juno_v2.memory.entity_policy import common_english_single_word
+
+    if len(words) == 1:
+        token = words[0]
+        if not _SCREEN_TERM_TOKEN_RE.match(token):
+            return False
+        return not common_english_single_word(token)
+    # Multi-word: every token must be word-shaped, and at least one must be
+    # a non-common word — "Privacy Settings" is UI chrome, "Cassini
+    # Research" is a name worth biasing toward.
+    if not all(re.match(r"^[A-Za-z][A-Za-z'\-]{0,23}$", w) for w in words):
+        return False
+    return any(not common_english_single_word(w) for w in words)
+
+
 def _diversify_bias_phrases(
     phrases: list[str],
     *,
@@ -775,7 +813,8 @@ def _diversify_bias_phrases(
     A flat first-N cap let one pack family flood the prompt (ten "Claude *"
     variants) so distinct terms never biased recognition. Family key = first
     token; max 3 per family. Screen terms are what the user is looking at —
-    they outrank everything.
+    they outrank everything, but only after the prompt-worthiness gate
+    (see :func:`_screen_term_prompt_worthy`).
     """
     out: list[str] = []
     seen: set[str] = set()
@@ -796,7 +835,10 @@ def _diversify_bias_phrases(
         out.append(text)
 
     for term in screen_terms[:16]:
-        _take(term, family_limit=4)
+        text = str(term).strip() if not isinstance(term, dict) else str(term.get("text") or "").strip()
+        if not _screen_term_prompt_worthy(text):
+            continue
+        _take(text, family_limit=4)
     for phrase in phrases:
         _take(phrase, family_limit=3)
     return out
