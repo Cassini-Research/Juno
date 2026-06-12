@@ -115,6 +115,8 @@ def _allow_reason(path: Path, term: str) -> str | None:
         return "transcription API compatibility"
     if rel in {"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"}:
         return "legal notice"
+    if rel == "README.md":
+        return "README comparison section (competitor comparisons are deliberate)"
     return None
 
 
