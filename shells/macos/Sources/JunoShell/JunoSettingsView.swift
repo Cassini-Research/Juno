@@ -604,6 +604,10 @@ struct JunoSettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         JunoAdvancedSettingsView()
                     }
+
+                    // Always visible (not developer-gated): end users are
+                    // exactly who needs a complete uninstall.
+                    JunoUninstallSettingsCard()
                 }
                 .junoDetailPagePadding()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1570,6 +1574,7 @@ struct JunoAdvancedSettingsView: View {
                         }
                     }
                 }
+
         }
         .onAppear {
             perms.refresh()
