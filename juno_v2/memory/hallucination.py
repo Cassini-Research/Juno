@@ -586,6 +586,48 @@ def strip_trailing_silence_hallucination(
     return cleaned
 
 
+# ---------------------------------------------------------------------------
+# Low-yield garbage guard
+# ---------------------------------------------------------------------------
+#
+# Production 2026-06-11: 12.5 s of (mostly silent) audio decoded online to
+# "Lamb &" with avg_logprob -2.11 — and pasted, replacing a better live
+# preview ("I mean…"). The structural checks above can't catch it: one word,
+# no loop, not a stock phrase. The signature IS the mismatch: a long buffer
+# whose decode is both catastrophically low-confidence AND nearly empty.
+# Real speech in a long buffer yields words; a real short utterance inside a
+# long buffer decodes its few words confidently (whisper skips the silence).
+
+#: avg_logprob at or below which a near-empty decode of long audio is junk.
+#: Clean speech sits at -0.3…-0.5; even quiet-mic real speech stays above
+#: -1.0 (see HALLUCINATION_CONFIDENCE_FLOOR). -1.4 leaves a wide margin.
+LOW_YIELD_CONFIDENCE_FLOOR = -1.4
+
+#: Only long buffers qualify — a short clip legitimately yields few words.
+LOW_YIELD_MIN_AUDIO_MS = 4000.0
+
+#: "Nearly empty" decode: at most this many words from the whole buffer.
+LOW_YIELD_MAX_WORDS = 4
+
+
+def looks_like_low_yield_garbage(
+    text: str,
+    *,
+    confidence: float | None,
+    audio_duration_ms: float | None,
+) -> bool:
+    """Return True for a near-empty, catastrophically low-confidence decode
+    of a long audio buffer — whisper salvaging noise, not transcribing."""
+    if not text:
+        return False
+    if confidence is None or confidence > LOW_YIELD_CONFIDENCE_FLOOR:
+        return False
+    if audio_duration_ms is None or audio_duration_ms < LOW_YIELD_MIN_AUDIO_MS:
+        return False
+    words = re.findall(r"\b\w+\b", text)
+    return len(words) <= LOW_YIELD_MAX_WORDS
+
+
 _PROMPT_ECHO_LEADING_RE = re.compile(
     r"^\s*(?:(?:app|category|title|vocabulary|prefer\s+exact\s+forms)\b\s*:"
     r"[^|\"\n]*(?:\|\s*|(?=\")|\s*$))+",
@@ -633,11 +675,15 @@ def _stock_tail_has_impossible_timing(
 
 __all__ = [
     "HALLUCINATION_CONFIDENCE_FLOOR",
+    "LOW_YIELD_CONFIDENCE_FLOOR",
+    "LOW_YIELD_MAX_WORDS",
+    "LOW_YIELD_MIN_AUDIO_MS",
     "SILENCE_AVG_LOGPROB_THRESHOLD",
     "SILENCE_FALLBACK_AUDIO_MS",
     "SILENCE_NO_SPEECH_THRESHOLD",
     "TRAILING_STRIP_MIN_WORDS",
     "looks_like_hallucination",
+    "looks_like_low_yield_garbage",
     "looks_like_silence_hallucination",
     "strip_leading_prompt_echo",
     "strip_trailing_silence_hallucination",

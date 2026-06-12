@@ -20,6 +20,7 @@ them.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
@@ -55,6 +56,246 @@ def render_lowercase(text: str) -> str:
 
 def render_title_case(text: str) -> str:
     return (text or "").title()
+
+
+_EXPLICIT_BULLET_LIST_RE = re.compile(
+    r"^\s*(?:start|begin)\s+(?:a\s+)?(?:bullet\s+list|bullets?|bulleted\s+list)"
+    r"\s*[.,:;!?-]*\s+(?P<body>.+?)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+_SPOKEN_BULLET_ITEM_RE = re.compile(
+    r"(?<!\w)(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|"
+    r"fifth(?:ly)?|sixth(?:ly)?|seventh(?:ly)?|eighth(?:ly)?|ninth(?:ly)?|"
+    r"tenth(?:ly)?|next|finally|lastly)\b[\s,.:;-]*",
+    re.IGNORECASE,
+)
+_NATURAL_LIST_COUNT_RE = re.compile(
+    r"\b(?P<count>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+    r"nineteen|twenty)\s+"
+    r"(?P<noun>things?|points?|items?|steps?|reasons?|priorities|topics?|"
+    r"goals?|tasks?|takeaways?|focus\s+areas?)\b",
+    re.IGNORECASE,
+)
+_NATURAL_LIST_MARKER_RE = re.compile(
+    r"(?P<prefix>^|[.,:;!?]\s*|\b(?:and|then|plus)\s+)?"
+    r"(?P<marker>number\s+(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)|"
+    r"first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|"
+    r"fifth(?:ly)?|sixth(?:ly)?|seventh(?:ly)?|eighth(?:ly)?|ninth(?:ly)?|"
+    r"tenth(?:ly)?|eleventh|twelfth|thirteenth|fourteenth|fifteenth|"
+    r"sixteenth|seventeenth|eighteenth|nineteenth|twentieth|"
+    r"\d{1,2}(?:st|nd|rd|th)?)"
+    r"(?:\s+(?:one|thing|point|item|step|reason|priority|topic|goal|task|takeaway|focus\s+area))?"
+    r"\b[\s,.:;-]*",
+    re.IGNORECASE,
+)
+_NATURAL_LIST_NEGATION_RE = re.compile(
+    r"\b(?:no|without|avoid)\s+(?:bullet|bullets|list|numbered|formatting|structure)\b"
+    r"|\bdo\s+not\b.{0,48}\b(?:bullet|bullets|list|numbered|format|structure)\b"
+    r"|\bdon't\b.{0,48}\b(?:bullet|bullets|list|numbered|format|structure)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_STRUCTURAL_LIST_COMMAND_RE = re.compile(
+    r"\b(?:note\s+down|write\s+down|write|list|make|create|capture|give\s+me|put\s+down)\b"
+    r".{0,120}?"
+    r"\b(?:points?|items?|steps?|bullets?|bullet\s+points?|checklist|numbered\s+list|list)\b",
+    re.IGNORECASE,
+)
+_NATURAL_LIST_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+}
+_NATURAL_LIST_ORDINALS = {
+    "first": 1,
+    "firstly": 1,
+    "second": 2,
+    "secondly": 2,
+    "third": 3,
+    "thirdly": 3,
+    "fourth": 4,
+    "fourthly": 4,
+    "fifth": 5,
+    "fifthly": 5,
+    "sixth": 6,
+    "sixthly": 6,
+    "seventh": 7,
+    "seventhly": 7,
+    "eighth": 8,
+    "eighthly": 8,
+    "ninth": 9,
+    "ninthly": 9,
+    "tenth": 10,
+    "tenthly": 10,
+    "eleventh": 11,
+    "twelfth": 12,
+    "thirteenth": 13,
+    "fourteenth": 14,
+    "fifteenth": 15,
+    "sixteenth": 16,
+    "seventeenth": 17,
+    "eighteenth": 18,
+    "nineteenth": 19,
+    "twentieth": 20,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class SpokenListRender:
+    text: str
+    claimed_item_count: int | None
+    spoken_item_count: int
+    pipeline: str
+
+
+def render_explicit_bullet_list_command(text: str) -> str | None:
+    """Render "start a bullet list" plus same-utterance items.
+
+    A bare "start a bullet list" remains a state command in the parser. This
+    helper only handles the real-world shape where the user speaks the list
+    content immediately after the command.
+    """
+    match = _EXPLICIT_BULLET_LIST_RE.match(text or "")
+    if match is None:
+        return None
+    body = match.group("body").strip(" ,.;:-")
+    if not body:
+        return None
+
+    markers = list(_SPOKEN_BULLET_ITEM_RE.finditer(body))
+    items: list[str] = []
+    if len(markers) >= 2 and markers[0].start() <= 24:
+        for index, marker in enumerate(markers):
+            start = marker.end()
+            end = markers[index + 1].start() if index + 1 < len(markers) else len(body)
+            item = body[start:end].strip(" ,.;:-")
+            if item:
+                items.append(item)
+    if len(items) < 2:
+        items = _split_items(body)
+    if len(items) < 2:
+        return None
+    return "\n".join(f"- {item}" for item in items)
+
+
+def render_natural_bullet_list_dictation(text: str) -> SpokenListRender | None:
+    """Render natural "N things, first..., second..." dictation as bullets.
+
+    This covers the real spoken shape where the user announces a small list
+    and then enumerates items, without saying the exact command "start a bullet
+    list". Count mismatch is allowed: we render what was actually spoken and
+    expose the mismatch in metadata instead of inventing or dropping items.
+    """
+    source = str(text or "").strip()
+    if not source or _NATURAL_LIST_NEGATION_RE.search(source):
+        return None
+    if _EXPLICIT_STRUCTURAL_LIST_COMMAND_RE.search(source):
+        return None
+    count_match = _NATURAL_LIST_COUNT_RE.search(source)
+    if count_match is None:
+        return None
+    claimed_count = _natural_list_count_value(count_match.group("count"))
+    if claimed_count is None or claimed_count < 2:
+        return None
+
+    tail = source[count_match.end() :].strip(" ,.:;-")
+    if not tail:
+        return None
+    accepted: list[tuple[int, re.Match[str]]] = []
+    for marker in _NATURAL_LIST_MARKER_RE.finditer(tail):
+        order = _natural_list_marker_order(marker.group("marker"))
+        if order is None:
+            continue
+        if not accepted:
+            if order != 1:
+                continue
+            if marker.start() > 96:
+                return None
+        elif order != accepted[-1][0] + 1:
+            continue
+        accepted.append((order, marker))
+    if len(accepted) < 2:
+        return None
+
+    items: list[str] = []
+    for index, (_order, marker) in enumerate(accepted):
+        start = marker.end()
+        end = accepted[index + 1][1].start() if index + 1 < len(accepted) else len(tail)
+        item = _clean_natural_list_item(tail[start:end])
+        if item:
+            items.append(item)
+    if len(items) < 2:
+        return None
+    return SpokenListRender(
+        text="\n".join(f"- {item}" for item in items),
+        claimed_item_count=claimed_count,
+        spoken_item_count=len(items),
+        pipeline="natural_ordinal_bullet_list",
+    )
+
+
+def _natural_list_count_value(raw: str) -> int | None:
+    value = str(raw or "").casefold().strip()
+    if value.isdigit():
+        count = int(value)
+    else:
+        count = _NATURAL_LIST_NUMBER_WORDS.get(value)
+    if count is None:
+        return None
+    return count if 1 <= count <= 50 else None
+
+
+def _natural_list_marker_order(raw: str) -> int | None:
+    value = str(raw or "").casefold().strip()
+    if value.startswith("number "):
+        value = value.removeprefix("number ").strip()
+    if value in _NATURAL_LIST_ORDINALS:
+        return _NATURAL_LIST_ORDINALS[value]
+    if value in _NATURAL_LIST_NUMBER_WORDS:
+        return _NATURAL_LIST_NUMBER_WORDS[value]
+    match = re.match(r"^(\d{1,2})(?:st|nd|rd|th)?$", value)
+    if match is None:
+        return None
+    order = int(match.group(1))
+    return order if 1 <= order <= 50 else None
+
+
+def clean_spoken_list_item(raw: str) -> str:
+    """Normalize one spoken list item: collapse whitespace, drop trailing
+    connectors ("and"/"then"/"plus") and leading copulas ("is that", "to").
+    Shared by the natural-list renderer here and the planner's structural
+    item splitter so the two lanes can't drift."""
+    item = re.sub(r"\s+", " ", str(raw or "")).strip(" \t\r\n,.;:-")
+    item = re.sub(r"\s+\b(?:and|then|plus)\b\s*$", "", item, flags=re.IGNORECASE).strip(" ,.;:-")
+    item = re.sub(
+        r"^(?:is|are|was|were)\s+(?:that\s+|to\s+)?",
+        "",
+        item,
+        flags=re.IGNORECASE,
+    ).strip(" ,.;:-")
+    item = re.sub(r"^(?:that|to)\s+", "", item, flags=re.IGNORECASE).strip(" ,.;:-")
+    return item.rstrip(".!?").strip()
+
+
+_clean_natural_list_item = clean_spoken_list_item
 
 
 def _split_items(text: str) -> list[str]:
@@ -836,6 +1077,8 @@ __all__ = [
     "normalize_explicit_numbered_markers",
     "render_bullets",
     "render_lowercase",
+    "clean_spoken_list_item",
+    "render_natural_bullet_list_dictation",
     "render_numbered",
     "render_title_case",
     "render_uppercase",

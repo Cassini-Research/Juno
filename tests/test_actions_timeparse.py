@@ -285,3 +285,51 @@ def test_trailing_punctuation_is_tolerated() -> None:
     dt = _dt(pt)
     assert (dt.year, dt.month, dt.day) == (2026, 6, 10)
     assert dt.hour == 17
+
+
+# ---------------------------------------------------------------------------
+# Dotted spoken clocks ("11.30 pm")
+# ---------------------------------------------------------------------------
+#
+# Whisper renders spoken "eleven thirty pm" as "11.30 pm". dateparser handles
+# most shapes, but "at <dotted clock> <meridiem> tomorrow" made it DROP the
+# clock and silently return tomorrow-at-now at full confidence — production
+# 2026-06-11: the alarm "at 11.30 pm tomorrow" was scheduled for the wrong
+# time. parse_when now normalizes dotted clocks to colon clocks when a
+# meridiem follows.
+
+
+def test_dotted_clock_with_at_and_tomorrow() -> None:
+    pt = parse_when("at 11.30 pm tomorrow", now=NOW)
+    assert pt is not None
+    dt = _dt(pt)
+    assert (dt.hour, dt.minute) == (23, 30)
+    assert dt.date() == (NOW + timedelta(days=1)).date()
+
+
+def test_dotted_clock_variants_all_agree() -> None:
+    expected = None
+    for clause in (
+        "11.30 pm tomorrow",
+        "at 11.30 pm tomorrow",
+        "11:30 pm tomorrow",
+        "at 11:30 pm tomorrow",
+    ):
+        pt = parse_when(clause, now=NOW)
+        assert pt is not None, clause
+        dt = _dt(pt)
+        assert (dt.hour, dt.minute) == (23, 30), clause
+        if expected is None:
+            expected = dt.date()
+        assert dt.date() == expected, clause
+
+
+def test_dotted_normalization_spares_decimals() -> None:
+    # "in 3.5 hours" must not become "in 3:5 hours" — the rewrite only
+    # fires when a meridiem follows the dotted number.
+    pt = parse_when("in 3.5 hours", now=NOW)
+    # Whatever dateparser does with it, it must not crash and must not
+    # treat it as a clock time of 3:05.
+    if pt is not None:
+        dt = _dt(pt)
+        assert (dt.hour, dt.minute) != (3, 5)

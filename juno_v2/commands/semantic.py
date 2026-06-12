@@ -21,7 +21,7 @@ def interpret_semantic_command(
         allow = True
     elif target_class == CommandTargetClass.SELECTED_TEXT:
         allow = bool(mode_policy.allow_selection_commands)
-    elif target_class == CommandTargetClass.RECENT_COMMIT:
+    elif target_class in (CommandTargetClass.RECENT_COMMIT, CommandTargetClass.FOCUSED_TEXT):
         allow = bool(mode_policy.allow_recent_target_commands)
     else:
         allow = bool(mode_policy.allow_model_insert_rewrite)

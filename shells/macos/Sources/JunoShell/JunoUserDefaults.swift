@@ -56,6 +56,7 @@ enum JunoUserDefaults {
     static let appearancePreferenceKey = "JunoAppearancePreference"
     static let screenContextEnabledKey = "JunoScreenContextEnabled"
     static let screenContextNudgeDismissedAtKey = "JunoScreenContextNudgeDismissedAt"
+    static let screenRecordingPromptRequestedKey = "JunoScreenRecordingPromptRequested"
     /// Top-level enable for the Voice Actions feature (notes & reminders).
     /// Defaults to ``false`` — users opt in explicitly via Settings or by
     /// confirming the Home-page nudge. When off, action utterances paste
@@ -336,6 +337,16 @@ enum JunoUserDefaults {
     static var screenContextEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: screenContextEnabledKey) }
         set { UserDefaults.standard.set(newValue, forKey: screenContextEnabledKey) }
+    }
+
+    /// Whether `CGRequestScreenCaptureAccess` has ever been issued for this
+    /// install. macOS shows the consent dialog only for the first request;
+    /// after that the call is a silent no-op, so later grant attempts must
+    /// open System Settings instead. Persisted because TCC remembers the
+    /// ask across app relaunches.
+    static var screenRecordingPromptRequested: Bool {
+        get { UserDefaults.standard.bool(forKey: screenRecordingPromptRequestedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: screenRecordingPromptRequestedKey) }
     }
 
     static var screenContextNudgeDismissedAt: Date? {

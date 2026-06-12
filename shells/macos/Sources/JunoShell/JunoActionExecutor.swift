@@ -114,6 +114,31 @@ final class JunoActionExecutor: ObservableObject {
             completion([])
             return
         }
+        // Verification lane: JUNO_ACTIONS_DRY_RUN=1 exercises the full
+        // shell path — HUD in-flight states, result chips, broker result
+        // posting, history rows — without creating real Reminders /
+        // Calendar events / Notes. Used by installed-app gates.
+        if ProcessInfo.processInfo.environment["JUNO_ACTIONS_DRY_RUN"] == "1" {
+            os_log(
+                "execute DRY-RUN uid=%{public}@ count=%{public}d",
+                log: actionLog, type: .info, utteranceId, actions.count
+            )
+            let results = actions.map { req in
+                JunoActionResult(
+                    junoId: Self.junoId(for: req),
+                    kind: req.kind,
+                    status: .ok,
+                    bodyPreview: String(req.body.prefix(80)),
+                    body: req.body,
+                    whenIso: Self.primaryIso(for: req),
+                    error: "dry-run (no native side effects)"
+                )
+            }
+            let post = postResults ?? Self.postResultsToBroker(utteranceId:results:)
+            post(utteranceId, results)
+            completion(results)
+            return
+        }
         os_log(
             "execute uid=%{public}@ count=%{public}d kinds=%{public}@",
             log: actionLog, type: .info,

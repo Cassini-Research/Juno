@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import threading
 import time
+from functools import lru_cache
 import re
 import difflib
 import os
@@ -81,6 +82,7 @@ from juno_v2.context.compiler import compile_context
 from juno_v2.context.frozen_merge import merge_frozen_capability_into_bundle
 from juno_v2.audio.diagnostics import analyze_wav_bytes
 from juno_v2.contracts.context import RecognitionBiasPlan, TypedContextBundle
+from juno_core_v3.actions.contracts import Action, ActionKind
 from juno_core_v3.actions.pipeline_hook import detect_actions_for_pipeline
 from juno_core_v3.actions.grammar import strip_wake
 from juno_core_v3.context.plane import ContextPlane, ContextPlaneConfig
@@ -109,6 +111,7 @@ from juno_v2.memory.entity_policy import (
 from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.memory.hallucination import (
     looks_like_hallucination,
+    looks_like_low_yield_garbage,
     looks_like_silence_hallucination,
     strip_leading_prompt_echo,
     strip_trailing_silence_hallucination,
@@ -263,6 +266,9 @@ class OneShotDictationResult:
     # ambiguous — do not synthesize Cmd+V).
     paste_kind: str = "insert"
     noop_reason: str | None = None
+    # Rejected action turns suppress the paste, but the spoken words must
+    # remain recoverable by the shell (copyable) — never silently erased.
+    recoverable_transcript: str = ""
     degraded_writer: bool = False
     frozen_context_merged: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -301,6 +307,7 @@ class OneShotDictationResult:
             "capability_mode": self.capability_mode,
             "paste_kind": self.paste_kind,
             "noop_reason": self.noop_reason,
+            "recoverable_transcript": self.recoverable_transcript,
             "degraded_writer": self.degraded_writer,
             "frozen_context_merged": self.frozen_context_merged,
             "metadata": dict(self.metadata),
@@ -1064,7 +1071,14 @@ class OneShotDictationPipeline:
                 frozen_context_merged=frozen_context_merged,
                 transcript_stage=stage,
             )
-        if not live_adjudication and raw_text and looks_like_hallucination(raw_text, confidence=confidence_hint):
+        if not live_adjudication and raw_text and (
+            looks_like_hallucination(raw_text, confidence=confidence_hint)
+            or looks_like_low_yield_garbage(
+                raw_text,
+                confidence=confidence_hint,
+                audio_duration_ms=result.audio_duration_ms,
+            )
+        ):
             fallback_hint = _usable_transcript_hint_fallback(transcript_hint)
             if fallback_hint and not live_adjudication:
                 final_asr_hallucination_fallback = {
@@ -1184,7 +1198,18 @@ class OneShotDictationPipeline:
         ]
 
         # 8b. ITN plane -------------------------------------------------------
-        if self.itn_enabled and not live_adjudication:
+        # Whole-utterance formatting commands ("New paragraph", "Next bullet")
+        # must reach the writer's command parser as WORDS. ITN's spoken-
+        # punctuation pass would collapse them ("New paragraph" → "\n\n"),
+        # after which the parser sees an empty surface and the turn dies as
+        # unsupported_intent (production 2026-06-11).
+        if self.itn_enabled and not live_adjudication and _is_pure_command_utterance(normalized_text):
+            self.recorder.record(
+                TraceKind.SYSTEM,
+                "oneshot_itn_skipped_for_command",
+                {"utterance_id": uid, "text_preview": normalized_text[:60]},
+            )
+        elif self.itn_enabled and not live_adjudication:
             itn_profile = self.itn_engine.profile_for_category(
                 getattr(context, "app_category", None)
             )
@@ -1340,31 +1365,31 @@ class OneShotDictationPipeline:
                     "cues": list(self_correction_cues[:8]),
                 },
             )
-            # Deterministic retake application. The model lanes get the cue
-            # diagnostics too, but they pass through on a large share of real
-            # utterances — without this pass, literal "Scratch that …"
-            # shipped in pasted text (2026-06-10). Only unambiguous retakes
-            # are applied; everything else stays for the model lanes.
-            retake_text, retakes_applied = apply_unambiguous_retakes(normalized_text)
-            if retakes_applied:
-                normalized_text = retake_text
-                all_applied.append({
-                    "rule": "self_correction_retakes",
-                    "scope": "oneshot",
-                    "replacements": retakes_applied,
-                })
-                self.recorder.record(
-                    TraceKind.SYSTEM,
-                    "oneshot_self_corrections_applied",
-                    {
-                        "utterance_id": uid,
-                        "applied_count": len(retakes_applied),
-                        "retakes": retakes_applied[:8],
-                    },
-                )
-                self_correction_cues = _collect_self_correction_cues(normalized_text)
-            if self_correction_cues:
-                compiled_context.metadata["self_correction_cues"] = list(self_correction_cues)
+        # Deterministic retake application. The model lanes get cue diagnostics
+        # too, but they pass through on a large share of real utterances. This
+        # pass is intentionally conservative and also catches ASR variants of a
+        # spoken cue, for example "scratch that" heard as "scratched at" between
+        # two clock expressions.
+        retake_text, retakes_applied = apply_unambiguous_retakes(normalized_text)
+        if retakes_applied:
+            normalized_text = retake_text
+            all_applied.append({
+                "rule": "self_correction_retakes",
+                "scope": "oneshot",
+                "replacements": retakes_applied,
+            })
+            self.recorder.record(
+                TraceKind.SYSTEM,
+                "oneshot_self_corrections_applied",
+                {
+                    "utterance_id": uid,
+                    "applied_count": len(retakes_applied),
+                    "retakes": retakes_applied[:8],
+                },
+            )
+            self_correction_cues = _collect_self_correction_cues(normalized_text)
+        if self_correction_cues:
+            compiled_context.metadata["self_correction_cues"] = list(self_correction_cues)
         self.recorder.record(
             TraceKind.SYSTEM,
             "oneshot_final_transcription_postprocess",
@@ -1792,6 +1817,21 @@ class OneShotDictationPipeline:
         if wake_status.verified and action_source_text:
             should_try_action_fallback = False
             action_fallback_reason: str | None = None
+
+            def _route_action_to_fallback(reason: str, **extra: Any) -> None:
+                nonlocal should_try_action_fallback, action_fallback_reason
+                should_try_action_fallback = True
+                action_fallback_reason = reason
+                self.recorder.record(
+                    TraceKind.SYSTEM,
+                    "turn_plan_action_routed_to_fallback",
+                    {
+                        "utterance_id": uid,
+                        "reason": reason,
+                        **extra,
+                    },
+                )
+
             if turn_plan_result is not None:
                 turn_plan_controls_actions = True
                 if turn_plan_result.ok and isinstance(turn_plan_result.plan, dict):
@@ -1884,48 +1924,48 @@ class OneShotDictationPipeline:
                                     },
                                 )
                             else:
+                                if _looks_like_action_attempt(action_source_text):
+                                    _route_action_to_fallback(
+                                        str(planned.rejected_reason or "turn_plan_action_rejected"),
+                                        missing_fields=list(planned.missing_fields),
+                                    )
+                                else:
+                                    action_attempt_rejected = True
+                                    self.recorder.record(
+                                        TraceKind.SYSTEM,
+                                        "turn_plan_action_rejected",
+                                        {
+                                            "utterance_id": uid,
+                                            "reason": planned.rejected_reason,
+                                            "missing_fields": list(planned.missing_fields),
+                                        },
+                                    )
+                        elif plan_kind in {"actions", "mixed"} or bool(turn_plan_result.plan.get("actions")):
+                            if _looks_like_action_attempt(action_source_text):
+                                _route_action_to_fallback(
+                                    str(planned.rejected_reason or "no_valid_actions"),
+                                    missing_fields=list(planned.missing_fields),
+                                )
+                            else:
                                 action_attempt_rejected = True
                                 self.recorder.record(
                                     TraceKind.SYSTEM,
                                     "turn_plan_action_rejected",
                                     {
                                         "utterance_id": uid,
-                                        "reason": planned.rejected_reason,
+                                        "reason": planned.rejected_reason or "no_valid_actions",
                                         "missing_fields": list(planned.missing_fields),
                                     },
                                 )
-                        elif plan_kind in {"actions", "mixed"} or bool(turn_plan_result.plan.get("actions")):
-                            action_attempt_rejected = True
-                            self.recorder.record(
-                                TraceKind.SYSTEM,
-                                "turn_plan_action_rejected",
-                                {
-                                    "utterance_id": uid,
-                                    "reason": planned.rejected_reason or "no_valid_actions",
-                                    "missing_fields": list(planned.missing_fields),
-                                },
-                            )
                     elif _looks_like_action_attempt(action_source_text):
-                        action_attempt_rejected = True
-                        self.recorder.record(
-                            TraceKind.SYSTEM,
-                            "turn_plan_action_rejected",
-                            {
-                                "utterance_id": uid,
-                                "reason": "turn_plan_validation_failed",
-                                "validation_errors": list(validation.errors),
-                            },
+                        _route_action_to_fallback(
+                            "turn_plan_validation_failed",
+                            validation_errors=list(validation.errors),
                         )
                 elif _looks_like_action_attempt(action_source_text):
-                    action_attempt_rejected = True
-                    self.recorder.record(
-                        TraceKind.SYSTEM,
-                        "turn_plan_action_rejected",
-                        {
-                            "utterance_id": uid,
-                            "reason": getattr(turn_plan_result, "status", None) or "turn_plan_invalid",
-                            "errors": list(getattr(turn_plan_result, "errors", ()) or ()),
-                        },
+                    _route_action_to_fallback(
+                        str(getattr(turn_plan_result, "status", None) or "turn_plan_invalid"),
+                        errors=list(getattr(turn_plan_result, "errors", ()) or ()),
                     )
             else:
                 should_try_action_fallback = _looks_like_action_attempt(action_source_text)
@@ -1946,6 +1986,19 @@ class OneShotDictationPipeline:
                         now_iso=action_now.isoformat(),
                     ),
                 )
+                if parsed_actions:
+                    parsed_actions, skipped_fallback_actions = _dispatchable_actions_for_pipeline(parsed_actions)
+                    if skipped_fallback_actions:
+                        self.recorder.record(
+                            TraceKind.SYSTEM,
+                            "turn_plan_action_fallback_partially_skipped",
+                            {
+                                "utterance_id": uid,
+                                "reason": action_fallback_reason,
+                                "skipped_reasons": skipped_fallback_actions,
+                                "accepted_count": len(parsed_actions or []),
+                            },
+                        )
                 if parsed_actions:
                     parsed_actions_payload = [a.to_dict() for a in parsed_actions]
                     turn_plan_controls_actions = False
@@ -2079,6 +2132,7 @@ class OneShotDictationPipeline:
         # Suppressing the paste here is what lets users fire actions
         # while their cursor is in Slack/Notes/anywhere without
         # polluting that field with the command text.
+        recoverable_transcript = ""
         if parsed_actions_payload:
             paste_kind = "none"
             if not noop_reason:
@@ -2097,6 +2151,7 @@ class OneShotDictationPipeline:
             paste_kind = "none"
             noop_reason = "action_rejected"
             writer_text = ""
+            recoverable_transcript = (adjudicated_text or "").strip()
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "action_extraction_rejected",
@@ -2286,7 +2341,7 @@ class OneShotDictationPipeline:
             }
         if writer_outcome is not None:
             outcome_meta = dict(writer_outcome.metadata or {})
-            meta_out["writer_outcome"] = {
+            writer_outcome_meta = {
                 "action": writer_outcome.action.value,
                 "commit_mode": writer_outcome.commit_mode.value if writer_outcome.commit_mode else None,
                 "target": outcome_meta.get("target"),
@@ -2294,6 +2349,19 @@ class OneShotDictationPipeline:
                 "deterministic_used": bool(writer_outcome.deterministic_used),
                 "model_used": bool(writer_outcome.model_used),
             }
+            for key in (
+                "snippet_expanded",
+                "dictation_cleanup",
+                "grammar_postpass",
+                "transform_kind",
+                "reason",
+                "structure",
+            ):
+                if key in outcome_meta:
+                    writer_outcome_meta[key] = outcome_meta.get(key)
+            meta_out["writer_outcome"] = writer_outcome_meta
+            if "snippet_expanded" in outcome_meta:
+                meta_out["snippet_expanded"] = bool(outcome_meta.get("snippet_expanded"))
 
         return OneShotDictationResult(
             utterance_id=uid,
@@ -2316,6 +2384,7 @@ class OneShotDictationPipeline:
             capability_mode=capability_mode,
             paste_kind=paste_kind,
             noop_reason=noop_reason,
+            recoverable_transcript=recoverable_transcript,
             degraded_writer=degraded_writer_lane,
             frozen_context_merged=frozen_context_merged,
             metadata=meta_out,
@@ -2856,6 +2925,45 @@ def _looks_like_action_attempt(text: str) -> bool:
     from juno_v2.turn_plan.actions import native_action_signal_present
 
     return native_action_signal_present(text)
+
+
+def _dispatchable_actions_for_pipeline(actions: list[Action] | None) -> tuple[list[Action] | None, list[str]]:
+    if not actions:
+        return None, []
+    accepted: list[Action] = []
+    skipped: list[str] = []
+    for idx, action in enumerate(actions):
+        body = str(getattr(action, "body", "") or "").strip()
+        kind = getattr(action, "kind", None)
+        if kind is ActionKind.ALARM and getattr(action, "when", None) is None:
+            skipped.append(f"action_{idx}_alarm_missing_schedule")
+            continue
+        if kind in {ActionKind.NOTE, ActionKind.REMINDER} and not body:
+            skipped.append(f"action_{idx}_missing_body")
+            continue
+        accepted.append(action)
+    return accepted or None, skipped
+
+
+@lru_cache(maxsize=1)
+def _command_probe_parser():
+    from juno_v2.writer.parser import WriterIntentParser
+
+    return WriterIntentParser()
+
+
+def _is_pure_command_utterance(text: str) -> bool:
+    """Short utterance the writer parser claims as a command result."""
+    cleaned = (text or "").strip()
+    if not cleaned or len(cleaned.split()) > 6:
+        return False
+    try:
+        from juno_v2.contracts.writer import WriterIntentKind
+
+        intent = _command_probe_parser().parse(cleaned)
+        return getattr(intent, "kind", None) is WriterIntentKind.COMMAND_RESULT
+    except Exception:  # noqa: BLE001 — probe must never break the turn
+        return False
 
 
 def _turn_plan_allows_mixed_paste(plan: dict[str, Any]) -> bool:

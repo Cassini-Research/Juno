@@ -30,6 +30,38 @@ _SENTENCE_FINAL_RE = re.compile(r"[.!?][\"')\]]*$")
 _NUMERIC_PHRASE_RE = re.compile(r"[\d][\d:. ]*(?:am|pm)?")
 _MAX_RETAKE_TOKENS = 12
 
+_WEEKDAY_WORDS = {
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+}
+_DATE_FILLER_WORDS = {"on", "next", "this", "coming", "the", "of"}
+_MONTH_WORDS = {
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+}
+# ASR renders the spoken cue "scratch that" as "scratched at" when it sits
+# between two clock expressions ("at 3pm scratched at 4.15pm"). Only that
+# temporal sandwich is rewritten — prose like "the paint scratched at the
+# edge" never matches.
+_SCRATCHED_AT_TEMPORAL_RE = re.compile(
+    r"(?P<prep>\bat\s+)?(?P<old>\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.?|p\.m\.?)?)"
+    r"[,\s]+scratched\s+at\s+"
+    r"(?P<new>\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.?|p\.m\.?)?)",
+    re.IGNORECASE,
+)
+
+
+def _slot_class(key: str) -> str | None:
+    tokens = [t for t in key.split() if t not in _DATE_FILLER_WORDS]
+    if not tokens or len(tokens) > 3:
+        return None
+    if all(t in _WEEKDAY_WORDS for t in tokens):
+        return "weekday"
+    if all(t in _MONTH_WORDS or re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)?", t) for t in tokens) and any(
+        t in _MONTH_WORDS or re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)", t) for t in tokens
+    ):
+        return "date"
+    return None
+
 
 def _norm_key(tokens: list[str]) -> str:
     out = []
@@ -58,6 +90,21 @@ def apply_unambiguous_retakes(text: str) -> tuple[str, list[dict[str, Any]]]:
         return source, []
 
     applied: list[dict[str, Any]] = []
+
+    def _scratched_at(match: re.Match[str]) -> str:
+        applied.append(
+            {
+                "marker": "scratched at",
+                "removed": match.group("old").strip(),
+                "kept_preview": match.group("new").strip(),
+                "ratio": 1.0,
+            }
+        )
+        prep = match.group("prep") or ""
+        return f"{prep}{match.group('new')}"
+
+    source = _SCRATCHED_AT_TEMPORAL_RE.sub(_scratched_at, source)
+
     # Right-to-left so earlier char offsets stay valid after each splice.
     matches = list(MID_UTTERANCE_EDIT_MARKER_RE.finditer(source))
     for match in reversed(matches):
@@ -87,6 +134,49 @@ def apply_unambiguous_retakes(text: str) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         best: tuple[float, int] | None = None  # (ratio, span_len)
+        # Same-slot replacements ("Friday → Monday", "the 5th → the 12th")
+        # share no characters; match by slot class with token-count symmetry
+        # so articles/prepositions stay balanced on both sides.
+        after_slots: dict[int, str] = {}
+        for prefix_len in range(1, min(4, len(after_tokens)) + 1):
+            slot = _slot_class(_norm_key(after_tokens[:prefix_len]))
+            if slot:
+                after_slots[prefix_len] = slot
+        slot_pick: tuple[int, int] | None = None
+        if after_slots:
+            # Among symmetric (span_len == prefix_len) slot pairs, the pair
+            # whose two spans are most SIMILAR wins — a retake repeats the
+            # slot's shape. Taking the first (shortest) symmetric pair made
+            # "June 5th → June 12th" pair "5th" with "June" (both slot
+            # "date"), remove only "5th", and paste the duplicated
+            # "June June 12th"; taking the longest blindly swallows
+            # prepositions ("on the 5th" ↔ "the 12th of"). Similarity
+            # ("june 5th" ~ "june 12th" ≫ "5th" ~ "june") picks the right
+            # boundary in both shapes. Asymmetric matches stay a fallback.
+            symmetric_pick: tuple[int, int] | None = None
+            symmetric_score = -1.0
+            fallback_pick: tuple[int, int] | None = None
+            for span_len in range(1, min(4, len(before)) + 1):
+                cand_key = _norm_key([t[2] for t in before[-span_len:]])
+                cand_slot = _slot_class(cand_key)
+                if cand_slot is None:
+                    continue
+                for prefix_len, slot in sorted(after_slots.items()):
+                    if slot != cand_slot:
+                        continue
+                    if span_len == prefix_len:
+                        prefix_key = _norm_key(after_tokens[:prefix_len])
+                        score = difflib.SequenceMatcher(
+                            a=cand_key, b=prefix_key, autojunk=False
+                        ).ratio()
+                        if score > symmetric_score:
+                            symmetric_score = score
+                            symmetric_pick = (span_len, prefix_len)
+                    elif fallback_pick is None:
+                        fallback_pick = (span_len, prefix_len)
+            slot_pick = symmetric_pick or fallback_pick
+        if slot_pick is not None:
+            best = (1.0, slot_pick[0])
         target_len = len(after_tokens)
         for span_len in range(max(1, target_len - 2), min(len(before), target_len + 2) + 1):
             cand_tokens = [t[2] for t in before[-span_len:]]

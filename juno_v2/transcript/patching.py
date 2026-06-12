@@ -60,7 +60,15 @@ def diff_to_patch_ops(
     base_prefix = (base or "")[: max(0, stable_prefix_chars)]
     corrected_prefix = (corrected or "")[: max(0, min(len(corrected or ""), stable_prefix_chars))]
     ops: list[TranscriptPatchOp] = []
-    matcher = difflib.SequenceMatcher(a=base_prefix, b=corrected_prefix, autojunk=False)
+    # Short live patches need exact character-level matching. Long dictated
+    # prefixes can be highly repetitive ("period", "comma", repeated clauses);
+    # disabling SequenceMatcher's popularity heuristic there makes the diff
+    # path quadratic enough to miss live budgets without improving safety.
+    matcher = difflib.SequenceMatcher(
+        a=base_prefix,
+        b=corrected_prefix,
+        autojunk=max(len(base_prefix), len(corrected_prefix)) >= 1200,
+    )
     op_reason = _coerce_reason(reason)
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":

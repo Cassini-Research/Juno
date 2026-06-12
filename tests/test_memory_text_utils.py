@@ -525,3 +525,42 @@ def test_glossary_entries_respect_max_length() -> None:
 def test_glossary_entries_respect_min_length() -> None:
     for entry in AI_GLOSSARY:
         assert len(entry) >= 3, entry
+
+
+# --------------------------------------------------------------------- #
+# looks_like_low_yield_garbage
+# --------------------------------------------------------------------- #
+
+
+def test_low_yield_garbage_catches_lamb_ampersand() -> None:
+    from juno_v2.memory.hallucination import looks_like_low_yield_garbage
+
+    # Production 2026-06-11: 12.5 s of mostly-silent audio decoded to
+    # "Lamb &" at avg_logprob -2.11 and pasted.
+    assert looks_like_low_yield_garbage(
+        "Lamb &", confidence=-2.11, audio_duration_ms=12485.0
+    )
+
+
+def test_low_yield_garbage_spares_confident_short_utterances() -> None:
+    from juno_v2.memory.hallucination import looks_like_low_yield_garbage
+
+    # A real short utterance in a long buffer decodes confidently.
+    assert not looks_like_low_yield_garbage(
+        "I mean.", confidence=-0.4, audio_duration_ms=12485.0
+    )
+    # Short audio legitimately yields few words at any confidence.
+    assert not looks_like_low_yield_garbage(
+        "Yes.", confidence=-1.8, audio_duration_ms=1500.0
+    )
+    # Long low-confidence decodes with real word yield are left to the
+    # repetition/loop heuristics, not this gate.
+    assert not looks_like_low_yield_garbage(
+        "this is a longer sentence with many words in it",
+        confidence=-1.8,
+        audio_duration_ms=12485.0,
+    )
+    # Unknown confidence: never fire.
+    assert not looks_like_low_yield_garbage(
+        "Lamb &", confidence=None, audio_duration_ms=12485.0
+    )

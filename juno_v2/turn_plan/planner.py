@@ -78,6 +78,9 @@ _ORDINAL_WORDS = {
 
 _LIST_MARKER_RE = re.compile(
     r"\b(?P<marker>"
+    r"number\s+(?:"
+    + "|".join(sorted((*_NUMBER_WORDS.keys(),), key=len, reverse=True))
+    + r"|\d{1,2})|"
     + "|".join(sorted((*_ORDINAL_WORDS.keys(), *_NUMBER_WORDS.keys()), key=len, reverse=True))
     + r"|\d{1,2}(?:st|nd|rd|th)?)\b[\s).,:;-]*",
     flags=re.IGNORECASE,
@@ -491,10 +494,23 @@ def structural_instruction_present(source_text: str) -> bool:
 
 
 def _structural_list_instruction(text: str) -> re.Match[str] | None:
-    return re.search(
+    explicit = re.search(
         r"\b(?:note\s+down|write\s+down|list|make|create|capture|give\s+me|put\s+down)\b"
         r".{0,120}?"
         r"\b(?:points?|items?|steps?|bullets?|bullet\s+points?|checklist|numbered\s+list|list)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if explicit is not None:
+        return explicit
+    return re.search(
+        r"\b(?:focus\s+on|focused\s+on|cover|talk\s+about|discuss|handle|"
+        r"prioriti[sz]e|need\s+to\s+focus\s+on|we\s+need\s+to\s+focus\s+on)\b"
+        r".{0,120}?"
+        r"\b(?:\d{1,2}|"
+        + "|".join(sorted(_NUMBER_WORDS.keys(), key=len, reverse=True))
+        + r")\s+(?:things?|points?|items?|steps?|reasons?|priorities|topics?|"
+        r"goals?|tasks?|takeaways?|focus\s+areas?)\b",
         text,
         flags=re.IGNORECASE,
     )
@@ -513,7 +529,8 @@ def _claimed_list_count(text: str) -> int | None:
     match = re.search(
         r"\b(?P<count>\d{1,2}|"
         + "|".join(sorted(_NUMBER_WORDS.keys(), key=len, reverse=True))
-        + r")\s+(?:points?|items?|steps?|bullets?|bullet\s+points?)\b",
+        + r")\s+(?:things?|points?|items?|steps?|bullets?|bullet\s+points?|"
+        r"reasons?|priorities|topics?|goals?|tasks?|takeaways?|focus\s+areas?)\b",
         text,
         flags=re.IGNORECASE,
     )
@@ -544,11 +561,15 @@ def _spoken_list_items(tail: str) -> list[str]:
         accepted.append((order, match))
     if not accepted:
         return []
+    # Lazy import: the writer package's __init__ imports the service, which
+    # imports this module back. By item-split time everything is initialized.
+    from juno_v2.writer.deterministic import clean_spoken_list_item
+
     items: list[str] = []
     for idx, (_order, marker) in enumerate(accepted):
         start = marker.end()
         end = accepted[idx + 1][1].start() if idx + 1 < len(accepted) else len(text)
-        item = re.sub(r"\s+", " ", text[start:end]).strip(" .,:;-")
+        item = clean_spoken_list_item(text[start:end])
         if item:
             items.append(item)
     return items
@@ -556,6 +577,8 @@ def _spoken_list_items(tail: str) -> list[str]:
 
 def _list_marker_order(marker: str) -> int | None:
     value = str(marker or "").casefold().strip()
+    if value.startswith("number "):
+        value = value.removeprefix("number ").strip()
     if value in _ORDINAL_WORDS:
         return _ORDINAL_WORDS[value]
     if value in _NUMBER_WORDS:
@@ -564,7 +587,7 @@ def _list_marker_order(marker: str) -> int | None:
     if match is None:
         return None
     order = int(match.group(1))
-    return order if 1 <= order <= 20 else None
+    return order if 1 <= order <= 50 else None
 
 
 def normalize_turn_plan(plan: dict[str, Any], *, source_text: str) -> tuple[dict[str, Any], list[str]]:
@@ -748,6 +771,20 @@ def normalize_turn_plan(plan: dict[str, Any], *, source_text: str) -> tuple[dict
             if _clear_satisfied_action_missing_fields(action):
                 notes.append("action_missing_fields_cleared")
             normalized_actions.append(action)
+        # Compound batches: the spoken anchors define which words belong to
+        # which action. Re-ground every body / schedule / evidence span
+        # inside its own segment, or rebuild outright on misalignment.
+        if normalized_actions:
+            segments = segment_native_actions(source_text)
+            if len(segments) >= 2:
+                normalized_actions, seg_notes = _realign_actions_to_segments(
+                    normalized_actions, segments, source_text=source_text
+                )
+                notes.extend(seg_notes)
+            normalized_actions, ordinal_notes = _expand_missing_ordinal_actions(
+                normalized_actions, source_text=source_text
+            )
+            notes.extend(ordinal_notes)
         out["actions"] = normalized_actions
         actions = normalized_actions
 
@@ -887,6 +924,261 @@ def _render_has_content(render: dict[str, Any]) -> bool:
     if not isinstance(units, list):
         return False
     return any(isinstance(unit, dict) and str(unit.get("text") or "").strip() for unit in units)
+
+
+_ACTION_ANCHOR_RE = re.compile(
+    r"""
+    (?:\b(?:and|then|also)\s+)*
+    (?P<verb>
+        (?:take|create|make|add|save|write)\s+(?:a\s+|another\s+|new\s+)?note\b
+      | remind\s+me\b
+      | set\s+(?:a\s+)?reminder\b
+      | (?:add|create)\s+a?\s*reminder\b
+      | (?:set|add|create)\s+(?:an?\s+)?alarm\b
+      | set\s+a\s+timer\b
+      | wake\s+me\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def segment_native_actions(source_text: str) -> list[dict[str, Any]]:
+    """Deterministic segmentation of a compound native-action utterance.
+
+    Each segment runs from one native action verb to the next anchor.
+    When two or more anchors exist, the segments — not the model's re-typed
+    spans — are the authority for which words belong to which action
+    (production 2026-06-11: six-action batch shipped sibling-bled bodies
+    and a reminder that borrowed another sibling's time).
+    """
+    text = str(source_text or "")
+    matches = list(_ACTION_ANCHOR_RE.finditer(text))
+    segments: list[dict[str, Any]] = []
+    for i, m in enumerate(matches):
+        verb = re.sub(r"\s+", " ", m.group("verb").lower())
+        if "note" in verb:
+            kind = "note"
+        elif "alarm" in verb or "timer" in verb or "wake" in verb:
+            kind = "alarm"
+        else:
+            kind = "reminder"
+        start = m.start("verb")
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        seg_text = text[start:end].strip(" ,.;")
+        seg_text = re.sub(r"\s+(?:and|then|also)$", "", seg_text, flags=re.IGNORECASE).strip(" ,.;")
+        segments.append({"kind": kind, "text": seg_text})
+    return segments
+
+
+_SEGMENT_CLOCK = r"\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.?|p\.m\.?)"
+_SEGMENT_DAY = (
+    r"(?:(?:next|this|coming)\s+)?"
+    r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+    r"|today|tomorrow|tonight|day\s+after\s+tomorrow)"
+)
+# Word boundaries throughout ("within 5 minutes" must not read as
+# "in 5 minutes"), and BOTH orders of clock and day: speech says
+# "9pm today" as often as "today at 9pm" (production 2026-06-12: the
+# day-first-only pattern reduced "Darpan 9pm today" to "today", which
+# parse_when default-filled to 9 AM and rolled to the wrong morning).
+_SEGMENT_TEMPORAL_RE = re.compile(
+    rf"""
+    \b{_SEGMENT_DAY}(?:\s+(?:at\s+)?{_SEGMENT_CLOCK})?\b
+    | \b(?:at\s+)?{_SEGMENT_CLOCK}\s+{_SEGMENT_DAY}\b
+    | \bin\s+(?:\d+|a|an|half)\s+(?:minutes?|mins?|hours?|hrs?)\b
+    | \b(?:at\s+)?{_SEGMENT_CLOCK}\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_SEGMENT_CLOCK_RE = re.compile(rf"\b{_SEGMENT_CLOCK}\b", re.IGNORECASE)
+_SEGMENT_DAY_RE = re.compile(rf"\b{_SEGMENT_DAY}\b", re.IGNORECASE)
+
+
+def _segment_temporal_clause(seg_text: str) -> str:
+    """Best temporal clause inside one action segment.
+
+    Prefer candidates carrying a clock over bare day words (a clause with
+    "9pm" beats a longer bare "tomorrow"), then day+clock together, then
+    longer text.
+    """
+    best = ""
+    best_score = (-1, -1, -1)
+    for m in _SEGMENT_TEMPORAL_RE.finditer(seg_text or ""):
+        candidate = m.group(0).strip()
+        has_clock = 1 if _SEGMENT_CLOCK_RE.search(candidate) else 0
+        has_day = 1 if _SEGMENT_DAY_RE.search(candidate) else 0
+        score = (has_clock, has_clock + has_day, len(candidate))
+        if score > best_score:
+            best_score = score
+            best = candidate
+    return re.sub(r"^at\s+", "", best, flags=re.IGNORECASE)
+
+
+_COMPOUND_DECLARATION_RE = re.compile(
+    r"\b(?:set\s+up|set|create|add|make)\s+"
+    r"(?:two|three|four|five|six|2|3|4|5|6)\s+"
+    r"(?P<kind>alarms|reminders)\b",
+    re.IGNORECASE,
+)
+_ORDINAL_ANCHOR_RE = re.compile(
+    r"\b(?:first|second|third|fourth|fifth|sixth|1st|2nd|3rd|4th|5th|6th)\b[,.\s]+",
+    re.IGNORECASE,
+)
+
+
+def _expand_missing_ordinal_actions(
+    actions: list[dict[str, Any]],
+    *,
+    source_text: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Synthesize ordinal-clause actions the model failed to emit.
+
+    "Set up two alarms. First, to call my wife at 10 pm today. Second, …"
+    carries no action verb inside the ordinal clauses, and the 4B planner
+    regularly under-emits or kind-confuses them (production 2026-06-12,
+    utterance macshell-26819FF2: two spoken alarms produced zero alarm
+    actions). When the source declares a compound alarm/reminder batch AND
+    ordinal clauses with their own grounded temporal spans exist AND no
+    existing action already claims a clause's temporal span, add a
+    deterministic action derived from the clause. Existing model actions
+    are never modified or removed, and every synthesized action still
+    passes the per-action coercion guards (grounding, timeless-alarm skip)
+    downstream.
+    """
+    notes: list[str] = []
+    text = str(source_text or "")
+    declaration = _COMPOUND_DECLARATION_RE.search(text)
+    if declaration is None:
+        return actions, notes
+    kind = "alarm" if declaration.group("kind").lower().startswith("alarm") else "reminder"
+
+    anchors = list(_ORDINAL_ANCHOR_RE.finditer(text, declaration.end()))
+    if len(anchors) < 2:
+        return actions, notes
+
+    claimed_spans = {
+        _norm_span(str((a.get("schedule") or {}).get("source_span") or ""))
+        for a in actions
+        if isinstance(a, dict)
+    }
+    claimed_spans.discard("")
+
+    expanded = list(actions)
+    added = 0
+    for i, anchor in enumerate(anchors[:6]):
+        clause_end = anchors[i + 1].start() if i + 1 < len(anchors) else len(text)
+        clause = text[anchor.end():clause_end]
+        # A clause ends at its own sentence; trailing sentences belong to
+        # other intents ("…at 9 pm today. Please add a note…").
+        clause = re.split(r"[.!?]", clause, maxsplit=1)[0].strip(" ,;")
+        if not clause:
+            continue
+        temporal = _segment_temporal_clause(clause)
+        if not temporal or not _SEGMENT_CLOCK_RE.search(temporal):
+            # Only synthesize when the clause carries an explicit clock —
+            # bare day words default-fill and create wrong-time actions.
+            continue
+        if _norm_span(temporal) in claimed_spans:
+            continue
+        action: dict[str, Any] = {
+            "kind": kind,
+            "operation": "create",
+            "body": "",
+            "evidence_span": clause,
+            "schedule": {"kind": "instant", "source_span": temporal},
+            "missing_fields": [],
+        }
+        body = _action_body_candidate_from_text(kind, clause, action, source_text=source_text)
+        body = re.sub(r"^to\s+", "", str(body or clause).strip(), flags=re.IGNORECASE)
+        body = re.sub(
+            rf"\s*(?:at\s+)?{re.escape(temporal)}\s*$", "", body, flags=re.IGNORECASE
+        ).strip(" ,;")
+        action["body"] = body or clause
+        claimed_spans.add(_norm_span(temporal))
+        expanded.append(action)
+        added += 1
+    if added:
+        notes.append("actions_expanded_from_ordinals")
+    return expanded, notes
+
+
+def _norm_span(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _realign_actions_to_segments(
+    actions: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    *,
+    source_text: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Per-segment grounding for compound batches.
+
+    Positionally aligned actions get their body / schedule span / evidence
+    re-grounded inside their own segment. On count or kind mismatch the
+    model batch is kept untouched: the verb scanner only sees clauses with
+    explicit action verbs, so a mismatch usually means the SCANNER is the
+    one missing intents, not the model. Rebuilding from segments here
+    deleted four correctly-timed alarms whose ordinal clauses ("First, to
+    call…") carry no verb anchor (production 2026-06-12, utterance
+    macshell-12A45392: model emitted 6 actions, scanner saw 2, rebuild
+    shipped only a note and a wrong-time reminder). The model batch has
+    already passed plan validation and still faces per-action coercion
+    guards (grounding, timeless-alarm skip) downstream.
+    """
+    notes: list[str] = []
+    aligned = (
+        len(actions) == len(segments)
+        and all(
+            str(a.get("kind") or "") == s["kind"] for a, s in zip(actions, segments)
+        )
+    )
+    if not aligned:
+        notes.append("segment_realign_skipped_misaligned")
+        return actions, notes
+
+    for action, seg in zip(actions, segments):
+        seg_text = seg["text"]
+        kind = str(action.get("kind") or "")
+        schedule = action.get("schedule") if isinstance(action.get("schedule"), dict) else None
+        if kind in {"reminder", "alarm"}:
+            seg_temporal = _segment_temporal_clause(seg_text)
+            span = str((schedule or {}).get("source_span") or "").strip()
+            if span and not span_present(span, seg_text):
+                # A schedule span outside this segment is a sibling's time.
+                if seg_temporal:
+                    schedule["source_span"] = seg_temporal
+                    notes.append("action_schedule_regrounded_to_segment")
+                else:
+                    schedule.pop("source_span", None)
+                    notes.append("action_sibling_schedule_dropped")
+            elif not span and seg_temporal:
+                if schedule is None:
+                    schedule = {"kind": "instant"}
+                    action["schedule"] = schedule
+                schedule["source_span"] = seg_temporal
+                notes.append("action_schedule_filled_from_segment")
+            # The segment is authoritative for reminder/alarm bodies too —
+            # deterministic derivation strips the verb + schedule clause,
+            # so bodies can never carry "Friday at 2pm to …" or a sibling.
+            candidate = _action_body_candidate_from_text(kind, seg_text, action, source_text=source_text)
+            if candidate and candidate != str(action.get("body") or "").strip():
+                action["body"] = candidate
+                notes.append("action_body_derived_from_segment")
+        else:
+            body = str(action.get("body") or "").strip()
+            if not body or not span_present(body, seg_text):
+                candidate = _action_body_candidate_from_text(kind, seg_text, action, source_text=source_text)
+                if candidate:
+                    action["body"] = candidate
+                    notes.append("action_body_regrounded_to_segment")
+        evidence = str(action.get("evidence_span") or "").strip()
+        if not evidence or not span_present(evidence, seg_text):
+            action["evidence_span"] = seg_text
+            notes.append("action_evidence_set_to_segment")
+    return actions, notes
 
 
 def _snap_span_to_source(span: str, source_text: str, *, max_trim_per_side: int = 2) -> str:

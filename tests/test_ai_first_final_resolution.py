@@ -45,7 +45,7 @@ from juno_v2.preview.streaming_core import (
     _silence_agreement_commit_safe,
 )
 from juno_v2.transcript.contracts import TranscriptAdjudicationResult
-from juno_v2.transcript.adjudicator import TranscriptAdjudicator
+from juno_v2.transcript.adjudicator import TranscriptAdjudicator, TranscriptAdjudicatorConfig
 from juno_v2.transcript.validators import validate_adjudication_result
 from juno_v2.writer.backends.mlx_lm import _build_writer_prompt, _system_prompt
 from juno_v2.writer.config import WriterConfig
@@ -1578,6 +1578,57 @@ def test_explicit_snippet_insert_commits_body_without_final_formatting() -> None
     assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
 
 
+def test_oneshot_response_exposes_snippet_expanded_metadata() -> None:
+    spoken = "Insert customer follow-up snippet."
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=spoken,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-oneshot-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="customer follow up snippet",
+            body="Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:",
+            scope="global",
+        )
+        writer = WriterService(
+            config=WriterConfig(enable_model_transforms=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+        pipeline = OneShotDictationPipeline(
+            transcriber=FakeTranscriber(),
+            recorder=_Recorder(),
+            context_provider=FakeContextProvider(),
+            memory_store=memory,
+            writer_service=writer,
+            transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+            itn_enabled=False,
+        )
+        result = pipeline.run(_loud_wav_bytes(), utterance_id="utt-snippet-meta", save_history=False, save_audio=False)
+
+    payload = result.to_dict()
+    writer_meta = payload["metadata"]["writer_outcome"]
+    assert result.transcript == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
+    assert writer_meta["snippet_expanded"] is True
+    assert payload["metadata"]["snippet_expanded"] is True
+    assert writer_meta["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
+
+
 def test_recent_transform_command_uses_recent_clipboard_in_default_mode() -> None:
     captured: dict[str, object] = {}
 
@@ -1629,6 +1680,239 @@ def test_recent_transform_command_uses_recent_clipboard_in_default_mode() -> Non
     assert result.metadata["target"] == "recent_clipboard"
     assert result.metadata["target_text_chars"] == len(recent)
     assert result.output_text == "Clearer recent text."
+
+
+def test_recent_transform_command_uses_focused_text_before_without_commit_metadata() -> None:
+    recent = "Permissions are reset. Actions are passing. We still need one production paste check."
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=False),
+        recorder=_Recorder(),
+        backend=None,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-focused-recent-bullets",
+        final_text="Turn that into bullets.",
+        raw_text="Turn that into bullets.",
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            focused_text_before=recent,
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=None,
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        partial_text="",
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == (
+        "- Permissions are reset\n"
+        "- Actions are passing\n"
+        "- We still need one production paste check"
+    )
+    assert result.metadata["target"] == "focused_text_before"
+
+
+def test_recent_model_transform_uses_focused_text_before_without_commit_metadata() -> None:
+    captured: dict[str, object] = {}
+
+    class Backend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            captured["request"] = req
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text="Shorter launch check.",
+                backend_name="fake-qwen",
+            )
+
+    recent = "Permissions are reset. Actions are passing. We still need one production paste check."
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True),
+        recorder=_Recorder(),
+        backend=Backend(),
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-focused-recent-shorter",
+        final_text="Make that shorter.",
+        raw_text="Make that shorter.",
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            focused_text_before=recent,
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=None,
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        partial_text="",
+    )
+
+    req = captured["request"]
+    assert isinstance(req, WriterTransformRequest)
+    assert req.source_text == recent
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == "Shorter launch check."
+    assert result.metadata["target"] == "focused_text_before"
+
+
+def test_focused_tail_replace_counts_chars_to_caret_and_keeps_trailing_whitespace() -> None:
+    # The shell deletes target_text_chars back from the CARET. A caret two
+    # newlines past the paragraph (user pressed Enter twice, then asked for
+    # the rewrite) must count those newlines or the delete chops the
+    # paragraph mid-word and strands the blank lines.
+    recent = "Permissions are reset. Actions are passing. We still need one production paste check."
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=False),
+        recorder=_Recorder(),
+        backend=None,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-focused-trailing-ws",
+        final_text="Turn that into bullets.",
+        raw_text="Turn that into bullets.",
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            focused_text_before="Intro para.\n\n" + recent + "\n\n",
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=None,
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        partial_text="",
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.metadata["target"] == "focused_text_before"
+    assert result.metadata["target_text_chars"] == len(recent) + 2
+    # The caret's blank-line state survives the rewrite.
+    assert result.output_text.endswith("\n\n")
+    assert result.output_text.startswith("- Permissions are reset")
+
+
+def test_delete_last_sentence_recent_ships_caret_anchored_replace_chars() -> None:
+    # "Delete the last sentence" against the focused tail previously shipped
+    # no target_text_chars at all — the shell deleted nothing and pasted a
+    # duplicate of the shortened paragraph.
+    recent = "Permissions are reset. Actions are passing. We still need one check."
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=False),
+        recorder=_Recorder(),
+        backend=None,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-focused-delete-sentence",
+        final_text="Delete the last sentence.",
+        raw_text="Delete the last sentence.",
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            focused_text_before=recent + "\n",
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=None,
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        partial_text="",
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.metadata["target"] == "focused_text_before"
+    assert result.metadata["target_text_chars"] == len(recent) + 1
+    assert result.output_text == "Permissions are reset. Actions are passing.\n"
+
+
+def test_deterministic_list_lanes_defer_to_editor_on_unresolved_correction_cue() -> None:
+    # A surviving "scratch that" needs meaning-level judgment; the natural
+    # bullet renderer must yield instead of shipping the cue inside a bullet.
+    class _CapturingRecorder(_Recorder):
+        def __init__(self) -> None:
+            super().__init__()
+            self.events: list[tuple[str, dict]] = []
+
+        def record(self, kind: object, name: str = "", payload: dict | None = None) -> None:
+            self.events.append((str(name), dict(payload or {})))
+
+    recorder = _CapturingRecorder()
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=False),
+        recorder=recorder,
+        backend=None,
+    )
+
+    def _run(text: str, uid: str):
+        return service.process_transcript(
+            utterance_id=uid,
+            final_text=text,
+            raw_text=text,
+            context=TypedContextBundle(app_name="Notes", app_category="docs"),
+            anchor_selection=None,
+            memory_store=None,
+            memory_snapshot=None,
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    cue = _run(
+        "I have three things to do today. First, email Sam scratch that email Sandra. "
+        "Second, pay rent. Third, book flights.",
+        "utt-list-cue",
+    )
+    assert not cue.output_text.startswith("- ")
+    deferrals = [p for n, p in recorder.events if n == "deterministic_list_deferred_to_editor"]
+    assert deferrals and deferrals[0]["lane"] == "natural_bullet_list"
+
+    clean = _run(
+        "I have three things to do today. First, email Sandra. Second, pay rent. "
+        "Third, book flights.",
+        "utt-list-clean",
+    )
+    assert clean.output_text == "- email Sandra\n- pay rent\n- book flights"
 
 
 def test_recent_transform_command_grammar_covers_natural_variants() -> None:
@@ -1750,3 +2034,48 @@ def _adjudication_result(
         stable_prefix_chars=None,
         protected_terms_used=protected_terms_used,
     )
+
+
+# --------------------------------------------------------------------- #
+# Screen-term prompt hygiene
+# --------------------------------------------------------------------- #
+
+
+def test_screen_terms_filtered_before_whisper_prompt() -> None:
+    from juno_v2.memory.bias import _diversify_bias_phrases
+
+    # Production 2026-06-11: with WhatsApp Web on screen the Whisper prompt
+    # filled with UI chrome, OCR junk, and chat-contact handles — and a
+    # replay showed the junk prompt driving a faint utterance into a
+    # "team team team…" repetition loop.
+    screen_terms = [
+        "WhatsApp",            # proper app name — keep
+        "High",                # common English UI word — drop
+        "Back",                # common English UI word — drop
+        "Reload",              # common English UI word — drop
+        "lTr",                 # OCR junk — drop
+        "Mwrk5pace",           # OCR junk with digit — drop
+        "Adi41",               # contact handle with digit — drop
+        "FusionX Bookmarks New Tab Back Forward Reload Bookmark",  # run-on — drop
+        "Cassini Research",    # name phrase — keep
+        "VPN",                 # acronym — keep
+    ]
+    out = _diversify_bias_phrases([], screen_terms=screen_terms, cap=24)
+
+    assert "WhatsApp" in out
+    assert "Cassini Research" in out
+    assert "VPN" in out
+    for junk in ("High", "Back", "Reload", "lTr", "Mwrk5pace", "Adi41"):
+        assert junk not in out, junk
+    assert not any("Bookmarks New Tab" in t for t in out)
+
+
+def test_memory_phrases_not_subject_to_screen_gate() -> None:
+    from juno_v2.memory.bias import _diversify_bias_phrases
+
+    # Memory-lane phrases are policy-gated at learn time; serving keeps them
+    # even when they would fail the screen-term shape gate.
+    out = _diversify_bias_phrases(
+        ["o4-mini-high", "luma-mode"], screen_terms=[], cap=24
+    )
+    assert out == ["o4-mini-high", "luma-mode"]

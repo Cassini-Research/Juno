@@ -184,7 +184,7 @@ PY
   PREVIEW_ENDPOINT="http://${PREVIEW_HOST}:${PREVIEW_PORT}"
   export JUNO_V2_PREVIEW_ENDPOINT="${PREVIEW_ENDPOINT}"
   PREVIEW_LOG="${LOG_ROOT}/preview-service.log"
-  PREVIEW_PID=""
+  PREVIEW_SUPERVISOR_PID=""
   RUNTIME_PID=""
 
   cleanup() {
@@ -192,22 +192,60 @@ PY
       kill "${RUNTIME_PID}" 2>/dev/null || true
       wait "${RUNTIME_PID}" 2>/dev/null || true
     fi
-    if [[ -n "${PREVIEW_PID}" ]]; then
-      kill "${PREVIEW_PID}" 2>/dev/null || true
-      wait "${PREVIEW_PID}" 2>/dev/null || true
+    if [[ -n "${PREVIEW_SUPERVISOR_PID}" ]]; then
+      kill "${PREVIEW_SUPERVISOR_PID}" 2>/dev/null || true
+      wait "${PREVIEW_SUPERVISOR_PID}" 2>/dev/null || true
     fi
   }
   trap cleanup EXIT INT TERM
 
-  "${PY}" -m juno_v2.preview.streaming_service \
-    --backend "${JUNO_V2_PREVIEW_SERVICE_BACKEND}" \
-    --host "${PREVIEW_HOST}" \
-    --port "${PREVIEW_PORT}" \
-    --model-path "${JUNO_V2_PREVIEW_MODEL_PATH}" \
-    --hf-repo-id "${JUNO_V2_PREVIEW_HF_REPO_ID}" \
-    --device auto \
-    --compute-type default >>"${PREVIEW_LOG}" 2>&1 &
-  PREVIEW_PID="$!"
+  # >>> juno-preview-supervisor (extracted verbatim by tests/test_run_engine_preview_supervision.py)
+  supervise_preview_service() {
+    # The streaming preview service is a resident helper the runtime calls
+    # over loopback HTTP for every live-caption chunk. A one-shot spawn
+    # turns any death (signal, crash, OOM) into permanently dead live
+    # preview: the runtime keeps the stale endpoint, health reporting keeps
+    # saying ok, every chunk fails connection-refused, and only a full
+    # engine-tree restart recovers (observed 2026-06-12). Restart forever
+    # with bounded backoff so a boot-crash loop cannot peg the GPU, and log
+    # every exit with status + uptime for post-mortem attribution.
+    local child=""
+    trap 'if [[ -n "${child}" ]]; then kill "${child}" 2>/dev/null || true; fi; exit 0' TERM INT
+    local backoff=1
+    while :; do
+      local started_at
+      started_at="$(date +%s)"
+      "${PY}" -m juno_v2.preview.streaming_service \
+        --backend "${JUNO_V2_PREVIEW_SERVICE_BACKEND}" \
+        --host "${PREVIEW_HOST}" \
+        --port "${PREVIEW_PORT}" \
+        --model-path "${JUNO_V2_PREVIEW_MODEL_PATH}" \
+        --hf-repo-id "${JUNO_V2_PREVIEW_HF_REPO_ID}" \
+        --device auto \
+        --compute-type default >>"${PREVIEW_LOG}" 2>&1 &
+      child="$!"
+      local status=0
+      wait "${child}" || status=$?
+      child=""
+      local ended_at
+      ended_at="$(date +%s)"
+      if (( ended_at - started_at >= 30 )); then
+        backoff=1
+      else
+        backoff=$(( backoff * 2 ))
+        if (( backoff > 30 )); then backoff=30; fi
+      fi
+      echo "[supervisor] $(date -u +%Y-%m-%dT%H:%M:%SZ) preview service exited status=${status} uptime=$(( ended_at - started_at ))s; restarting in ${backoff}s" >>"${PREVIEW_LOG}"
+      # Background sleep + wait keeps TERM delivery prompt: bash defers
+      # traps while a foreground command runs, but interrupts `wait`.
+      sleep "${backoff}" &
+      wait "$!" || true
+    done
+  }
+  # <<< juno-preview-supervisor
+
+  supervise_preview_service &
+  PREVIEW_SUPERVISOR_PID="$!"
 
   "${PY}" - <<PY
 import json, sys, time

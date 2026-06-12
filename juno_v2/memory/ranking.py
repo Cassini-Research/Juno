@@ -134,15 +134,63 @@ def rank_memory_for_context(
         (item for item in snapshot.lexicon if not _low_signal_lexicon_pair(item.term, item.canonical_form)),
         key=lambda item: _term_score(item.canonical_form, float(item.boost)),
     )
+    def _edit_distance_le1(a: str, b: str) -> bool:
+        if abs(len(a) - len(b)) > 1:
+            return False
+        if a == b:
+            return True
+        if len(a) == len(b):
+            return sum(1 for x, y in zip(a, b) if x != y) == 1
+        shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+        for i in range(len(longer)):
+            if shorter == longer[:i] + longer[i + 1:]:
+                return True
+        return False
+
+    def _correction_admissible(item) -> bool:
+        # Same rule as replacements: a correction pair serves only when its
+        # observed or corrected form is plausibly present in this turn.
+        tokens = _token_set(f"{item.observed} {item.corrected}")
+        if not tokens or not hint_tokens:
+            return False
+        if tokens & hint_tokens:
+            return True
+        return any(
+            len(t) >= 4 and any(_edit_distance_le1(t, h) for h in hint_tokens)
+            for t in tokens
+        )
+
     corrections = sorted(
-        snapshot.corrections,
+        (item for item in snapshot.corrections if _correction_admissible(item)),
         key=lambda item: _term_score(f"{item.observed} {item.corrected}", float(item.count)),
     )
     entities = sorted(
         (item for item in snapshot.session_entities if _session_entity_allowed(item.value)),
         key=lambda item: _term_score(item.value, float(item.count)),
     )
-    replacements = sorted(snapshot.replacements, key=lambda r: _rep_score(r))
+    def _replacement_admissible(rule: ReplacementRule) -> bool:
+        """Serve a replacement only when its trigger is plausibly present.
+
+        Unconditional serving let a seeded "launch code" rule inject
+        LAUNCH-CODE-991 into a selected-text rewrite that never mentioned it
+        (production 2026-06-11). Triggers must appear in the spoken hint /
+        selection / focused text / window title / session terms, or be a
+        single-edit near miss of a hint token.
+        """
+        trigger_tokens = _token_set(rule.trigger)
+        if not trigger_tokens or not hint_tokens:
+            return False
+        if trigger_tokens & hint_tokens:
+            return True
+        for trig in trigger_tokens:
+            if len(trig) >= 4 and any(_edit_distance_le1(trig, hint) for hint in hint_tokens):
+                return True
+        return False
+
+    replacements = sorted(
+        (rule for rule in snapshot.replacements if _replacement_admissible(rule)),
+        key=lambda r: _rep_score(r),
+    )
     snippets = sorted(
         (
             item

@@ -8,7 +8,6 @@ import Foundation
 enum JunoScreenContextAccess {
     private static let settingsOpenCooldown: TimeInterval = 1.25
     private static var lastSettingsOpenAt: Date?
-    private static var requestIssuedThisSession = false
 
     static var isEnabled: Bool {
         JunoUserDefaults.screenContextEnabled
@@ -35,9 +34,18 @@ enum JunoScreenContextAccess {
             // row in System Settings. The request call is the macOS-supported
             // way to register Juno for Screen Recording, so keep it behind one
             // explicit user action and never call it from dictation/runtime paths.
-            if !requestIssuedThisSession {
-                requestIssuedThisSession = true
+            //
+            // macOS shows the consent dialog only for the very first request
+            // per install, and that dialog carries its own "Open System
+            // Settings" button — opening Settings ourselves at the same time
+            // stacks two prompts. Once the one-shot dialog has been consumed
+            // (this or any earlier session), the request is a silent no-op,
+            // so navigating to System Settings is the only useful action.
+            if !JunoUserDefaults.screenRecordingPromptRequested {
+                JunoUserDefaults.screenRecordingPromptRequested = true
                 _ = CGRequestScreenCaptureAccess()
+                completion(permissionGranted)
+                return
             }
 
             let granted = permissionGranted

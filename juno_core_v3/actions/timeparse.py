@@ -552,10 +552,37 @@ def _try_dateparser(clause: str, now: datetime | None) -> datetime | None:
     if _dateparser is None:
         return None
     try:
-        return _dateparser.parse(clause, settings=_settings(now))
+        parsed = _dateparser.parse(clause, settings=_settings(now))
     except Exception:  # noqa: BLE001 - third-party can raise anything
         logger.exception("dateparser raised for clause=%r", clause)
         return None
+    return _anchor_to_reference_tz(parsed, now)
+
+
+def _anchor_to_reference_tz(parsed: datetime | None, now: datetime | None) -> datetime | None:
+    """Reinterpret dateparser's wall clock into the caller's timezone.
+
+    dateparser computes wall-clock fields against ``RELATIVE_BASE`` (the
+    broker ``now``, in the user's tz) but attaches the SYSTEM tz to the
+    result. When the two differ, "Friday at 2pm" came back as 14:00 in the
+    machine's zone — the right wall clock anchored to the wrong zone, i.e.
+    an alarm firing hours off whenever broker time and system time diverge
+    (the deterministic tier-0/tier-2 lanes already anchor via
+    ``_reference_now``). The wall clock is what the speaker meant, so we
+    reinterpret rather than convert. Only do this when the parsed tz equals
+    the system default — an explicit zone in the clause ("2pm UTC") is
+    dateparser telling us something, and we keep it.
+    """
+    if parsed is None or now is None or now.tzinfo is None:
+        return parsed
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=now.tzinfo)
+    system_offset = datetime.now().astimezone().utcoffset()
+    if parsed.utcoffset() == now.utcoffset():
+        return parsed
+    if parsed.utcoffset() == system_offset:
+        return parsed.replace(tzinfo=now.tzinfo)
+    return parsed
 
 
 # Salvage patterns: substrings the user almost certainly intended as the
@@ -722,6 +749,20 @@ def parse_when(clause: str, *, now: datetime | None = None) -> ParsedTime | None
 
     cleaned = clause.strip().rstrip(".,;:!?")
 
+    # Spoken dotted clocks ("11.30 pm") are colon clocks. dateparser
+    # handles most shapes, but "at 11.30 pm tomorrow" specifically makes
+    # it drop the clock and return tomorrow-at-now — an actively wrong
+    # answer at full confidence (production 2026-06-11: an alarm spoken
+    # as "at 11.30 pm tomorrow" was created for the wrong time). Only
+    # rewrite when a meridiem follows, so decimals ("3.5 hours") and
+    # version-like numbers are untouched.
+    cleaned = re.sub(
+        r"\b(\d{1,2})\.(\d{2})(?=\s*(?:a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\b)",
+        r"\1:\2",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
     # Tier 0: pre-empt dateparser for clauses where it produces *wrong*
     # answers (not None — actively misleading). Bare ordinal days like
     # "on the 5th" past today get returned by dateparser as "same date,
@@ -746,6 +787,25 @@ def parse_when(clause: str, *, now: datetime | None = None) -> ParsedTime | None
                 clause=cleaned,
                 parsed=preempted,
                 parser_confidence=0.85,
+                parser_source="dateparser",
+                now=now,
+            )
+
+    # Day-first relative clauses with a clock ("tomorrow at 9.15am") must
+    # also be deterministic: dateparser accepts the day but silently drops
+    # dotted clocks, returning the CURRENT time on that day — an actively
+    # wrong answer (a 21:42 reminder shipped for a 9:15 request,
+    # production 2026-06-11).
+    day_first = _RELATIVE_DAY_RE.match(cleaned.lower())
+    if day_first is not None and day_first.group("clock"):
+        preempted = _try_relative_day(cleaned.lower(), now)
+        if preempted is not None:
+            return resolve_time(
+                clause=cleaned,
+                parsed=preempted,
+                parser_confidence=0.85,
+                # Contract allows a fixed source set; this is the same
+                # preemption pattern the clock-first branch uses.
                 parser_source="dateparser",
                 now=now,
             )

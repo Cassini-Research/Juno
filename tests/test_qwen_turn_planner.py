@@ -168,6 +168,23 @@ def test_turn_planner_renders_only_spoken_numbered_items_when_claim_count_is_lar
     assert result.metadata["turn_plan"]["utterance_kind"] == "format_dictation"
 
 
+def test_structural_fallback_handles_natural_counted_ordinal_list() -> None:
+    plan = _fallback_structural_turn_plan(
+        "I think we need to focus on 3 things, first is that we check everything properly "
+        "before production and second is that we go to a party after we push things live."
+    )
+
+    assert plan is not None
+    render = plan["render_plan"]
+    assert render["claimed_item_count"] == 3
+    assert render["spoken_item_count"] == 2
+    assert [unit["text"] for unit in render["content_units"]] == [
+        "we check everything properly before production",
+        "we go to a party after we push things live",
+    ]
+    assert plan["uncertainties"] == [{"type": "claimed_count_mismatch", "claimed": 3, "spoken": 2}]
+
+
 def test_turn_plan_json_parser_recovers_misnested_render_metadata() -> None:
     raw = (
         '{"schema_version":"turn_plan_v1","utterance_kind":"dictation",'
@@ -2766,6 +2783,114 @@ def test_turn_planner_uses_structural_fallback_after_invalid_repaired_plan() -> 
     assert result.metadata["turn_plan"]["render"]["spoken_item_count"] == 3
 
 
+def test_turn_plan_missing_recent_deterministic_target_falls_back_to_parser() -> None:
+    source = "Turn that into bullets"
+    recent = "Verify microphone permission. Run action combos. Check final paste."
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "transform",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 0.5},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {
+            "operation": "bullets",
+            "instruction": "Turn into bullets",
+            "transformed_text": None,
+            "requires_second_pass": False,
+        },
+        "actions": [],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+        "uncertainties": [],
+    }
+
+    result = _service(plan).process_transcript(
+        utterance_id="utt-recent-bullets-planner-shadow",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            metadata={
+                "last_committed_text": recent,
+                "last_committed_start": 4,
+                "last_committed_end": 4 + len(recent),
+            },
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == "- Verify microphone permission\n- Run action combos\n- Check final paste"
+    assert result.metadata["target"] == "recent_commit"
+
+
+def test_turn_plan_missing_recent_model_target_uses_recent_commit_for_generation() -> None:
+    source = "Make that shorter"
+    recent = "This is a long launch-readiness update with repeated details about permissions, actions, and paste checks."
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "transform",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 0.5},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {
+            "operation": "rewrite",
+            "instruction": "Make the recent text more concise.",
+            "transformed_text": None,
+            "requires_second_pass": True,
+        },
+        "actions": [],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+        "uncertainties": [],
+    }
+    backend = _TaskBackend({
+        "turn_planning_v1": plan,
+        "transform_generation_v1": {"transformed_text": "Short launch update."},
+    })
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-recent-model-planner-shadow",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            metadata={
+                "last_committed_text": recent,
+                "last_committed_start": 8,
+                "last_committed_end": 8 + len(recent),
+            },
+        ),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result.action == WriterActionKind.TRANSFORM_COMMIT
+    assert result.output_text == "Short launch update."
+    assert result.commit_mode == CommitMode.REPLACE_SELECTION
+    assert result.selection_override == ClientSelection(start=8, end=8 + len(recent))
+    assert result.metadata["target"] == "recent_commit"
+    assert result.metadata["target_text_chars"] == len(recent)
+
+
 def _actions_plan_with_one_ungrounded_body(source: str) -> dict[str, Any]:
     return {
         "schema_version": "turn_plan_v1",
@@ -2853,7 +2978,11 @@ def test_single_bad_action_does_not_trigger_repair_pass() -> None:
     payload = generated[0]
     assert payload["repair_attempted"] is False
     assert payload["validation_ok"] is True
-    assert "action_1_body_not_grounded" in payload["validation_warnings"]
+    # Contract change 2026-06-11: compound segments are authoritative — the
+    # ungrounded sibling body is re-grounded inside its own segment during
+    # normalization instead of surviving as a validation warning.
+    assert "action_1_body_not_grounded" not in payload["validation_warnings"]
+    assert any("segment" in n for n in payload["normalization_notes"])
 
 
 def test_unusable_repair_restores_initial_plan() -> None:
@@ -3096,7 +3225,7 @@ def test_pipeline_wake_action_is_not_demoted_by_question_words_inside_note_body(
     assert "turn_plan_actions_detected" in event_names
 
 
-def test_pipeline_invalid_turn_plan_rejects_action_without_regex_fallback() -> None:
+def test_pipeline_invalid_turn_plan_routes_valid_action_to_regex_fallback() -> None:
     source = "juno remind me at 3 PM to call Ishida"
     recorder = _Recorder()
 
@@ -3139,14 +3268,15 @@ def test_pipeline_invalid_turn_plan_rejects_action_without_regex_fallback() -> N
     )
 
     assert result.ok
-    assert result.actions is None
     assert result.transcript == ""
     assert result.paste_kind == "none"
-    assert result.noop_reason == "action_rejected"
     assert result.is_action is True
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "reminder"
+    assert result.actions[0]["body"] == "call Ishida"
     event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
-    assert "turn_plan_action_rejected" in event_names
-    assert "turn_plan_action_fallback_used" not in event_names
+    assert "turn_plan_action_routed_to_fallback" in event_names
+    assert "turn_plan_action_fallback_used" in event_names
 
 
 def test_pipeline_valid_actionless_turn_plan_is_respected_without_regex_fallback() -> None:
@@ -3813,3 +3943,435 @@ def test_turn_plan_unsupported_operation_routes_to_extractor_fallback() -> None:
     event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
     assert "turn_plan_operation_routed_to_fallback" in event_names
     assert "turn_plan_action_fallback_used" in event_names
+
+
+def test_action_invalid_json_turn_plan_routes_to_extractor_fallback() -> None:
+    source = "Juno take a note Cassini launches on Monday."
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "still not json"})
+    recorder = _Recorder()
+    writer = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=recorder,
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+
+    set_llm_extractor(None)
+    result = pipeline.run(_loud_wav_bytes(), utterance_id="utt-action-invalid-json-fallback", save_history=False, save_audio=False)
+
+    assert result.ok
+    assert result.paste_kind == "none"
+    assert result.is_action is True
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "note"
+    assert result.actions[0]["body"] == "Cassini launches on Monday"
+    assert result.metadata["turn_plan"]["status"] == "invalid_json"
+    event_names = [args[1] for args, _ in recorder.events if len(args) >= 2]
+    assert "turn_plan_action_routed_to_fallback" in event_names
+    assert "turn_plan_action_fallback_used" in event_names
+
+
+def test_scratched_at_asr_variant_retake_runs_before_action_fallback() -> None:
+    source = "Juno remind me at 3 p.m. scratched at 4.15 p.m. to call Sam."
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "still not json"})
+    writer = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=_Recorder(),
+        context_provider=FakeContextProvider(),
+        writer_service=writer,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+
+    set_llm_extractor(None)
+    result = pipeline.run(_loud_wav_bytes(), utterance_id="utt-scratched-at-action", save_history=False, save_audio=False)
+
+    assert result.ok
+    assert result.paste_kind == "none"
+    assert result.actions is not None
+    assert result.actions[0]["kind"] == "reminder"
+    assert result.actions[0]["body"] == "call Sam"
+    assert result.actions[0]["when"] is not None
+    assert "4:15" in result.actions[0]["when"]["iso"] or "16:15" in result.actions[0]["when"]["iso"]
+    assert any(
+        applied.get("rule") == "self_correction_retakes"
+        for applied in result.normalization_applied
+    )
+
+
+def test_compound_six_actions_segment_authoritative_semantics() -> None:
+    # Production 2026-06-11 case 19: six actions passed count checks while
+    # bodies/spans/times bled across siblings. Segments are now authoritative:
+    # exact bodies, kinds, and times — from a deliberately corrupted batch.
+    src = (
+        "take a note checkpoint alpha and take a note checkpoint beta and remind me tomorrow at 10am "
+        "to call Sam and remind me Friday at 2pm to review metrics and set an alarm for 4.30pm to publish "
+        "and set an alarm in 45 minutes to stand up"
+    )
+    corrupted = [
+        {"kind": "note", "operation": "create", "body": "checkpoint alpha and take a note checkpoint beta",
+         "evidence_span": "take a note checkpoint alpha and take a note checkpoint beta", "schedule": {"kind": "none"}, "missing_fields": []},
+        {"kind": "note", "operation": "create", "body": "checkpoint alpha and take a note checkpoint beta",
+         "evidence_span": "take a", "schedule": {"kind": "none"}, "missing_fields": []},
+        {"kind": "reminder", "operation": "create", "body": "call Sam",
+         "evidence_span": "beta and", "schedule": {"kind": "instant", "source_span": "tomorrow at 10am"}, "missing_fields": []},
+        {"kind": "reminder", "operation": "create", "body": "Friday at 2pm to review metrics",
+         "evidence_span": "remind me", "schedule": {"kind": "instant", "source_span": "tomorrow at 10am"}, "missing_fields": []},
+        {"kind": "alarm", "operation": "create", "body": "publish",
+         "evidence_span": "and set", "schedule": {"kind": "instant", "source_span": "4.30pm"}, "missing_fields": []},
+        {"kind": "alarm", "operation": "create", "body": "stand up",
+         "evidence_span": "and set", "schedule": {"kind": "instant", "source_span": "in 45 minutes"}, "missing_fields": []},
+    ]
+    plan = {
+        "schema_version": "turn_plan_v1", "utterance_kind": "actions",
+        "corrected_transcript": {"text": src},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": corrupted, "snippets": [], "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"}, "uncertainties": [],
+    }
+    from datetime import timedelta, timezone
+
+    normalized, notes = normalize_turn_plan(plan, source_text=src)
+    now = datetime(2026, 6, 11, 12, 0, tzinfo=timezone(timedelta(hours=7)))  # Thursday
+    parsed = actions_from_turn_plan(normalized, source_text=src, now=now)
+    assert parsed.actions is not None and len(parsed.actions) == 6
+    expected = [
+        ("note", "checkpoint alpha", None),
+        ("note", "checkpoint beta", None),
+        ("reminder", "call Sam", "2026-06-12T10:00:00+07:00"),
+        ("reminder", "review metrics", "2026-06-12T14:00:00+07:00"),
+        ("alarm", "publish", "2026-06-11T16:30:00+07:00"),
+        ("alarm", "stand up", "2026-06-11T12:45:00+07:00"),
+    ]
+    for action, (kind, body, when_iso) in zip(parsed.actions, expected):
+        assert action.kind.value == kind
+        assert action.body == body
+        assert (action.when.iso if action.when else None) == when_iso
+        # No body may carry a sibling's native-action anchor.
+        for anchor in ("take a note", "remind me", "set an alarm"):
+            assert anchor not in action.body
+
+def _complex_five_action_source() -> str:
+    # Production 2026-06-11 23:40 (utterance macshell-44FD9D72): five actions
+    # in one breath, including a dotted clock and a trailing compound.
+    return (
+        "Hey Juno, set up two alarms. First, to call my wife at 10 pm tomorrow. "
+        "Second, to call my brother at 11 pm tomorrow. Third, to call my friend "
+        "at 11.30 pm tomorrow. Add a note to fix all the issues and put Juno on "
+        "product hunt tomorrow 12pm. And remind me to call Darpan tomorrow 3pm."
+    )
+
+
+def test_complex_compound_alarms_all_carry_correct_times() -> None:
+    # The well-formed plan for the production utterance: every alarm must
+    # dispatch with the exact spoken time — including the dotted "11.30 pm".
+    source = _complex_five_action_source()
+
+    def alarm(body: str, span: str, evidence: str) -> dict:
+        return {
+            "kind": "alarm",
+            "operation": "create",
+            "body": body,
+            "evidence_span": evidence,
+            "schedule": {"kind": "instant", "source_span": span},
+            "missing_fields": [],
+        }
+
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            alarm("call my wife", "10 pm tomorrow", "call my wife at 10 pm tomorrow"),
+            alarm("call my brother", "11 pm tomorrow", "call my brother at 11 pm tomorrow"),
+            alarm("call my friend", "11.30 pm tomorrow", "call my friend at 11.30 pm tomorrow"),
+            {
+                "kind": "note",
+                "operation": "create",
+                "body": "fix all the issues and put Juno on product hunt tomorrow 12pm",
+                "evidence_span": "Add a note to fix all the issues and put Juno on product hunt tomorrow 12pm",
+                "missing_fields": [],
+            },
+            {
+                "kind": "reminder",
+                "operation": "create",
+                "body": "call Darpan",
+                "evidence_span": "remind me to call Darpan tomorrow 3pm",
+                "schedule": {"kind": "instant", "source_span": "tomorrow 3pm"},
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 23, 40))
+
+    assert parsed.actions is not None
+    assert parsed.skipped_reasons == []
+    assert [a.kind.value for a in parsed.actions] == ["alarm", "alarm", "alarm", "note", "reminder"]
+    times = [(a.when.iso if a.when else None) for a in parsed.actions]
+    # Every alarm and the reminder carry an exact instant; only the note is untimed.
+    assert times[0] is not None and times[0].startswith("2026-06-12T22:00")
+    assert times[1] is not None and times[1].startswith("2026-06-12T23:00")
+    assert times[2] is not None and times[2].startswith("2026-06-12T23:30"), (
+        f"dotted '11.30 pm' must parse exactly: {times[2]}"
+    )
+    assert times[3] is None
+    assert times[4] is not None and times[4].startswith("2026-06-12T15:00")
+    # The invariant behind all of this: no alarm ever dispatches timeless.
+    for action in parsed.actions:
+        if action.kind.value == "alarm":
+            assert action.when is not None
+
+
+def test_sloppy_planner_alarms_never_dispatch_timeless() -> None:
+    # The model variant production actually emitted that night: mangled
+    # bodies, "vague" schedule kinds, and time spans reduced to "tomorrow".
+    # The shell hard-fails timeless alarms ("An alarm needs a time."), so
+    # coercion must SKIP them — never ship them — while valid siblings and
+    # untimed notes still go through.
+    source = _complex_five_action_source()
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "none", "confidence": 1.0},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None, "requires_second_pass": False},
+        "actions": [
+            {
+                # Mangled body, vague schedule, no span: must SKIP, not ship.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "call my",
+                "evidence_span": "call my",
+                "schedule": {"kind": "vague", "source_span": ""},
+                "missing_fields": [],
+            },
+            {
+                # Valid sibling: must still dispatch with its exact time.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "call my brother",
+                "evidence_span": "call my brother at 11 pm tomorrow",
+                "schedule": {"kind": "instant", "source_span": "11 pm tomorrow"},
+                "missing_fields": [],
+            },
+            {
+                # Mangled body but a real time hiding in the evidence: the
+                # grounded-span inference may rescue it — and if it cannot,
+                # the action must skip rather than ship timeless.
+                "kind": "alarm",
+                "operation": "create",
+                "body": "all the issues",
+                "evidence_span": "all the issues",
+                "schedule": {"kind": "vague", "source_span": ""},
+                "missing_fields": [],
+            },
+            {
+                "kind": "note",
+                "operation": "create",
+                "body": "fix all the issues",
+                "evidence_span": "fix all the issues",
+                "missing_fields": [],
+            },
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+    parsed = actions_from_turn_plan(plan, source_text=source, now=datetime(2026, 6, 11, 23, 40))
+
+    assert parsed.actions is not None
+    # The hard invariant: NO dispatched alarm may lack a time.
+    for action in parsed.actions:
+        if action.kind.value == "alarm":
+            assert action.when is not None, f"timeless alarm dispatched: {action.body!r}"
+    # The valid alarm and the note survived; the unparseable alarms skipped.
+    kinds = [a.kind.value for a in parsed.actions]
+    assert "note" in kinds
+    assert kinds.count("alarm") >= 1
+    assert any("time_parse_failed" in r for r in parsed.skipped_reasons)
+
+
+# --------------------------------------------------------------------- #
+# Segment realignment and ordinal expansion (production 2026-06-12)
+# --------------------------------------------------------------------- #
+
+
+def test_misaligned_segments_never_discard_model_actions() -> None:
+    # Production utterance macshell-12A45392: the model emitted six valid
+    # actions; the verb scanner saw only two segments ("add a note…",
+    # "remind me…") because ordinal clauses carry no verbs. The old rebuild
+    # deleted four correctly-timed alarms. Misalignment must keep the model
+    # batch untouched.
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno! Set up 3 alarms. First, to call my wife at 5 pm today. "
+        "Second, to call my son at 6 pm today. Third, to call my mom at 8 pm today. "
+        "Fourth, to call my brother at 9 pm today. Please add a note to fix all the "
+        "Juno issues and remind me to call my friend Darpan 9pm today."
+    )
+    model_actions = [
+        {"kind": "alarm", "operation": "create", "body": f"call {x}",
+         "evidence_span": f"call {x}", "schedule": {"kind": "instant", "source_span": t}}
+        for x, t in [("my wife", "5 pm today"), ("my son", "6 pm today"),
+                     ("my mom", "8 pm today"), ("my brother", "9 pm today")]
+    ] + [
+        {"kind": "note", "operation": "create", "body": "fix all the Juno issues",
+         "evidence_span": "add a note to fix all the Juno issues"},
+        {"kind": "reminder", "operation": "create", "body": "call my friend Darpan",
+         "evidence_span": "remind me to call my friend Darpan 9pm today",
+         "schedule": {"kind": "instant", "source_span": "9pm today"}},
+    ]
+    segments = P.segment_native_actions(source)
+    assert len(segments) != len(model_actions)  # genuinely misaligned
+
+    kept, notes = P._realign_actions_to_segments(model_actions, segments, source_text=source)
+
+    assert kept is model_actions or kept == model_actions
+    assert "segment_realign_skipped_misaligned" in notes
+    assert "actions_rebuilt_from_segments" not in notes
+
+
+def test_segment_temporal_clause_prefers_clock_and_handles_clock_before_day() -> None:
+    from juno_v2.turn_plan import planner as P
+
+    # Clock-before-day speech order must keep the clock.
+    assert P._segment_temporal_clause(
+        "remind me to call my friend Darpan 9pm today"
+    ) == "9pm today"
+    # Day-before-clock still works.
+    assert P._segment_temporal_clause("call mom tomorrow at 8 pm") == "tomorrow at 8 pm"
+    # "within 5 minutes" must not read as "in 5 minutes".
+    assert P._segment_temporal_clause(
+        "note that we finish within 5 minutes of the call"
+    ) == ""
+
+
+def test_ordinal_expansion_synthesizes_under_emitted_alarms() -> None:
+    # Production utterance macshell-26819FF2: two spoken alarms, the model
+    # emitted zero usable ones (one broken-span, one kind-confused). The
+    # ordinal expansion must add the missing alarms from the spoken clauses
+    # — never touching existing actions — and the final dispatch must carry
+    # the exact spoken times.
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno, set up two alarms. First, to call my brother at 10 pm today. "
+        "Second, to call my wife at 11 pm today. Please take a note to fix all "
+        "the bugs. And remind me to call my mother at 9 pm today."
+    )
+    bad_model = [
+        {"kind": "alarm", "operation": "create", "body": "call my",
+         "evidence_span": "call my", "schedule": {"kind": "vague", "source_span": ""}},
+        {"kind": "alarm", "operation": "create", "body": "call my mother",
+         "evidence_span": "call my mother at 9 pm today",
+         "schedule": {"kind": "instant", "source_span": "9 pm today"}},
+        {"kind": "note", "operation": "create", "body": "fix all the bugs",
+         "evidence_span": "take a note to fix all the bugs"},
+    ]
+
+    expanded, notes = P._expand_missing_ordinal_actions(bad_model, source_text=source)
+
+    assert "actions_expanded_from_ordinals" in notes
+    assert expanded[:3] == bad_model  # existing actions untouched
+    synthesized = expanded[3:]
+    assert [(a["kind"], a["schedule"]["source_span"]) for a in synthesized] == [
+        ("alarm", "10 pm today"),
+        ("alarm", "11 pm today"),
+    ]
+
+    parsed = actions_from_turn_plan(
+        {"utterance_kind": "actions", "actions": expanded,
+         "safety": {"execute_policy": "execute"}},
+        source_text=source,
+        now=datetime(2026, 6, 12, 9, 30),
+    )
+    assert parsed.actions is not None
+    times = sorted(a.when.iso for a in parsed.actions if a.kind.value == "alarm" and a.when)
+    assert [t[11:16] for t in times] == ["21:00", "22:00", "23:00"]
+    # The broken vague alarm skipped; nothing timeless dispatched.
+    assert any("time_parse_failed" in r for r in parsed.skipped_reasons)
+    for a in parsed.actions:
+        if a.kind.value == "alarm":
+            assert a.when is not None
+
+
+def test_ordinal_expansion_noop_when_model_batch_complete() -> None:
+    from juno_v2.turn_plan import planner as P
+
+    source = (
+        "Hey Juno, set up two alarms. First, to call my brother at 10 pm today. "
+        "Second, to call my wife at 11 pm today."
+    )
+    complete = [
+        {"kind": "alarm", "operation": "create", "body": "call my brother",
+         "evidence_span": "call my brother at 10 pm today",
+         "schedule": {"kind": "instant", "source_span": "10 pm today"}},
+        {"kind": "alarm", "operation": "create", "body": "call my wife",
+         "evidence_span": "call my wife at 11 pm today",
+         "schedule": {"kind": "instant", "source_span": "11 pm today"}},
+    ]
+    expanded, notes = P._expand_missing_ordinal_actions(complete, source_text=source)
+    assert expanded == complete
+    assert notes == []
