@@ -220,6 +220,21 @@ struct SetupDownloadProgress: Codable {
     let etaSeconds: Double?
     let elapsedSeconds: Double?
     let repos: [String]?
+    /// Repo id currently being provisioned (first incomplete in install
+    /// order) and how many are already complete — drives the "Now:
+    /// <model> (2 of 4)" line on the onboarding setup card.
+    let currentRepo: String?
+    let currentLane: String?
+    let reposDone: Int?
+    /// Short human-readable install transitions ("Downloading X (1 of 4)",
+    /// "Loading models into memory"). Rendered as the setup card's status
+    /// log; also a diagnostic breadcrumb for stuck installs.
+    let log: [SetupInstallLogEntry]?
+}
+
+struct SetupInstallLogEntry: Codable {
+    let t: Double?
+    let line: String?
 }
 
 // MARK: - Stats

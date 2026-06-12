@@ -33,7 +33,35 @@ class StreamingLocalHttpJsonPreviewBackend(PreviewAsrBackend):
             raise ValueError('local_http_endpoint is required for StreamingLocalHttpJsonPreviewBackend')
 
     def warm(self) -> None:
-        self._get_status('/warm', strict=True)
+        """Poll the service until the decoder is warm, it reports a startup
+        error, or ``warm_deadline_sec`` expires.
+
+        The first /warm on a cold service blocks while the model loads, so
+        a single request bounded by ``local_http_timeout_sec`` routinely
+        times out on a legitimate cold start — and treating that as fatal
+        crash-loops the engine, killing the very load (or download) that
+        was about to satisfy the warm. Per-request timeouts and transport
+        errors here mean "not warm yet", not "failed"; only an explicit
+        service-side startup error fails fast.
+        """
+        deadline = time.monotonic() + max(
+            float(self.config.warm_deadline_sec),
+            float(self.config.local_http_timeout_sec),
+        )
+        while True:
+            payload = self._get_status('/warm')
+            if payload.get('ok'):
+                return
+            error = payload.get('error')
+            if error:
+                raise RuntimeError(f'Local streaming preview ASR /warm failed: {error}')
+            if time.monotonic() >= deadline:
+                detail = 'service unreachable' if not payload else 'decoder still warming'
+                raise RuntimeError(
+                    f'Local streaming preview ASR /warm failed '
+                    f'({detail} after {self.config.warm_deadline_sec:.0f}s)'
+                )
+            time.sleep(2.0)
 
     def healthcheck(self, *, strict: bool = False) -> bool:
         payload = self._get_status('/healthz', strict=strict)

@@ -20,3 +20,8 @@ class PreviewAsrConfig:
     initial_prompt: str | None = None
     local_http_endpoint: str | None = None
     local_http_timeout_sec: float = 15.0
+    # Cold-start budget for warm(): first model load on a slow disk (or a
+    # service still binding its port) legitimately exceeds a single
+    # local_http_timeout_sec request. warm() polls until this deadline
+    # instead of failing the engine on one slow probe.
+    warm_deadline_sec: float = 180.0

@@ -131,6 +131,27 @@ def migrate_legacy_support_root() -> Path | None:
     return legacy if moved else None
 
 
+def juno_profile_root(cwd: Path | None = None) -> Path:
+    """Root for the broker's demo-profile config and provisioning scratch.
+
+    - Dev mode (``JUNO_DEV_MODE``): ``<cwd>/.juno_v2_demo``.
+    - A repo checkout that already has ``<cwd>/.juno_v2_demo``: keep using
+      it, so existing dev setups don't silently switch profiles.
+    - Otherwise (packaged app): ``<support_root>/demo``. The packaged
+      engine's cwd is inside the signed .app bundle — writing there is
+      both blocked at runtime (EPERM) and would break the code-signing
+      seal, which is exactly how a fresh DMG install's first model
+      provisioning used to fail.
+    """
+    demo = juno_dev_demo_root(cwd)
+    if demo is not None:
+        return demo
+    candidate = ((cwd or Path.cwd()) / ".juno_v2_demo").resolve()
+    if candidate.is_dir():
+        return candidate
+    return (juno_support_root() / "demo").resolve()
+
+
 def default_workbench_log_dir(cwd: Path | None = None) -> Path:
     """Default directory for workbench traces, broker settings, and JSON sidecars.
 
@@ -167,6 +188,7 @@ __all__ = [
     "juno_bundle_id",
     "juno_endpoint_metadata_path",
     "juno_engine_socket_path",
+    "juno_profile_root",
     "juno_runtime_dir",
     "juno_support_root",
     "migrate_legacy_support_root",

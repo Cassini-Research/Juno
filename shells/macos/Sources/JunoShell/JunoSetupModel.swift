@@ -68,6 +68,14 @@ final class JunoSetupModel: ObservableObject {
     @Published private(set) var downloadEtaSeconds: Double? = nil
     @Published private(set) var downloadElapsedSeconds: Double = 0
     @Published private(set) var downloadActive: Bool = false
+    /// Repo currently downloading ("mlx-community/…") plus x-of-y position,
+    /// and the broker's short install log ("Downloading X (1 of 4)",
+    /// "Loading models into memory"). Drives the per-model line and the
+    /// status log on the onboarding setup card.
+    @Published private(set) var downloadCurrentRepo: String? = nil
+    @Published private(set) var downloadReposDone: Int = 0
+    @Published private(set) var downloadReposTotal: Int = 0
+    @Published private(set) var downloadLog: [String] = []
 
     init() {
         // Seed the per-lane readiness flags from the on-disk inventory so
@@ -242,6 +250,10 @@ final class JunoSetupModel: ObservableObject {
                     self.downloadBytesPerSecond = dp.bytesPerSecond ?? 0
                     self.downloadEtaSeconds = dp.etaSeconds
                     self.downloadElapsedSeconds = dp.elapsedSeconds ?? 0
+                    self.downloadCurrentRepo = dp.currentRepo
+                    self.downloadReposDone = dp.reposDone ?? 0
+                    self.downloadReposTotal = dp.repos?.count ?? 0
+                    self.downloadLog = (dp.log ?? []).compactMap { $0.line }
                 } else {
                     self.downloadActive = false
                     self.downloadBytesSoFar = 0
@@ -249,6 +261,10 @@ final class JunoSetupModel: ObservableObject {
                     self.downloadBytesPerSecond = 0
                     self.downloadEtaSeconds = nil
                     self.downloadElapsedSeconds = 0
+                    self.downloadCurrentRepo = nil
+                    self.downloadReposDone = 0
+                    self.downloadReposTotal = 0
+                    self.downloadLog = []
                 }
                 // Wake JunoEngineLifecycle so it can re-evaluate `phase`
                 // when install advances. waitForSetup() exits at the first
