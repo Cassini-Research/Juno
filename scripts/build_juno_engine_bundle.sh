@@ -11,9 +11,27 @@
 #
 # Default OUTPUT_DIR: <repo>/dist/juno_engine_bundle
 #
+# Why a standalone interpreter instead of `python -m venv`:
+#   A `python -m venv` (even with --copies) is NOT redistributable. It copies
+#   only the interpreter *binary*; the standard library stays in the base
+#   interpreter and is located at runtime through pyvenv.cfg's `home =` line,
+#   which points back at the BUILD machine's Python (e.g.
+#   /Users/<builder>/miniconda3/bin). On any other Mac that path is absent, so
+#   the bundled interpreter boots, fails to find `encodings`, and dies with
+#   "Could not find platform independent libraries" — run_engine.sh then reports
+#   "juno_v2 is not importable" and the engine never starts. This is exactly the
+#   class of failure that shipped in early DMGs.
+#
+#   We instead ship a python-build-standalone interpreter (astral-sh). Its
+#   `install_only` distribution is a self-contained prefix: it carries its own
+#   libpython + the COMPLETE standard library and resolves them via
+#   @executable_path rpaths, so it runs from anywhere with no dependency on the
+#   build host. Because it is a real prefix (not a venv) there is no pyvenv.cfg
+#   umbilical at all.
+#
 # Notes:
-#   - Installs the repo non-editable into an isolated venv so the bundle can move
-#     without the source checkout.
+#   - Installs the repo non-editable into the standalone prefix so the bundle
+#     can move without the source checkout.
 #   - Model weights are NOT included; they remain under ~/Library/Application Support/Juno
 #     or HF cache per existing broker setup flows.
 set -euo pipefail
@@ -21,19 +39,102 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/dist/juno_engine_bundle}"
 
-rm -rf "$OUT"
-mkdir -p "$OUT"
+# --- Relocatable CPython (python-build-standalone) -------------------------
+# Pin both the build and its official SHA256. cp312 ABI is stable across patch
+# releases, so 3.12.x matches the project's existing cp312 wheels (MLX, numpy,
+# onnxruntime, …). Override via env to bump the interpreter.
+PY_VERSION="${JUNO_PY_VERSION:-3.12.13}"
+PBS_TAG="${JUNO_PBS_TAG:-20260610}"
+PY_ARCH="${JUNO_PY_ARCH:-aarch64}"   # Juno ships Apple Silicon only (MLX / Metal)
+# Official checksum for cpython-3.12.13+20260610-aarch64-apple-darwin-install_only.tar.gz
+# (from the release's SHA256SUMS). Override JUNO_PY_SHA256 when bumping the pin.
+PY_SHA256="${JUNO_PY_SHA256:-e18ddd4c1e8f4a1d6c4590b37f423d76aec734447edc20ed08e93983d95f2132}"
+PBS_BASE="https://github.com/astral-sh/python-build-standalone/releases/download"
+PY_ASSET="cpython-${PY_VERSION}+${PBS_TAG}-${PY_ARCH}-apple-darwin-install_only.tar.gz"
+PY_URL="${PBS_BASE}/${PBS_TAG}/${PY_ASSET}"
+CACHE_DIR="${JUNO_PY_CACHE_DIR:-$ROOT/dist/.python-build-standalone-cache}"
 
 if [[ ! -f "$ROOT/pyproject.toml" ]]; then
   echo "error: pyproject.toml not found at $ROOT" >&2
   exit 2
 fi
 
-python3 -m venv --copies "$OUT/.venv"
-# shellcheck source=/dev/null
-source "$OUT/.venv/bin/activate"
-python -m pip install --upgrade pip
-python -m pip install "$ROOT"
+rm -rf "$OUT"
+mkdir -p "$OUT"
+
+# --- Download + verify the interpreter -------------------------------------
+mkdir -p "$CACHE_DIR"
+TARBALL="$CACHE_DIR/$PY_ASSET"
+if [[ ! -f "$TARBALL" ]]; then
+  echo "Downloading $PY_ASSET ..."
+  curl -fL --retry 3 --proto '=https' --tlsv1.2 -o "$TARBALL.partial" "$PY_URL"
+  mv "$TARBALL.partial" "$TARBALL"
+fi
+# Refuse to bundle an unverified interpreter — a tampered or truncated download
+# must never reach codesign/notarization.
+if ! echo "${PY_SHA256}  ${TARBALL}" | shasum -a 256 -c - >/dev/null 2>&1; then
+  echo "error: checksum mismatch for $TARBALL" >&2
+  echo "  expected: ${PY_SHA256}" >&2
+  echo "  got:      $(shasum -a 256 "$TARBALL" | awk '{print $1}')" >&2
+  echo "  deleting the cached file; re-run to re-download." >&2
+  rm -f "$TARBALL"
+  exit 4
+fi
+echo "Verified $PY_ASSET (sha256 ok)"
+
+# --- Lay it down as engine/.venv -------------------------------------------
+# The install_only tarball unpacks to a top-level python/ prefix (bin/, lib/,
+# include/, share/). We place its contents at $OUT/.venv so the existing
+# `.venv/bin/python` contract — shared by run_engine.sh,
+# JunoEngineContract.swift, JunoSetupModel.swift, and
+# package_juno_macos_app.sh — keeps working without touching those files.
+TMP_EXTRACT="$(mktemp -d)"
+trap 'rm -rf "$TMP_EXTRACT"' EXIT
+tar -xzf "$TARBALL" -C "$TMP_EXTRACT"
+if [[ ! -x "$TMP_EXTRACT/python/bin/python3" ]]; then
+  echo "error: unexpected python-build-standalone layout (no python/bin/python3)" >&2
+  exit 5
+fi
+mkdir -p "$OUT/.venv"
+rsync -a "$TMP_EXTRACT/python/" "$OUT/.venv/"
+
+VENV_PY="$OUT/.venv/bin/python3"
+[[ -x "$VENV_PY" ]] || { echo "error: standalone python missing at $VENV_PY" >&2; exit 5; }
+# python-build-standalone ships bin/python3 and bin/python3.x but not always
+# bin/python. The shell/Swell contract probes `.venv/bin/python`; add a
+# relative symlink so the chain stays inside the relocatable bundle.
+if [[ ! -e "$OUT/.venv/bin/python" ]]; then
+  ln -s python3 "$OUT/.venv/bin/python"
+fi
+
+# --- Install the repo into the standalone prefix ---------------------------
+"$VENV_PY" -m pip install --upgrade pip
+"$VENV_PY" -m pip install "$ROOT"
+
+# --- Strip build-machine path leaks ----------------------------------------
+# pip writes console-script wrappers (hf, huggingface-cli, mlx_lm.*,
+# mlx_whisper, normalizer, …) whose shebang hardcodes this build's
+# .venv/bin/python3 absolute path. run_engine.sh never invokes them — it only
+# ever runs `${PY} -m <module>` — so rather than ship 50+ build-host paths
+# inside a signed bundle, drop them. The underlying modules remain importable
+# via `python -m`. The interpreters themselves are kept.
+shopt -s nullglob
+for f in "$OUT/.venv/bin"/*; do
+  [[ -f "$f" ]] || continue   # skip the python/python3.x symlinks
+  case "$(basename "$f")" in
+    python|python3|python3.*) continue ;;
+  esac
+  first="$(head -1 "$f" 2>/dev/null || true)"
+  if [[ "$first" == "#!"*"/.venv/bin/python"* ]]; then
+    rm -f "$f"
+  fi
+done
+shopt -u nullglob
+
+# PEP 610 records the build-time source path in dist-info/direct_url.json
+# (file:///Users/<builder>/…/Juno). It is informational metadata the runtime
+# never reads; remove it so the shipped bundle carries zero build-host paths.
+find "$OUT/.venv" -name "direct_url.json" -path "*.dist-info/*" -delete
 
 cp "$ROOT/shells/macos/bundle_resources/engine/run_engine.sh" "$OUT/run_engine.sh"
 chmod +x "$OUT/run_engine.sh"
