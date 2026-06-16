@@ -6279,9 +6279,21 @@ final class HotkeyBridge {
                 if self.isDownEvent(line, shortcut: shortcut) {
                     NSLog("Juno: hotkey down matched %@", shortcut.rawValue)
                     DispatchQueue.main.async {
-                        guard !self.shouldSuppressDictationShortcut() else {
-                            NSLog("Juno: hotkey down suppressed while copy-ready")
-                            return
+                        if self.shouldSuppressDictationShortcut() {
+                            // The copy-ready panel is showing (HUD idle with a
+                            // leftover transcript). This press used to be a
+                            // silent no-op, and since it didn't clear the
+                            // copy-ready state, repeated presses were ALSO
+                            // dropped — the user had to wait for the panel to
+                            // time out, i.e. "press the key twice/thrice
+                            // before the overlay appears". A press of the
+                            // dictation key is an unambiguous "start a new
+                            // dictation": begin it. beginPushToTalk() clears
+                            // copyableTranscript and dismisses the panel. ⌘C
+                            // (a separate COPY event) still copies the text
+                            // first, and the transcript also remains in
+                            // History, so starting over loses nothing.
+                            NSLog("Juno: hotkey down while copy-ready -> dismiss + begin new dictation")
                         }
                         self.onDown()
                     }
