@@ -3319,6 +3319,55 @@ class WorkbenchApp:
                 repos = self.__class__._setup_install_repos_from_demo_config(cfg)
                 with self._setup_install_lock:
                     self._setup_install_progress["repos"] = [r for r, _ in repos]
+
+                # Disk-space precheck. A ~4.5-5 GB model download that runs out
+                # of space fails deep inside snapshot_download with an opaque
+                # OSError that the onboarding UI shows as "check your
+                # connection" — misleading and unactionable. Fail fast with a
+                # specific reason. The real total needs a network round-trip;
+                # when it's unavailable (offline) we skip the check and let the
+                # download surface the genuine network error instead.
+                required_bytes = 0
+                try:
+                    required_bytes = self.__class__._fetch_repos_total_bytes(repos)
+                except Exception:
+                    required_bytes = 0
+                if required_bytes > 0:
+                    import shutil as _shutil
+                    try:
+                        from huggingface_hub import constants as _hf_constants
+                        cache_root = Path(
+                            getattr(_hf_constants, "HF_HUB_CACHE", None)
+                            or (Path.home() / ".cache" / "huggingface" / "hub")
+                        )
+                    except Exception:
+                        cache_root = Path.home() / ".cache" / "huggingface" / "hub"
+                    # disk_usage needs an existing path; walk up to the nearest one.
+                    probe = cache_root
+                    while not probe.exists() and probe != probe.parent:
+                        probe = probe.parent
+                    try:
+                        free_bytes = _shutil.disk_usage(str(probe)).free
+                    except Exception:
+                        free_bytes = None
+                    # 1.3x headroom: HF writes the blob plus a snapshot symlink
+                    # tree and needs temp space during extraction.
+                    needed_bytes = int(required_bytes * 1.3)
+                    if free_bytes is not None and free_bytes < needed_bytes:
+                        need_gb = needed_bytes / 1e9
+                        free_gb = free_bytes / 1e9
+                        self._setup_install_log(
+                            f"Not enough disk space: need ~{need_gb:.1f} GB free, "
+                            f"have {free_gb:.1f} GB"
+                        )
+                        logger.error(
+                            "setup_install_insufficient_disk need_bytes=%d free_bytes=%d path=%s",
+                            needed_bytes, free_bytes, probe,
+                        )
+                        with self._setup_install_lock:
+                            self._setup_install_state = "failed:insufficient_disk"
+                        return
+
                 self._setup_install_log(
                     f"Starting download of {len(repos)} model(s)"
                 )
