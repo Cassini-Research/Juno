@@ -28,7 +28,7 @@ import PackageDescription
 
 let package = Package(
     name: "JunoShell",
-    platforms: [.macOS("15.0")],
+    platforms: [.macOS("14.0")],
     products: [
         .executable(name: "Juno", targets: ["JunoShell"]),
         .executable(name: "juno-paste", targets: ["JunoPaste"]),

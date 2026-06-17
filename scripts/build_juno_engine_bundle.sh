@@ -125,7 +125,7 @@ fi
 # wheels for both mlx and mlx-metal — they are forward-compatible (run on
 # macOS 15 through 26), so one bundle works across all supported macOS.
 # Override the floor with JUNO_MLX_WHEEL_PLATFORM if the support matrix changes.
-MLX_WHEEL_PLATFORM="${JUNO_MLX_WHEEL_PLATFORM:-macosx_15_0_arm64}"
+MLX_WHEEL_PLATFORM="${JUNO_MLX_WHEEL_PLATFORM:-macosx_14_0_arm64}"
 MLX_VER="$("$VENV_PY" -c 'import importlib.metadata as m; print(m.version("mlx"))')"
 MLX_METAL_VER="$("$VENV_PY" -c 'import importlib.metadata as m; print(m.version("mlx-metal"))')"
 SITE_PACKAGES="$("$VENV_PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
