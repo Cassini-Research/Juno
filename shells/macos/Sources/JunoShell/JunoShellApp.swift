@@ -3483,9 +3483,45 @@ final class DictationController: ObservableObject {
 
     private func observedUndoSafePaste(_ text: String) -> Bool {
         markUtteranceTimeline("paste_attempt_started_ms")
-        let ok = Clipboard.undoSafePaste(text)
+        // Paste "success" historically meant only "the Cmd+V keystroke was
+        // posted", not "the text landed" — so a non-editable target that
+        // accepts the keystroke but inserts nothing (System Settings,
+        // read-only views) reported a false success. Read the focused field's
+        // value BEFORE the paste so we can verify a real change AFTER.
+        let verifyEnabled = (UserDefaults.standard.object(forKey: "JunoPasteVerificationEnabled") as? Bool) ?? true
+        let before = verifyEnabled ? JunoLocalCapability.focusedValueSignature() : nil
+        let posted = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
-        return ok
+        // Couldn't even post the keystroke → definite failure.
+        guard posted else { return false }
+        // Verification off, can't reach the field, or the field exposes no
+        // readable AXValue → keep the historical behaviour (assume success).
+        // Deliberate: Chromium/Electron, web fields, Terminal and many custom
+        // views don't expose a readable value, and a read-back there would
+        // turn real pastes into false failures.
+        guard verifyEnabled, let before, before.readable else { return true }
+        let landed = pasteLandedByReadback(beforeValue: before.value)
+        if !landed {
+            NSLog("Juno: paste read-back saw no field change — treating as failed (non-editable target, e.g. System Settings)")
+        }
+        return landed
+    }
+
+    /// Poll the focused field's AX value briefly after a Cmd+V. We just posted
+    /// the keystroke, so ANY change to the value within the window is strong
+    /// evidence the paste landed (returns true as soon as it's seen). If the
+    /// value never changes before the deadline, the paste did not take —
+    /// the target accepted the keystroke but inserted nothing. Erring toward
+    /// "changed = success" keeps us from false-failing real pastes.
+    private func pasteLandedByReadback(beforeValue: String, deadlineMs: Int = 350, stepMs: Int = 40) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(deadlineMs) / 1000.0)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(Double(stepMs) / 1000.0))
+            guard let after = JunoLocalCapability.focusedValueSignature() else { return true }
+            guard after.readable else { return true } // became unverifiable → don't disprove
+            if after.value != beforeValue { return true }
+        }
+        return false
     }
 
     private func startWorkbenchStatePolling() {
@@ -3888,6 +3924,25 @@ final class DictationController: ObservableObject {
     /// match what the user saw when they started dictating — only the
     /// *paste target* needs to track focus changes. So we refresh paste
     /// state exclusively at paste boundaries.
+    /// System panes that surface focusable (but effectively non-editable for
+    /// dictation) elements, so a posted Cmd+V is accepted by the event system
+    /// yet inserts nothing. Scoped to the paste decision only — intentionally
+    /// NOT folded into ``isIgnoredSystemSurface`` (which also drives target
+    /// tracking and context capture).
+    private static let nonEditableSystemPasteBundleIds: Set<String> = [
+        "com.apple.systempreferences",   // System Settings (and legacy System Preferences)
+    ]
+    private static let nonEditableSystemPasteNames: Set<String> = [
+        "system settings",
+        "system preferences",
+    ]
+    private static func isNonEditableSystemPasteSurface(bundleId: String?, name: String?) -> Bool {
+        let bid = (bundleId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !bid.isEmpty, nonEditableSystemPasteBundleIds.contains(bid) { return true }
+        let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !appName.isEmpty && nonEditableSystemPasteNames.contains(appName)
+    }
+
     private func refreshPasteTargetFromCurrentFocus() {
         let snap = JunoLocalCapability.snapshot()
         let snapBundleId = (snap["frontmost_app_bundle_id"] as? String)
@@ -3895,6 +3950,20 @@ final class DictationController: ObservableObject {
         let snapName = (snap["frontmost_app_name"] as? String)
             ?? (snap["app_name"] as? String)
         if JunoTargetApplicationTracker.isIgnoredSystemSurface(bundleId: snapBundleId, name: snapName) {
+            // Ignored system surfaces (our own UI, notification/control center)
+            // are never valid paste targets. Mark not-a-destination so finalize
+            // copies instead of firing a synthetic Cmd+V into a window that
+            // won't accept it — which used to read back as a false success.
+            likelyPasteDestination = false
+            return
+        }
+        // Stopgap for non-editable system panes (e.g. System Settings). They
+        // expose focusable AX elements, so can_paste_at_focus reads true, then a
+        // posted Cmd+V is "accepted" by the event system but inserts nothing —
+        // a false success. Treat them as copy-only here; the general read-back
+        // verification in observedUndoSafePaste covers every other app.
+        if Self.isNonEditableSystemPasteSurface(bundleId: snapBundleId, name: snapName) {
+            likelyPasteDestination = false
             return
         }
         // PID/app/window: safe to refresh from NSWorkspace data even
