@@ -54,12 +54,12 @@ enum JunoTheme {
         static let primaryListIdeal: CGFloat = 340
         static let primaryListMax: CGFloat = 380
 
-        /// Secondary list columns (split panes with list + editor). Also used for Dictionary & Memory item list + detail (stable width vs nested `NavigationSplitView`).
+        /// Secondary list columns (split panes with list + editor). Also used for Snippets & Memory item list + detail (stable width vs nested `NavigationSplitView`).
         static let secondaryListMin: CGFloat = 240
         static let secondaryListIdeal: CGFloat = 280
         static let secondaryListMax: CGFloat = 340
 
-        /// Memory “category rail” inside Dictionary & Memory (Vocabulary/Snippets/…).
+        /// Memory “category rail” inside Snippets & Memory (Vocabulary/Snippets/…).
         static let memoryCategoryRailMin: CGFloat = 170
         static let memoryCategoryRailIdeal: CGFloat = 190
         static let memoryCategoryRailMax: CGFloat = 220

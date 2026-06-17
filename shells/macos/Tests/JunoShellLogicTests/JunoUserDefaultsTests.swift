@@ -293,9 +293,9 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
         XCTAssertTrue(JunoUserDefaults.hudOpenSoundEnabled)
         XCTAssertTrue(JunoUserDefaults.showInDock)
         XCTAssertTrue(JunoUserDefaults.actionsNotesSignatureEnabled)
+        XCTAssertTrue(JunoUserDefaults.liveAdjudicationEnabled)
         // OFF by default
         XCTAssertFalse(JunoUserDefaults.micVoiceProcessingEnabled)
-        XCTAssertFalse(JunoUserDefaults.liveAdjudicationEnabled)
         XCTAssertFalse(JunoUserDefaults.actionsEnabled)
         XCTAssertFalse(JunoUserDefaults.developerModeEnabled)
         XCTAssertFalse(JunoUserDefaults.saveLogsToFileEnabled)
@@ -329,9 +329,13 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
         XCTAssertTrue(JunoUserDefaults.developerModeEnabled)
     }
 
-    func testHudLiveTranscriptionsDefaultsToOff() {
-        // Off when unset regardless of hardware eligibility.
-        XCTAssertFalse(JunoUserDefaults.hudLiveTranscriptionsEnabled)
+    func testHudLiveTranscriptionsDefaultsToEligibility() {
+        // On by default when the machine can run live preview; forced off
+        // only below the preview resource floor.
+        XCTAssertEqual(
+            JunoUserDefaults.hudLiveTranscriptionsEnabled,
+            JunoPreviewEligibility.current.isEligible
+        )
     }
 
     func testHudLiveTranscriptionsSetterIsGatedByEligibility() {
@@ -410,10 +414,10 @@ final class DictationCounterTests: JunoDefaultsRestoringTestCase {
 // MARK: - Whisper preview defaults migration
 
 final class WhisperPreviewMigrationTests: JunoDefaultsRestoringTestCase {
-    func testFirstRunForcesLiveAdjudicationOffAndMarksMigrated() {
-        UserDefaults.standard.set(true, forKey: JunoUserDefaults.liveAdjudicationEnabledKey)
+    func testFirstRunKeepsLiveAdjudicationOnAndMarksMigrated() {
+        UserDefaults.standard.set(false, forKey: JunoUserDefaults.liveAdjudicationEnabledKey)
         JunoUserDefaults.migrateWhisperPreviewDefaults()
-        XCTAssertFalse(JunoUserDefaults.liveAdjudicationEnabled)
+        XCTAssertTrue(JunoUserDefaults.liveAdjudicationEnabled)
         XCTAssertTrue(UserDefaults.standard.bool(forKey: JunoUserDefaults.whisperPreviewDefaultsMigratedKey))
     }
 

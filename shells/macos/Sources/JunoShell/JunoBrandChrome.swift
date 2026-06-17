@@ -175,7 +175,7 @@ struct JunoChromeEmptyState: View {
     var symbol: String? = nil
     /// When false, avoids stretching to infinite height so the empty state can sit with sibling controls in a `VStack` without clipping.
     var expandsToFillAvailableSpace: Bool = true
-    /// Lighter typography and icon — used e.g. Dictionary & Memory list column in a narrow split.
+    /// Lighter typography and icon — used e.g. Snippets & Memory list column in a narrow split.
     var compact: Bool = false
 
     @Environment(\.colorScheme) private var scheme

@@ -14,7 +14,7 @@ enum JunoPreviewEligibility {
 
         var isEligible: Bool {
             guard let chipGeneration else { return false }
-            return chipGeneration >= 3 && memoryGB >= 32
+            return chipGeneration >= 2 && memoryGB >= 32
         }
 
         var warningMessage: String? {
@@ -24,10 +24,10 @@ enum JunoPreviewEligibility {
 
         var unavailableMessage: String? {
             if chipGeneration == nil {
-                return "Live preview requires Apple Silicon M3 or newer."
+                return "Live preview requires Apple Silicon M2 or newer."
             }
-            if let chipGeneration, chipGeneration < 3 {
-                return "Live preview requires Apple Silicon M3 or newer. This Mac reports \(chipName)."
+            if let chipGeneration, chipGeneration < 2 {
+                return "Live preview requires Apple Silicon M2 or newer. This Mac reports \(chipName)."
             }
             if memoryGB < 32 {
                 return "Live preview requires at least 32 GB memory. This Mac has \(memoryGB) GB."
