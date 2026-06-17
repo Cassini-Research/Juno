@@ -70,9 +70,11 @@ sign_engine_code() {
   while IFS= read -r target; do
     if file "$target" 2>/dev/null | grep -q 'Mach-O'; then
       if [[ -x "$target" && "$target" != *.so && "$target" != *.dylib ]]; then
-        # The bundled venv's Python executable may dynamically load a
-        # Homebrew Python.framework outside Juno.app. Under hardened runtime,
-        # that requires the same library-validation exemption as the shell.
+        # The bundled python-build-standalone interpreter is self-contained
+        # (its own libpython + stdlib under engine/.venv), and it loads the
+        # MLX / numpy / onnxruntime extension dylibs we re-sign here. Sign the
+        # interpreter with the shell's entitlements so hardened-runtime
+        # library validation accepts those same-Team-signed loads.
         codesign --force --options runtime "${timestamp_args[@]}" \
           --entitlements "$ENTS" \
           --sign "$IDENTITY" \

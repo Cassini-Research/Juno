@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 from juno_v2.demo.config import DemoConfig, DemoPaths
+
+logger = logging.getLogger(__name__)
 
 
 def is_model_ready(path: Path) -> bool:
@@ -20,6 +24,62 @@ def is_hf_model_cached(repo_id: str, *, filename: str = "config.json") -> bool:
         return isinstance(result, str)
     except ImportError:
         return False
+
+
+# Weight artifacts any of our model repos can ship (mlx_whisper uses
+# weights.npz, mlx_lm uses [sharded] safetensors, faster-whisper uses
+# model.bin, gguf covers llama.cpp-style packages).
+_WEIGHT_FILE_GLOBS = ("*.safetensors", "*.npz", "*.bin", "*.gguf")
+
+
+def _snapshot_file_ok(path: Path) -> bool:
+    # Snapshot entries are symlinks into blobs/; a dangling link (blob
+    # deleted) or zero-byte blob means the snapshot is not usable.
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def is_hf_model_cache_complete(repo_id: str) -> bool:
+    """True iff the HF cache holds a *usable* snapshot of ``repo_id`` —
+    config plus weights — without any network call.
+
+    ``is_hf_model_cached`` probes only ``config.json``, which is one of
+    the first (tiny) files a snapshot download writes. A download killed
+    mid-flight leaves config.json cached while the multi-GB weights are
+    still missing; treating that as "cached" makes the engine warm from
+    — or pin ``HF_HUB_OFFLINE`` to — a broken snapshot, and makes
+    provisioning skip the repair it was asked to do. This probe
+    additionally requires at least one non-empty weight artifact in the
+    snapshot, and when the repo ships a sharded-weights index, every
+    shard the index names.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        cfg = try_to_load_from_cache(repo_id=repo_id, filename="config.json")
+    except ImportError:
+        return False
+    if not isinstance(cfg, str):
+        return False
+    snapshot_dir = Path(cfg).parent
+
+    index_path = snapshot_dir / "model.safetensors.index.json"
+    if _snapshot_file_ok(index_path):
+        try:
+            import json
+            weight_map = json.loads(index_path.read_text(encoding="utf-8")).get("weight_map", {})
+            shards = set(weight_map.values())
+        except (OSError, ValueError):
+            return False
+        if not shards:
+            return False
+        return all(_snapshot_file_ok(snapshot_dir / shard) for shard in shards)
+
+    for pattern in _WEIGHT_FILE_GLOBS:
+        if any(_snapshot_file_ok(candidate) for candidate in snapshot_dir.rglob(pattern)):
+            return True
+    return False
 
 
 def is_writer_model_cached(repo_id: str) -> bool:
@@ -49,6 +109,40 @@ def _safe_repo_dir_name(repo_id: str) -> str:
     )
 
 
+def _snapshot_download_with_retry(snapshot_download, *, attempts: int = 3, **kwargs):
+    """``snapshot_download`` with bounded retry for transient failures.
+
+    A single network blip used to be terminal for a multi-GB model install:
+    the exception propagated, the broker flipped to ``failed:`` and the user
+    had to manually repair. ``snapshot_download`` resumes partial blobs across
+    calls (it keeps ``*.incomplete`` files in the cache), so re-invoking
+    *continues* an interrupted download rather than restarting it — we
+    deliberately do NOT clear the partial cache between attempts.
+
+    ``TypeError`` is never retried: it signals an API/shim mismatch
+    (``local_dir``-only hub shims) that the caller handles by falling back to
+    the ``local_dir`` form.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return snapshot_download(**kwargs)
+        except TypeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — network/HTTP/OS errors are all retryable
+            last_exc = exc
+            if attempt >= attempts:
+                break
+            backoff = min(2 ** attempt, 30)
+            logger.warning(
+                "snapshot_download attempt %d/%d failed (%s: %s); retrying in %ds (resumes partial cache)",
+                attempt, attempts, type(exc).__name__, exc, backoff,
+            )
+            time.sleep(backoff)
+    assert last_exc is not None
+    raise last_exc
+
+
 def provision_hf_model_cache(
     repo_id: str,
     *,
@@ -58,14 +152,16 @@ def provision_hf_model_cache(
     repo = str(repo_id or "").strip()
     if not repo:
         return
-    if is_hf_model_cached(repo) and not force:
+    # Completeness, not just config.json presence: a previous download
+    # killed mid-flight must be finished here, not skipped.
+    if is_hf_model_cache_complete(repo) and not force:
         return
     try:
         from huggingface_hub import snapshot_download
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("huggingface-hub is required to provision local models") from exc
     try:
-        snapshot_download(repo_id=repo, force_download=force)
+        _snapshot_download_with_retry(snapshot_download, repo_id=repo, force_download=force)
     except TypeError as exc:
         # Some tests and older hub shims only expose the local_dir form.
         # Keep production on the HF cache path, but retain compatibility
@@ -75,7 +171,9 @@ def provision_hf_model_cache(
         if fallback_dir is None:
             raise
         fallback_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_download(repo_id=repo, local_dir=str(fallback_dir), force_download=force)
+        _snapshot_download_with_retry(
+            snapshot_download, repo_id=repo, local_dir=str(fallback_dir), force_download=force
+        )
 
 
 def provision_demo_models(config: DemoConfig, *, paths: DemoPaths, force: bool = False) -> DemoConfig:

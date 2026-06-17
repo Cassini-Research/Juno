@@ -60,13 +60,16 @@ def enable_offline_mode_if_cache_complete(repo_ids: Iterable[str]) -> bool:
         return False
 
     try:
-        from huggingface_hub import try_to_load_from_cache  # type: ignore[import-not-found]
+        # Full-snapshot probe (config + weights), not just config.json:
+        # pinning HF_HUB_OFFLINE over a partially-downloaded repo blocks
+        # the very download that would complete it.
+        from juno_v2.demo.models import is_hf_model_cache_complete
     except Exception:
         return False
 
     for repo_id in ids:
         try:
-            result = try_to_load_from_cache(repo_id=repo_id, filename="config.json")
+            complete = is_hf_model_cache_complete(repo_id)
         except Exception:
             print(
                 f"[OFFLINE]     skipped (cache probe error) repo={repo_id}",
@@ -74,7 +77,7 @@ def enable_offline_mode_if_cache_complete(repo_ids: Iterable[str]) -> bool:
                 flush=True,
             )
             return False
-        if not isinstance(result, str):
+        if not complete:
             print(
                 f"[OFFLINE]     skipped (cache miss) repo={repo_id}",
                 file=sys.stderr,

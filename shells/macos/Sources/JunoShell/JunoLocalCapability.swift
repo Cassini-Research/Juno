@@ -71,6 +71,42 @@ enum JunoLocalCapability {
         return clip(copied)
     }
 
+    /// Read the focused editable element's current text value, for paste
+    /// read-back verification (did the text actually land, vs. did we merely
+    /// post a Cmd+V keystroke). Resolves the focused element the same way
+    /// ``snapshot()`` does — via ``pasteCandidate`` / ``pasteCandidateFromWindow``
+    /// — so "before" and "after" reads target the same field.
+    ///
+    /// Returns:
+    ///   - ``nil``: no frontmost app / no AX trust — caller can't verify.
+    ///   - ``(readable: false, "")``: a focused target exists but exposes no
+    ///     readable ``AXValue`` (Chromium/Electron, web fields, Terminal, custom
+    ///     widgets). Callers MUST treat this as "cannot verify → assume the
+    ///     paste succeeded": a read-back check on these would report real pastes
+    ///     as failures (false negatives), which is worse than the rare false
+    ///     positive it would prevent.
+    ///   - ``(readable: true, value)``: the field's current text value.
+    static func focusedValueSignature() -> (readable: Bool, value: String)? {
+        guard processHasAccessibilityTrust(),
+              let frontmost = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+        let focusedWindow = axElement(appElement, kAXFocusedWindowAttribute as CFString)
+        let mainWindow = axElement(appElement, kAXMainWindowAttribute as CFString)
+        let windowCandidate = pasteCandidateFromWindow(focusedWindow: focusedWindow, mainWindow: mainWindow)
+        let focused: AXUIElement
+        if let rawFocused = axElement(appElement, kAXFocusedUIElementAttribute as CFString) {
+            focused = pasteCandidate(from: rawFocused)?.element ?? windowCandidate?.element ?? rawFocused
+        } else if let wc = windowCandidate {
+            focused = wc.element
+        } else {
+            return (false, "")
+        }
+        if let v = axString(focused, kAXValueAttribute as CFString) {
+            return (true, v)
+        }
+        return (false, "")
+    }
+
     static func snapshot() -> [String: Any] {
         var out: [String: Any] = [
             "ok": true,

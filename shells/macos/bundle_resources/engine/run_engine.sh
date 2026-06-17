@@ -265,6 +265,38 @@ while time.time() < deadline:
 raise SystemExit(f"preview service did not become healthy: {last}")
 PY
 
+  # Proactively warm the preview decode model so the user's FIRST live
+  # dictation isn't blocked on the 1-3.5s MLX cold start. The preview
+  # service launches lazy on purpose: --eager-load would block process
+  # startup, and on a fresh install with no weights yet that load becomes
+  # an in-band multi-GB download that overruns the 120s startup wait and
+  # trips the supervisor restart loop. Instead, once the service is
+  # serving (/healthz ok above), fire GET /warm in the BACKGROUND, and
+  # ONLY when the preview weights are already cached. On a fresh install
+  # the cache is incomplete so we skip here — the model is warmed after
+  # onboarding finishes the download (broker provisioning warm).
+  (
+    if "${PY}" -c "import sys; from juno_v2.demo.models import is_hf_model_cache_complete; sys.exit(0 if is_hf_model_cache_complete('${JUNO_V2_PREVIEW_HF_REPO_ID}') else 1)" >/dev/null 2>&1; then
+      "${PY}" - <<PY >>"${PREVIEW_LOG}" 2>&1 || true
+import json, time
+from urllib import request
+url = "${PREVIEW_ENDPOINT}/warm"
+started = time.time()
+try:
+    with request.urlopen(url, timeout=180) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    print("[warm] %s preview warm warmed=%s ready=%s took=%.1fs" % (
+        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        payload.get("warmed"), payload.get("decode_owner_ready"), time.time() - started))
+except Exception as exc:
+    print("[warm] %s preview warm failed after %.1fs: %s" % (
+        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), time.time() - started, exc))
+PY
+    else
+      echo "[warm] $(date -u +%Y-%m-%dT%H:%M:%SZ) preview model cache incomplete; skipping proactive warm (will warm after onboarding download)" >>"${PREVIEW_LOG}"
+    fi
+  ) &
+
   ARGS=(
     -m juno_v2.runtime.service
     --mode live \

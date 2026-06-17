@@ -128,6 +128,10 @@ if keyMonitor == nil {
     FileHandle.standardError.write(
         Data("juno-hotkey: key monitor unavailable — Option/Ctrl+Space chords and Command+C disabled (Input Monitoring / Accessibility may be required).\n".utf8)
     )
+    // Also report over the stdout protocol the shell reads, so this otherwise
+    // silent failure (the dictation key receives nothing → "press twice and
+    // nothing happens") lands in the logs and can drive a permission prompt.
+    emit("HOTKEY_DEGRADED:key")
 }
 
 let escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
@@ -140,10 +144,12 @@ if escMonitor == nil {
     FileHandle.standardError.write(
         Data("juno-hotkey: Esc monitor unavailable — HUD Escape-to-cancel disabled (Input Monitoring / Accessibility may be required).\n".utf8)
     )
+    emit("HOTKEY_DEGRADED:esc")
 }
 
 guard monitor != nil else {
     FileHandle.standardError.write(Data("juno-hotkey: global flags monitor install failed\n".utf8))
+    emit("HOTKEY_DEGRADED:flags")
     exit(1)
 }
 

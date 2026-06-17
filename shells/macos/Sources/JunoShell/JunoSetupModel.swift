@@ -68,6 +68,14 @@ final class JunoSetupModel: ObservableObject {
     @Published private(set) var downloadEtaSeconds: Double? = nil
     @Published private(set) var downloadElapsedSeconds: Double = 0
     @Published private(set) var downloadActive: Bool = false
+    /// Repo currently downloading ("mlx-community/…") plus x-of-y position,
+    /// and the broker's short install log ("Downloading X (1 of 4)",
+    /// "Loading models into memory"). Drives the per-model line and the
+    /// status log on the onboarding setup card.
+    @Published private(set) var downloadCurrentRepo: String? = nil
+    @Published private(set) var downloadReposDone: Int = 0
+    @Published private(set) var downloadReposTotal: Int = 0
+    @Published private(set) var downloadLog: [String] = []
 
     init() {
         // Seed the per-lane readiness flags from the on-disk inventory so
@@ -102,6 +110,88 @@ final class JunoSetupModel: ObservableObject {
     private var fastPollTimer: AnyCancellable?
     private var refreshGeneration: UInt64 = 0
 
+    // MARK: - Setup diagnostics logging
+    //
+    // The download/setup flow used to be completely un-instrumented, so a user
+    // who hit "models didn't load", a stalled download, a Python/engine
+    // environment failure, or an engine that never warmed left NO trace in the
+    // logs — we could only guess. We now log the full setup lifecycle via
+    // NSLog (lands in the unified log and the debug bundle), prefixed
+    // "Juno setup:". Noisy fields (install state, warm state, broker
+    // reachability) are logged only on transition; the live download snapshot
+    // is logged on each active poll; the broker's own status-log lines stream
+    // through once each. The per-lane backend/readiness summary is logged on
+    // the first payload and on every install-state change — that line is where
+    // an environment problem surfaces (e.g. finalBackend empty, writerBackend
+    // "none", runtimeLoaded=false, or a failing setup check with its detail).
+    private var loggedFirstPayload = false
+    private var lastLoggedInstallState: String?
+    private var hasLoggedWarmState = false
+    private var lastLoggedWarmState: String?
+    private var lastLoggedReachable: Bool?
+    private var loggedDownloadLogCount = 0
+    private var lastLoggedFailingChecks: Set<String> = []
+
+    private func logSetup(_ message: String) {
+        NSLog("Juno setup: %@", message)
+    }
+
+    /// One-line snapshot of the engine/model readiness picture. This is the
+    /// primary diagnostic for "models didn't load" / Python-environment issues:
+    /// a broken engine shows here as an empty/`none` backend, a model that
+    /// never cached, or a runtime that never loaded.
+    private func setupSummaryLine() -> String {
+        func s(_ v: String) -> String { v.isEmpty ? "-" : v }
+        return [
+            "state=\(installState)",
+            "overallReady=\(overallReady)",
+            "warm=\(engineWarmingState ?? "-")",
+            "preview[ready=\(previewModelReady) repo=\(s(previewRepoId))]",
+            "final[backend=\(s(finalBackend)) ready=\(finalModelReady) repo=\(s(finalRepoId))]",
+            "writer[backend=\(writerBackend) required=\(writerRequired) ready=\(writerModelReady) cached=\(writerModelCached) warm=\(writerRuntimeWarm) loaded=\(writerRuntimeLoaded) path=\(s(writerModelPath))]",
+            "corrector[backend=\(liveCorrectorBackend) required=\(liveCorrectorRequired) cached=\(liveCorrectorModelCached) loaded=\(liveCorrectorRuntimeLoaded)]",
+        ].joined(separator: " ")
+    }
+
+    /// Log the live HF download snapshot (called each poll while a download is
+    /// active) plus any new broker status-log lines.
+    private func logDownloadProgressIfActive() {
+        if downloadActive {
+            func mb(_ b: Int64) -> String { String(format: "%.0fMB", Double(b) / 1_048_576.0) }
+            let eta = downloadEtaSeconds.map { String(format: "%.0fs", $0) } ?? "-"
+            let speed = String(format: "%.1fMB/s", downloadBytesPerSecond / 1_048_576.0)
+            logSetup("download repo=\(downloadCurrentRepo ?? "?") (\(downloadReposDone)/\(downloadReposTotal)) "
+                + "\(mb(downloadBytesSoFar))/\(mb(downloadBytesTotal)) \(speed) eta=\(eta)")
+        }
+        // Stream the broker's own status-log lines exactly once each. Reset the
+        // cursor if the array shrank (a fresh install replaced the log).
+        if downloadLog.count < loggedDownloadLogCount { loggedDownloadLogCount = 0 }
+        if downloadLog.count > loggedDownloadLogCount {
+            for line in downloadLog[loggedDownloadLogCount...] {
+                logSetup("broker-log: \(line)")
+            }
+            loggedDownloadLogCount = downloadLog.count
+        }
+    }
+
+    /// Log any failing setup checks (with detail) when the failing set changes.
+    /// Failing checks are the broker's structured account of *why* setup isn't
+    /// ready — frequently the first signal of a Python/runtime problem.
+    private func logFailingChecksIfChanged() {
+        let failing = checks.filter { !$0.ok }
+        let names = Set(failing.map { $0.name })
+        if names != lastLoggedFailingChecks {
+            if failing.isEmpty {
+                logSetup("checks: all passing (\(checks.count))")
+            } else {
+                for c in failing {
+                    logSetup("check FAILED \(c.name): \(c.detail)")
+                }
+            }
+            lastLoggedFailingChecks = names
+        }
+    }
+
     /// When true, Home should not show the heavy **Finish setup** gate yet (warming or transient HTTP race).
     var shouldDeferFinishSetupGate: Bool {
         if engineWarmingState == "warming" { return true }
@@ -124,6 +214,7 @@ final class JunoSetupModel: ObservableObject {
             return u
         }()
         guard let script = scriptCandidates.first(where: { fm.fileExists(atPath: $0.path) }) else {
+            logSetup("installAndStartLaunchdEngine: no launchd installer script found (looked at \(scriptCandidates.count) candidate path(s))")
             return
         }
         var args = [script.path, "install"]
@@ -131,8 +222,10 @@ final class JunoSetupModel: ObservableObject {
            fm.fileExists(atPath: engineRoot.appendingPathComponent(".venv/bin/python").path) {
             args.append(contentsOf: ["--engine-bundle", engineRoot.path])
         } else if let root = JunoRepoPaths.guessRepoRoot() {
+            logSetup("installAndStartLaunchdEngine: bundled engine python missing — falling back to repo root \(root)")
             args.append(contentsOf: ["--repo-root", root])
         } else {
+            logSetup("installAndStartLaunchdEngine: ABORT — no bundled engine (.venv/bin/python) and no repo root; engine cannot be installed")
             return
         }
         let p = Process()
@@ -141,13 +234,16 @@ final class JunoSetupModel: ObservableObject {
         p.standardOutput = Pipe()
         p.standardError = Pipe()
         do {
+            logSetup("installAndStartLaunchdEngine: running \(args.joined(separator: " "))")
             try p.run()
         } catch {
+            logSetup("installAndStartLaunchdEngine: failed to launch installer: \(error.localizedDescription)")
             return
         }
     }
 
     func startPolling() {
+        logSetup("startPolling: begin monitoring broker setup/status (initial state=\(installState))")
         timer?.cancel()
         refresh()
         timer = Timer.publish(every: 12, on: .main, in: .common)
@@ -159,7 +255,9 @@ final class JunoSetupModel: ObservableObject {
             ) { [weak self] note in
                 Task { @MainActor [weak self] in
                     self?.bootstrapFailed = true
-                    self?.bootstrapFailureReason = note.object as? String
+                    let reason = note.object as? String
+                    self?.bootstrapFailureReason = reason
+                    self?.logSetup("BOOTSTRAP FAILED (engine never launched): \(reason ?? "unknown")")
                 }
             }
         }
@@ -188,6 +286,17 @@ final class JunoSetupModel: ObservableObject {
         JunoBroker.pingHealthDetailed { [weak self] snapshot in
             guard let self else { return }
             guard gen == self.refreshGeneration else { return }
+            let reachable = snapshot?.reachable ?? false
+            let warm = snapshot?.warmState
+            if self.lastLoggedReachable != reachable {
+                self.logSetup("healthz reachable=\(reachable)")
+                self.lastLoggedReachable = reachable
+            }
+            if !self.hasLoggedWarmState || self.lastLoggedWarmState != warm {
+                self.logSetup("engine warm.state=\(warm ?? "-")")
+                self.hasLoggedWarmState = true
+                self.lastLoggedWarmState = warm
+            }
             if let snapshot {
                 self.lastHealthPingReachable = snapshot.reachable
                 self.engineWarmingState = snapshot.warmState
@@ -242,6 +351,10 @@ final class JunoSetupModel: ObservableObject {
                     self.downloadBytesPerSecond = dp.bytesPerSecond ?? 0
                     self.downloadEtaSeconds = dp.etaSeconds
                     self.downloadElapsedSeconds = dp.elapsedSeconds ?? 0
+                    self.downloadCurrentRepo = dp.currentRepo
+                    self.downloadReposDone = dp.reposDone ?? 0
+                    self.downloadReposTotal = dp.repos?.count ?? 0
+                    self.downloadLog = (dp.log ?? []).compactMap { $0.line }
                 } else {
                     self.downloadActive = false
                     self.downloadBytesSoFar = 0
@@ -249,7 +362,29 @@ final class JunoSetupModel: ObservableObject {
                     self.downloadBytesPerSecond = 0
                     self.downloadEtaSeconds = nil
                     self.downloadElapsedSeconds = 0
+                    self.downloadCurrentRepo = nil
+                    self.downloadReposDone = 0
+                    self.downloadReposTotal = 0
+                    self.downloadLog = []
                 }
+                // --- diagnostics: full lifecycle trail for the download screen ---
+                let stateChanged = (self.installState != self.lastLoggedInstallState)
+                if !self.loggedFirstPayload {
+                    self.loggedFirstPayload = true
+                    self.logSetup("first setup payload: \(self.setupSummaryLine())")
+                } else if stateChanged {
+                    self.logSetup("install-state \(self.lastLoggedInstallState ?? "?") -> \(self.installState): \(self.setupSummaryLine())")
+                }
+                if stateChanged {
+                    if self.installState == "ready" {
+                        self.logSetup("install READY")
+                    } else if self.installState.hasPrefix("failed") {
+                        self.logSetup("install FAILED error=\(self.errorMessage ?? "-")")
+                    }
+                    self.lastLoggedInstallState = self.installState
+                }
+                self.logFailingChecksIfChanged()
+                self.logDownloadProgressIfActive()
                 // Wake JunoEngineLifecycle so it can re-evaluate `phase`
                 // when install advances. waitForSetup() exits at the first
                 // terminal phase and never re-runs; without this notify
@@ -263,6 +398,12 @@ final class JunoSetupModel: ObservableObject {
                     self.stopFastPoll()
                 }
             case .failure:
+                if self.lastLoggedInstallState != "broker_unreachable" {
+                    self.logSetup("setup/status fetch FAILED -> broker_unreachable "
+                        + "(healthzReachable=\(self.lastHealthPingReachable.map(String.init) ?? "?") "
+                        + "warm=\(self.engineWarmingState ?? "-"))")
+                    self.lastLoggedInstallState = "broker_unreachable"
+                }
                 self.installState = "broker_unreachable"
                 self.overallReady = false
                 self.errorMessage = "Broker not reachable"
@@ -296,14 +437,30 @@ final class JunoSetupModel: ObservableObject {
     }
 
     func triggerInstall() {
+        logSetup("triggerInstall -> POST api/broker/setup/install")
         installState = "downloading"
-        JunoBroker.postSetupInstall(repair: false) { _ in }
+        JunoBroker.postSetupInstall(repair: false) { [weak self] result in
+            switch result {
+            case .success(let obj):
+                self?.logSetup("install request accepted (keys=\(obj.keys.sorted().joined(separator: ",")))")
+            case .failure(let err):
+                self?.logSetup("install request error: \(err.localizedDescription)")
+            }
+        }
         startFastPoll()
     }
 
     func triggerRepair() {
+        logSetup("triggerRepair -> POST api/broker/setup/repair")
         installState = "downloading"
-        JunoBroker.postSetupInstall(repair: true) { _ in }
+        JunoBroker.postSetupInstall(repair: true) { [weak self] result in
+            switch result {
+            case .success(let obj):
+                self?.logSetup("repair request accepted (keys=\(obj.keys.sorted().joined(separator: ",")))")
+            case .failure(let err):
+                self?.logSetup("repair request error: \(err.localizedDescription)")
+            }
+        }
         startFastPoll()
     }
 

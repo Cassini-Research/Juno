@@ -156,7 +156,52 @@ class ProductionServiceRunner:
             # final ASR, then warm user-facing preview/live-correction/writer
             # roles behind the socket.
             skip_roles.update({'live_corrector', 'writer'})
+            # Fresh install: a fatal warm of an ASR lane whose weights are
+            # not on disk turns into an in-band model download (preview's
+            # /warm times out at local_http_timeout_sec; final blocks the
+            # health window) and crash-loops the engine before the
+            # workbench — the only surface onboarding can drive the real,
+            # progress-reporting install through — ever starts. Skip those
+            # lanes here; broker_setup_install warms them once the models
+            # land.
+            for role in ('preview_asr', 'final_asr'):
+                if not self._shell_asr_role_cache_ready(role):
+                    logger.info("initial_warm_skipped_missing_cache role=%s", role)
+                    skip_roles.add(role)
         return skip_roles or None
+
+    def _shell_asr_role_cache_ready(self, role: str) -> bool:
+        """Local-only probe: are the model weights for an ASR lane usable
+        from disk right now? ``True`` for candidates the HF cache can't
+        answer for (non-repo paths, existing local model dirs) so the
+        steady-state warm path is unchanged. A provably incomplete cache
+        — or a probe that itself fails — defers the lane to the
+        post-install warm: warming here is fatal, and the worst case of
+        a wrongly deferred warm is a lazy load later, while the worst
+        case of a wrongly attempted warm is an in-band download and a
+        crash loop.
+        """
+        if role == 'preview_asr':
+            candidate = str(self.config.preview_model_path or '').strip()
+        elif role == 'final_asr':
+            candidate = str(
+                self.config.final_hf_repo_id or self.config.final_model_path or ''
+            ).strip()
+        else:
+            return True
+        if not candidate:
+            return True
+        try:
+            from juno_core_v3.dictation.transcriber import is_hf_repo_id
+
+            if not is_hf_repo_id(candidate) or Path(candidate).exists():
+                return True
+            from juno_v2.demo.models import is_hf_model_cache_complete
+
+            return bool(is_hf_model_cache_complete(candidate))
+        except Exception:  # noqa: BLE001
+            logger.exception("asr_cache_probe_failed role=%s", role)
+            return False
 
     def _start_shell_background_warmup(
         self,
@@ -184,7 +229,12 @@ class ProductionServiceRunner:
             # showing words immediately on the user's first utterance. The
             # rebuild future runs on the dedicated decode worker, preserving
             # MLX thread affinity.
-            if hasattr(workbench_app, "_ensure_preview_decode_executor"):
+            if not self._shell_asr_role_cache_ready('preview_asr'):
+                # Fresh install: weights aren't on disk yet, so a prewarm
+                # would only manufacture a fallback_active error state.
+                # broker_setup_install warms preview once the download lands.
+                logger.info("background_preview_prewarm_skipped_missing_cache")
+            elif hasattr(workbench_app, "_ensure_preview_decode_executor"):
                 try:
                     workbench_app._ensure_preview_decode_executor()
                     rebuild_future = getattr(workbench_app, "_preview_rebuild_future", None)
@@ -274,9 +324,9 @@ class ProductionServiceRunner:
         if backend != "mlx_lm" or not model_path:
             return True
         try:
-            from juno_v2.demo.models import is_hf_model_cached
+            from juno_v2.demo.models import is_hf_model_cache_complete
 
-            return bool(is_hf_model_cached(model_path))
+            return bool(is_hf_model_cache_complete(model_path))
         except Exception:  # noqa: BLE001
             # If the cache probe itself fails, do not risk a hidden network
             # download in the startup path. Setup/install can surface the
