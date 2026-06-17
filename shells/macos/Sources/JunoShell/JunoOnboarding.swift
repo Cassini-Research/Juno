@@ -955,6 +955,36 @@ private struct OnboardingSetupStep: View {
             if !setup.downloadLog.isEmpty {
                 downloadStatusLog
             }
+            downloadRecoveryRow
+        }
+    }
+
+    /// Stall hint + a manual restart control shown during download. Restart
+    /// supersedes a stuck attempt and resumes the partial download, so the user
+    /// is never stranded on a frozen progress bar with no way out.
+    private var downloadRecoveryRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if setup.downloadStalled {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(JunoDesignTokens.danger.opacity(0.9))
+                    Text("Download looks stuck. Restart it — it resumes where it left off.")
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(JunoTheme.secondaryText(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+            HStack(spacing: 0) {
+                Button(setup.downloadStalled ? "Restart download" : "Restart") {
+                    setup.restartInstall()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(JunoDesignTokens.accent)
+                Spacer(minLength: 0)
+            }
         }
     }
 

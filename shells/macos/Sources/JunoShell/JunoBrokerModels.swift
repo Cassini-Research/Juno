@@ -376,10 +376,15 @@ extension JunoBroker {
 
     static func postSetupInstall(
         repair: Bool = false,
+        restart: Bool = false,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
-        let path = repair ? "api/broker/setup/repair" : "api/broker/setup/install"
-        postJSON(path: path, payload: [:]) { obj in
+        // A restart supersedes an in-flight (stuck/stalled) download instead of
+        // no-opping; it uses the force/repair route and carries the restart
+        // marker the broker keys its generation bump on.
+        let path = (repair || restart) ? "api/broker/setup/repair" : "api/broker/setup/install"
+        let payload: [String: Any] = restart ? ["restart": true] : [:]
+        postJSON(path: path, payload: payload) { obj in
             completion(.success(obj))
         }
     }

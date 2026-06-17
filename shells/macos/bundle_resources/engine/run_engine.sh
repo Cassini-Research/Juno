@@ -33,6 +33,14 @@ PY_BYTECODE_CACHE_ROOT="${HOME}/Library/Caches/${JUNO_BUNDLE_ID}/python-bytecode
 mkdir -p "${PY_BYTECODE_CACHE_ROOT}"
 export PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX:-${PY_BYTECODE_CACHE_ROOT}}"
 
+# Bound HF model-download reads so a dead/stalled connection can't hang the
+# provisioning thread forever (the "stuck at 121 MB" report). A stalled read
+# raises after this many seconds → the broker's bounded retry resumes the
+# partial blob; a user-triggered restart can also take the blob lock once the
+# stuck read releases it. 30s is high enough not to false-trip on slow-but-
+# progressing networks (legit downloads stream data continuously).
+export HF_HUB_DOWNLOAD_TIMEOUT="${HF_HUB_DOWNLOAD_TIMEOUT:-30}"
+
 # mlx_whisper.audio.load_audio shells out to `ffmpeg` (mlx_whisper/audio.py
 # line 44-46). Apps launched via macOS LaunchServices (double-click,
 # `open Juno.app`, Spotlight, Dock) inherit a minimal PATH —

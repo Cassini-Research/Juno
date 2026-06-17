@@ -1847,6 +1847,13 @@ class WorkbenchApp:
         # "ready" = done, "failed:..." = error message.
         self._setup_install_state: str | None = None
         self._setup_install_lock = threading.Lock()
+        # Monotonic install generation. A restart (user re-triggers a stuck /
+        # stalled download) bumps this; the superseded worker + progress poller
+        # see a newer generation and bail without clobbering the new attempt's
+        # state. ``_setup_install_stop_event`` lets a restart stop the prior
+        # progress poller immediately.
+        self._setup_install_generation: int = 0
+        self._setup_install_stop_event: "threading.Event | None" = None
         # Live download progress for the model-provisioning step. Populated
         # by ``broker_setup_install`` while a download is in flight and read
         # by ``broker_setup_status`` so the onboarding UI can render a real
@@ -3279,9 +3286,23 @@ class WorkbenchApp:
         ``broker_setup_status`` to render a real progress bar — bytes, speed,
         ETA — instead of an indeterminate spinner.
         """
+        # A restart (user re-triggered a stuck/stalled download) supersedes an
+        # in-flight attempt instead of no-opping. HF resumes partial blobs, so
+        # the new attempt continues from where the stuck one left off.
+        restart = bool((payload or {}).get("restart"))
+        if restart:
+            force = True
         with self._setup_install_lock:
-            if self._setup_install_state == "downloading":
+            if self._setup_install_state == "downloading" and not restart:
                 return {"ok": True, "install_state": "downloading", "message": "Install already in progress"}
+            # Supersede any prior attempt: bump the generation so its worker /
+            # poller bail, and signal the prior poller to stop now.
+            self._setup_install_generation += 1
+            install_generation = self._setup_install_generation
+            if self._setup_install_stop_event is not None:
+                self._setup_install_stop_event.set()
+            if restart:
+                logger.info("setup_install_restart generation=%d", install_generation)
             self._setup_install_state = "downloading"
             # Reset progress on a new install so a stale snapshot from a
             # previous run doesn't leak into the UI.
@@ -3298,8 +3319,13 @@ class WorkbenchApp:
                 "repos_done": 0,
                 "log": [],
             }
+            stop_event = threading.Event()
+            self._setup_install_stop_event = stop_event
 
-        stop_event = threading.Event()
+        # True once a newer install generation has superseded this one (a
+        # restart). Superseded workers must not write state/progress.
+        def _superseded() -> bool:
+            return install_generation != self._setup_install_generation
 
         def _do_install() -> None:
             from juno_v2.runtime.offline_mode import hub_online_for_explicit_download
@@ -3365,7 +3391,8 @@ class WorkbenchApp:
                             needed_bytes, free_bytes, probe,
                         )
                         with self._setup_install_lock:
-                            self._setup_install_state = "failed:insufficient_disk"
+                            if not _superseded():
+                                self._setup_install_state = "failed:insufficient_disk"
                         return
 
                 self._setup_install_log(
@@ -3414,6 +3441,8 @@ class WorkbenchApp:
                             logger.exception("setup_install_set_warm_state_failed")
                 self._setup_install_log("Setup complete")
                 with self._setup_install_lock:
+                    if _superseded():
+                        return
                     self._setup_install_state = "ready"
                     # One final snapshot at 100% so the UI shows a clean
                     # completion frame before transitioning out of the
@@ -3425,9 +3454,15 @@ class WorkbenchApp:
                         self._setup_install_progress["bytes_per_second"] = 0.0
                         self._setup_install_progress["eta_seconds"] = 0.0
             except Exception as exc:
+                # A superseded worker (its blocked/stalled download finally
+                # returned or raised after a restart) must not overwrite the new
+                # attempt's state with a stale failure.
+                if _superseded():
+                    return
                 self._setup_install_log(f"Install failed: {exc}")
                 with self._setup_install_lock:
-                    self._setup_install_state = f"failed:{exc!s}"
+                    if not _superseded():
+                        self._setup_install_state = f"failed:{exc!s}"
             finally:
                 stop_event.set()
 
