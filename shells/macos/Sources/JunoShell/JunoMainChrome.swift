@@ -4389,15 +4389,20 @@ struct JunoMainShellView: View {
                 .lineLimit(2)
 
             // Explicit break after the heart: the sidebar is too narrow for
-            // one line, and a natural wrap split "Cassini / Research Team".
+            // one line, and a natural wrap split "Cassini / Research". The
+            // "Cassini Research" run is a markdown link (tappable, accent-tinted)
+            // that opens the company site via the openURL environment action.
             (Text("Made with ")
                 + Text("♥").foregroundColor(JunoDesignTokens.danger.opacity(0.85))
-                + Text("\nby Cassini Research Team"))
+                + Text("\nby ")
+                + Text("[Cassini Research](https://cassiniresearch.com/)")
+                    .foregroundColor(JunoDesignTokens.accent))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.7))
+                .tint(JunoDesignTokens.accent)
                 .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(Text("Made with love by Cassini Research Team"))
+                .accessibilityLabel(Text("Made with love by Cassini Research"))
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 2)

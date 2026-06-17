@@ -20,8 +20,20 @@ dependencies = [
     "dateparser>=1.2",
     # Apple Silicon local lanes (best_local profile: mlx_whisper final + mlx_lm writer).
     # Marked so Linux/CI installs stay lightweight; install on arm64 macOS only.
+    #
+    # MLX is PINNED to the last release before the Metal-language-4.0 metallib.
+    # mlx-metal 0.30.0+ ships a metallib compiled for Metal language 4.0, which
+    # only loads on macOS 26+ and hard-fails the engine on macOS 14/15 ("Failed
+    # to load the default metallib ... language version 4.0 which is not
+    # supported on this OS"). The wheel's platform tag does NOT reflect the
+    # shader language version, so even a macosx_14 wheel of 0.31.x is unusable
+    # on Sequoia (this shipped broken in 1.0.3/1.0.4). 0.29.4 is the last pre-4.0
+    # mlx (it pins mlx-metal==0.29.4 transitively); mlx-lm 0.30.2 is the newest
+    # mlx-lm that accepts mlx 0.29.x. Revisit when MLX ships a macOS-14/15
+    # metallib again, or when we drop macOS < 26.
+    "mlx==0.29.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "mlx-whisper>=0.4.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "mlx-lm>=0.22.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-lm==0.30.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [tool.setuptools.packages.find]
