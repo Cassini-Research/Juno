@@ -6484,7 +6484,7 @@ struct JunoShellApp: App {
             // to Applications — otherwise macOS keeps resetting TCC grants and
             // the hotkey/mic silently stop working.
             JunoAppLocation.logLaunchLocation()
-            Task { @MainActor in JunoAppLocation.warnIfTranslocated() }
+            Task { @MainActor in JunoAppLocation.offerInstallToApplicationsIfNeeded() }
             surf.startPolling()
             ovr.install(controller: ctrl)
             JunoPermissionMonitor.shared.startMonitoring()
