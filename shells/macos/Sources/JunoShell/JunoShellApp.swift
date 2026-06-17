@@ -2543,6 +2543,46 @@ final class JunoTargetApplicationTracker {
         let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !appName.isEmpty && ignoredTargetNames.contains(appName)
     }
+
+    /// System panes that surface focusable (but effectively non-editable for
+    /// dictation) elements, so a posted Cmd+V is accepted by the event system
+    /// yet inserts nothing. Kept separate from ``isIgnoredSystemSurface``
+    /// (which also drives target tracking / context capture).
+    static let nonEditableSystemPasteBundleIds: Set<String> = [
+        "com.apple.systempreferences",   // System Settings (and legacy System Preferences)
+    ]
+    static let nonEditableSystemPasteNames: Set<String> = [
+        "system settings",
+        "system preferences",
+    ]
+    static func isNonEditableSystemPasteSurface(bundleId: String?, name: String?) -> Bool {
+        let bid = (bundleId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !bid.isEmpty, nonEditableSystemPasteBundleIds.contains(bid) { return true }
+        let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !appName.isEmpty && nonEditableSystemPasteNames.contains(appName)
+    }
+
+    /// How a frontmost app sampled at a paste boundary should affect the paste
+    /// target. Pure + testable.
+    enum PasteTargetDisposition: Equatable {
+        /// A real external app — resolve it as the paste target.
+        case adopt
+        /// Juno's own HUD / notification / control center transiently frontmost.
+        /// Keep the target captured at dictation start and do NOT gate the paste
+        /// off — Juno's floating HUD panel can be momentarily frontmost at the
+        /// finalize sample even while the user is dictating into another app, and
+        /// gating off here mis-files the result into the copy-ready overlay.
+        case preservePrior
+        /// A genuinely-focused non-editable system pane (System Settings): a
+        /// posted Cmd+V is accepted but inserts nothing, so fall back to copy.
+        case copyOnly
+    }
+
+    static func pasteTargetDisposition(bundleId: String?, name: String?) -> PasteTargetDisposition {
+        if isIgnoredSystemSurface(bundleId: bundleId, name: name) { return .preservePrior }
+        if isNonEditableSystemPasteSurface(bundleId: bundleId, name: name) { return .copyOnly }
+        return .adopt
+    }
 }
 
 // MARK: - Shortcut preference
@@ -3924,47 +3964,29 @@ final class DictationController: ObservableObject {
     /// match what the user saw when they started dictating — only the
     /// *paste target* needs to track focus changes. So we refresh paste
     /// state exclusively at paste boundaries.
-    /// System panes that surface focusable (but effectively non-editable for
-    /// dictation) elements, so a posted Cmd+V is accepted by the event system
-    /// yet inserts nothing. Scoped to the paste decision only — intentionally
-    /// NOT folded into ``isIgnoredSystemSurface`` (which also drives target
-    /// tracking and context capture).
-    private static let nonEditableSystemPasteBundleIds: Set<String> = [
-        "com.apple.systempreferences",   // System Settings (and legacy System Preferences)
-    ]
-    private static let nonEditableSystemPasteNames: Set<String> = [
-        "system settings",
-        "system preferences",
-    ]
-    private static func isNonEditableSystemPasteSurface(bundleId: String?, name: String?) -> Bool {
-        let bid = (bundleId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !bid.isEmpty, nonEditableSystemPasteBundleIds.contains(bid) { return true }
-        let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !appName.isEmpty && nonEditableSystemPasteNames.contains(appName)
-    }
-
     private func refreshPasteTargetFromCurrentFocus() {
         let snap = JunoLocalCapability.snapshot()
         let snapBundleId = (snap["frontmost_app_bundle_id"] as? String)
             ?? (snap["app_bundle_id"] as? String)
         let snapName = (snap["frontmost_app_name"] as? String)
             ?? (snap["app_name"] as? String)
-        if JunoTargetApplicationTracker.isIgnoredSystemSurface(bundleId: snapBundleId, name: snapName) {
-            // Ignored system surfaces (our own UI, notification/control center)
-            // are never valid paste targets. Mark not-a-destination so finalize
-            // copies instead of firing a synthetic Cmd+V into a window that
-            // won't accept it — which used to read back as a false success.
+        switch JunoTargetApplicationTracker.pasteTargetDisposition(bundleId: snapBundleId, name: snapName) {
+        case .preservePrior:
+            // Juno's own floating HUD panel (canBecomeKey while visible) can be
+            // momentarily frontmost at this finalize sample even though the user
+            // is dictating into another app (e.g. Brave). Preserve the target
+            // captured at dictation start and let activateTargetForPasteIfNeeded
+            // re-front it before the Cmd+V — do NOT gate the paste off. Gating
+            // off here (regressed in PR #19) mis-filed the result into the
+            // copy-ready overlay instead of pasting into the real target.
+            return
+        case .copyOnly:
+            // A genuinely-focused non-editable system pane (System Settings)
+            // accepts the Cmd+V keystroke but inserts nothing; fall back to copy.
             likelyPasteDestination = false
             return
-        }
-        // Stopgap for non-editable system panes (e.g. System Settings). They
-        // expose focusable AX elements, so can_paste_at_focus reads true, then a
-        // posted Cmd+V is "accepted" by the event system but inserts nothing —
-        // a false success. Treat them as copy-only here; the general read-back
-        // verification in observedUndoSafePaste covers every other app.
-        if Self.isNonEditableSystemPasteSurface(bundleId: snapBundleId, name: snapName) {
-            likelyPasteDestination = false
-            return
+        case .adopt:
+            break
         }
         // PID/app/window: safe to refresh from NSWorkspace data even
         // without AX trust — these fields land in the snapshot before the
