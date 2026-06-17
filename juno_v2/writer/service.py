@@ -510,6 +510,7 @@ class WriterService:
         raw_text: str,
         context: TypedContextBundle,
         memory_packet: dict | None = None,
+        memory_store: Any = None,
     ) -> WriterOutcome | None:
         """Run the cached-prefix dictation editor. None ⇒ deterministic floor."""
         packet = memory_packet or {}
@@ -620,6 +621,23 @@ class WriterService:
             mode_name = str(getattr(self.state.mode_policy, "mode_name", "") or "").lower()
             if mode_name in FILLER_STRIP_MODES:
                 edited = strip_hesitation_fillers(edited)
+        # Expand user snippets on the editor's output. The editor path returns
+        # here, before the deterministic expand_snippets step, so without this
+        # a saved snippet ("signoff" -> "Best, Juno") never came up whenever the
+        # dictation editor was enabled (the production default).
+        edited, editor_snippets_expanded, editor_snippet_scopes = self._expand_snippets_for_commit(
+            edited, context=context, memory_store=memory_store
+        )
+        if editor_snippets_expanded:
+            self.recorder.record(
+                TraceKind.WRITER,
+                "writer_snippets_expanded",
+                {
+                    "utterance_id": utterance_id,
+                    "scopes": editor_snippet_scopes,
+                    "pipeline": "dictation_editor",
+                },
+            )
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.PASS_THROUGH_COMMIT,
@@ -631,6 +649,7 @@ class WriterService:
             model_used=True,
             metadata={
                 "reason": "dictation_editor",
+                "snippet_expanded": editor_snippets_expanded,
                 "raw_text": raw_text,
                 "input_text": final_text,
                 "editor": {"verdict": script.verdict, "applied": applied, "decode_ms": decode_ms},
@@ -726,6 +745,7 @@ class WriterService:
                 raw_text=raw_text,
                 context=context,
                 memory_packet=memory_packet,
+                memory_store=memory_store,
             )
             if editor_outcome is not None:
                 return self._annotate_outcome(editor_outcome)
@@ -2779,6 +2799,39 @@ class WriterService:
             return WriterMode(key)
         except ValueError:
             return WriterMode.DEFAULT_SURFACE
+
+    def _expand_snippets_for_commit(
+        self,
+        text: str,
+        *,
+        context: Any,
+        memory_store: Any,
+    ) -> tuple[str, bool, list[str]]:
+        """Expand user snippet triggers for a committed dictation.
+
+        Shared by the deterministic pipeline AND the AI dictation-editor path
+        so a saved snippet expands regardless of which lane produced the final
+        text. (The editor path used to return before the deterministic
+        expansion step, so snippets never came up in production where the
+        editor is enabled.) No-op in VERBATIM mode, on code/terminal surfaces,
+        when there's no snippet store, or when the active mode policy yields no
+        snippet scopes. Returns ``(text, expanded, scopes)``.
+        """
+        if (
+            self.state.mode == WriterMode.VERBATIM
+            or (getattr(context, "app_category", "") or "").strip().lower() in ("code", "terminal")
+            or memory_store is None
+            or getattr(memory_store, "snippets", None) is None
+            or not text
+        ):
+            return text, False, []
+        scopes = self._snippet_scopes_for_policy(getattr(context, "app_category", None))
+        if not scopes:
+            return text, False, []
+        before = text
+        for scope in scopes:
+            text = expand_snippets(text, resolver=memory_store.snippets, scope=scope)
+        return text, text != before, scopes
 
     def _snippet_scopes_for_policy(self, app_category: str | None) -> list[str]:
         pol = self.state.mode_policy
