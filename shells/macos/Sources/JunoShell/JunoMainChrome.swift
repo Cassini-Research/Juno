@@ -15,7 +15,7 @@ enum MainSidebar: String, CaseIterable, Identifiable {
         case .voiceCommands:   return "Voice Commands"
         case .history:         return "History"
         case .modes:           return "Styles"
-        case .personalization: return "Dictionary & Memory"
+        case .personalization: return "Snippets & Memory"
         case .surfacePresets:  return "Per-app writing"
         case .privacy:         return "Privacy"
         case .settings:        return "Settings"
@@ -1496,12 +1496,12 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned",
-                    message: "“\(trimmed)” is already in Dictionary & Memory."
+                    message: "“\(trimmed)” is already in Snippets & Memory."
                 ))
             } else if ok {
                 setBanner(JunoHistoryBannerState(
                     kind: .success,
-                    title: "Saved to Dictionary & Memory",
+                    title: "Saved to Snippets & Memory",
                     message: "“\(trimmed)” is now available for future dictations."
                 ))
             } else if errorCode == "protected_term" {
@@ -1514,7 +1514,7 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned differently",
-                    message: "Open Dictionary & Memory to review the existing entry before changing it."
+                    message: "Open Snippets & Memory to review the existing entry before changing it."
                 ))
             } else {
                 setBanner(JunoHistoryBannerState(
@@ -1928,7 +1928,7 @@ private struct HistoryDetailPane: View {
             return "Juno already knows that term."
         }
         if knownVocabularyTerms.contains(key) {
-            return "Already in Dictionary & Memory."
+            return "Already in Snippets & Memory."
         }
         return nil
     }
@@ -3766,7 +3766,7 @@ private struct HistoryDetailPane: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
                 Spacer()
-                Button("Open Dictionary & Memory") {
+                Button("Open Snippets & Memory") {
                     showSavePhrasePopover = false
                     // Only forward a prefill if it's actually a term-shaped
                     // string (short, no spaces). Otherwise open empty so

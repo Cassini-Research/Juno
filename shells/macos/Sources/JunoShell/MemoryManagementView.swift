@@ -438,7 +438,7 @@ struct MemoryManagementView: View {
     var body: some View {
         VStack(spacing: 0) {
             JunoPageHeader(
-                eyebrow: "Dictionary & Memory",
+                eyebrow: "Snippets & Memory",
                 title: "Teach Juno your words",
                 subtitle: "Names, snippets, replacements, styles, and learned fixes stay on this Mac."
             )
