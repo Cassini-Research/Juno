@@ -111,6 +111,41 @@ fi
 "$VENV_PY" -m pip install --upgrade pip
 "$VENV_PY" -m pip install "$ROOT"
 
+# --- Pin MLX to a macOS-floor wheel so the bundle runs on older macOS -------
+# MLX publishes a SEPARATE wheel per macOS version. `mlx-metal` carries the
+# compiled Metal backend + mlx.metallib, built for that macOS's Metal language
+# version. pip on this build host picks the wheel matching the BUILD machine's
+# macOS — and our build host is macOS 26 (Tahoe), so it grabs the macosx_26
+# wheels, whose metallib uses Metal language 4.0. That metallib FAILS to load
+# on macOS 15 (Sequoia):
+#   "Failed to load the default metallib ... language version 4.0 which is not
+#    supported on this OS"
+# → the engine's MLX/Metal preflight aborts (recoverable=false), the engine
+# never starts, and the app never reaches model download. Force the macosx_15
+# wheels for both mlx and mlx-metal — they are forward-compatible (run on
+# macOS 15 through 26), so one bundle works across all supported macOS.
+# Override the floor with JUNO_MLX_WHEEL_PLATFORM if the support matrix changes.
+MLX_WHEEL_PLATFORM="${JUNO_MLX_WHEEL_PLATFORM:-macosx_14_0_arm64}"
+MLX_VER="$("$VENV_PY" -c 'import importlib.metadata as m; print(m.version("mlx"))')"
+MLX_METAL_VER="$("$VENV_PY" -c 'import importlib.metadata as m; print(m.version("mlx-metal"))')"
+SITE_PACKAGES="$("$VENV_PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+echo "Pinning MLX to ${MLX_WHEEL_PLATFORM} wheels (mlx==${MLX_VER}, mlx-metal==${MLX_METAL_VER})"
+"$VENV_PY" -m pip install --no-deps --upgrade --force-reinstall \
+  --platform "$MLX_WHEEL_PLATFORM" --only-binary=:all: \
+  --target "$SITE_PACKAGES" \
+  "mlx==${MLX_VER}" "mlx-metal==${MLX_METAL_VER}"
+# Fail the build if the swapped-in metallib's wheel didn't actually target an
+# older macOS floor (guards against a silent fall-back to the host wheel).
+INSTALLED_TAG="$(cat "$SITE_PACKAGES"/mlx_metal-*.dist-info/WHEEL 2>/dev/null | awk -F': ' '/^Tag:/{print $2}')"
+echo "mlx-metal wheel tag after pin: ${INSTALLED_TAG:-<none>}"
+case "$INSTALLED_TAG" in
+  *macosx_26_*|"") echo "error: mlx-metal still targets macOS 26 (or missing) after pin — would break macOS 15 users" >&2; exit 6 ;;
+esac
+# Sanity: MLX must still import + run on THIS host (macOS-15 wheels are forward
+# compatible to 26), confirming the swap produced a working runtime.
+"$VENV_PY" -c 'import mlx.core as mx; print("mlx ok:", mx.array([1,2,3]).sum().item())' \
+  || { echo "error: bundled MLX fails to import/run after macOS-floor pin" >&2; exit 6; }
+
 # --- Strip build-machine path leaks ----------------------------------------
 # pip writes console-script wrappers (hf, huggingface-cli, mlx_lm.*,
 # mlx_whisper, normalizer, …) whose shebang hardcodes this build's

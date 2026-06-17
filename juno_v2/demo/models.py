@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 from juno_v2.demo.config import DemoConfig, DemoPaths
+
+logger = logging.getLogger(__name__)
 
 
 def is_model_ready(path: Path) -> bool:
@@ -105,6 +109,40 @@ def _safe_repo_dir_name(repo_id: str) -> str:
     )
 
 
+def _snapshot_download_with_retry(snapshot_download, *, attempts: int = 3, **kwargs):
+    """``snapshot_download`` with bounded retry for transient failures.
+
+    A single network blip used to be terminal for a multi-GB model install:
+    the exception propagated, the broker flipped to ``failed:`` and the user
+    had to manually repair. ``snapshot_download`` resumes partial blobs across
+    calls (it keeps ``*.incomplete`` files in the cache), so re-invoking
+    *continues* an interrupted download rather than restarting it — we
+    deliberately do NOT clear the partial cache between attempts.
+
+    ``TypeError`` is never retried: it signals an API/shim mismatch
+    (``local_dir``-only hub shims) that the caller handles by falling back to
+    the ``local_dir`` form.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return snapshot_download(**kwargs)
+        except TypeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — network/HTTP/OS errors are all retryable
+            last_exc = exc
+            if attempt >= attempts:
+                break
+            backoff = min(2 ** attempt, 30)
+            logger.warning(
+                "snapshot_download attempt %d/%d failed (%s: %s); retrying in %ds (resumes partial cache)",
+                attempt, attempts, type(exc).__name__, exc, backoff,
+            )
+            time.sleep(backoff)
+    assert last_exc is not None
+    raise last_exc
+
+
 def provision_hf_model_cache(
     repo_id: str,
     *,
@@ -123,7 +161,7 @@ def provision_hf_model_cache(
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("huggingface-hub is required to provision local models") from exc
     try:
-        snapshot_download(repo_id=repo, force_download=force)
+        _snapshot_download_with_retry(snapshot_download, repo_id=repo, force_download=force)
     except TypeError as exc:
         # Some tests and older hub shims only expose the local_dir form.
         # Keep production on the HF cache path, but retain compatibility
@@ -133,7 +171,9 @@ def provision_hf_model_cache(
         if fallback_dir is None:
             raise
         fallback_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_download(repo_id=repo, local_dir=str(fallback_dir), force_download=force)
+        _snapshot_download_with_retry(
+            snapshot_download, repo_id=repo, local_dir=str(fallback_dir), force_download=force
+        )
 
 
 def provision_demo_models(config: DemoConfig, *, paths: DemoPaths, force: bool = False) -> DemoConfig:

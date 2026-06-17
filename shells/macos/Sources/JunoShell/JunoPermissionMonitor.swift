@@ -2,6 +2,7 @@ import ApplicationServices
 import AVFoundation
 import Combine
 import AppKit
+import IOKit.hid
 
 // MARK: - Permission monitor
 
@@ -14,6 +15,15 @@ final class JunoPermissionMonitor: ObservableObject {
 
     @Published private(set) var micStatus: AVAuthorizationStatus = .notDetermined
     @Published private(set) var axGranted: Bool = false
+    /// Input Monitoring (IOHIDRequestTypeListenEvent). On recent macOS the
+    /// global key/Esc monitors in ``juno-hotkey`` need this in addition to
+    /// Accessibility; tracking it separately lets us tell the user *which*
+    /// permission is missing instead of conflating it with Accessibility.
+    @Published private(set) var inputMonitoringGranted: Bool = false
+    /// Set when the ``juno-hotkey`` helper reports a failed global-monitor
+    /// install (HOTKEY_DEGRADED). Surfaces the otherwise-silent "key receives
+    /// nothing" failure to the UI.
+    @Published private(set) var hotkeyMonitorDegraded: Bool = false
     @Published private(set) var screenContextEnabled: Bool = JunoUserDefaults.screenContextEnabled
     @Published private(set) var screenRecordingGranted: Bool = false
 
@@ -79,6 +89,12 @@ final class JunoPermissionMonitor: ObservableObject {
         // Cmd+V injection still fail, which made the UI report "granted" while
         // paste was actually blocked.
         axGranted = AXIsProcessTrusted()
+        inputMonitoringGranted = (IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted)
+        // Clear the degraded flag once the key-capture permissions are in place
+        // so the UI recovers without a restart after the user grants them.
+        if hotkeyMonitorDegraded && axGranted && inputMonitoringGranted {
+            hotkeyMonitorDegraded = false
+        }
         screenContextEnabled = JunoUserDefaults.screenContextEnabled
         screenRecordingGranted = JunoScreenContextAccess.permissionGranted
         // Wake the lifecycle when canDictate flips. Without this, a user
@@ -135,6 +151,20 @@ final class JunoPermissionMonitor: ObservableObject {
         _ = AXIsProcessTrustedWithOptions(opts)
     }
 
+    /// Called when ``juno-hotkey`` reports a global-monitor install failure.
+    /// Records the degraded state, logs the current permission picture, and
+    /// nudges the Accessibility trust prompt so the user can fix it.
+    func noteHotkeyMonitorDegraded(_ which: String) {
+        refresh()
+        hotkeyMonitorDegraded = true
+        NSLog("Juno: hotkey degraded(%@) ax=%@ inputMonitoring=%@ mic=%@",
+              which,
+              axGranted ? "granted" : "missing",
+              inputMonitoringGranted ? "granted" : "missing",
+              micStatusLabel)
+        nudgeAccessibilityPrompt()
+    }
+
     func openMicSettings() {
         JunoSystemSettingsLinks.openMicrophonePrivacy()
     }
@@ -157,6 +187,10 @@ final class JunoPermissionMonitor: ObservableObject {
         case .restricted: return "Restricted by system policy."
         @unknown default: return "Unknown"
         }
+    }
+
+    var inputMonitoringStatusLabel: String {
+        inputMonitoringGranted ? "Granted" : "Needs Input Monitoring approval."
     }
 
     var screenRecordingStatusLabel: String {

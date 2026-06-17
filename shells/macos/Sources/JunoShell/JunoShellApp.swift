@@ -6263,6 +6263,21 @@ final class HotkeyBridge {
                 // app has focus (where a local NSEvent monitor wouldn't
                 // see the keypress). Requires Accessibility / Input
                 // Monitoring trust on the helper binary.
+                if line.hasPrefix("HOTKEY_DEGRADED:") {
+                    // The helper's global key/Esc/flags monitor failed to
+                    // install — almost always because Accessibility / Input
+                    // Monitoring isn't granted. Previously this only went to
+                    // the helper's stderr (which nobody read), so the dictation
+                    // key silently received nothing and users reported "I press
+                    // it and nothing happens". Log it and nudge the permission
+                    // prompt so the cause is visible and actionable.
+                    let which = String(line.dropFirst("HOTKEY_DEGRADED:".count))
+                    NSLog("Juno: hotkey helper DEGRADED (%@) — Accessibility/Input Monitoring likely not granted", which)
+                    DispatchQueue.main.async {
+                        JunoPermissionMonitor.shared.noteHotkeyMonitorDegraded(which)
+                    }
+                    continue
+                }
                 if line == JunoHotkeyEventLine.escape {
                     NSLog("Juno: hotkey ESC")
                     DispatchQueue.main.async { self.onEscape() }
@@ -6279,9 +6294,21 @@ final class HotkeyBridge {
                 if self.isDownEvent(line, shortcut: shortcut) {
                     NSLog("Juno: hotkey down matched %@", shortcut.rawValue)
                     DispatchQueue.main.async {
-                        guard !self.shouldSuppressDictationShortcut() else {
-                            NSLog("Juno: hotkey down suppressed while copy-ready")
-                            return
+                        if self.shouldSuppressDictationShortcut() {
+                            // The copy-ready panel is showing (HUD idle with a
+                            // leftover transcript). This press used to be a
+                            // silent no-op, and since it didn't clear the
+                            // copy-ready state, repeated presses were ALSO
+                            // dropped — the user had to wait for the panel to
+                            // time out, i.e. "press the key twice/thrice
+                            // before the overlay appears". A press of the
+                            // dictation key is an unambiguous "start a new
+                            // dictation": begin it. beginPushToTalk() clears
+                            // copyableTranscript and dismisses the panel. ⌘C
+                            // (a separate COPY event) still copies the text
+                            // first, and the transcript also remains in
+                            // History, so starting over loses nothing.
+                            NSLog("Juno: hotkey down while copy-ready -> dismiss + begin new dictation")
                         }
                         self.onDown()
                     }
@@ -6452,6 +6479,12 @@ struct JunoShellApp: App {
 
         if !JunoShellAppBootstrap.didStart {
             JunoShellAppBootstrap.didStart = true
+            // Log where we launched from and, if running translocated (opened
+            // from the DMG / a quarantined folder), warn the user to move Juno
+            // to Applications — otherwise macOS keeps resetting TCC grants and
+            // the hotkey/mic silently stop working.
+            JunoAppLocation.logLaunchLocation()
+            Task { @MainActor in JunoAppLocation.offerInstallToApplicationsIfNeeded() }
             surf.startPolling()
             ovr.install(controller: ctrl)
             JunoPermissionMonitor.shared.startMonitoring()

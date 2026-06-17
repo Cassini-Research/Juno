@@ -778,7 +778,7 @@ private struct OnboardingSetupStep: View {
 
     private var visualState: SetupVisualState {
         if setup.installState.hasPrefix("failed") {
-            return .installFailed(setup.errorMessage ?? "Download failed.")
+            return .installFailed(installFailureMessage)
         }
         if setup.installState == "broker_unreachable" {
             return .brokerUnreachable
@@ -793,6 +793,16 @@ private struct OnboardingSetupStep: View {
             return .ready
         }
         return .preparing
+    }
+
+    /// User-facing reason for an install failure, branched on the broker's
+    /// install_state. Previously every failure showed "check your connection",
+    /// which is misleading when the real cause is disk space.
+    private var installFailureMessage: String {
+        if setup.installState == "failed:insufficient_disk" {
+            return "Your Mac is low on storage. Free up some space and try again."
+        }
+        return "Check your connection and try again."
     }
 
     /// Auto-start install when we have a reachable engine that hasn't downloaded yet.
@@ -845,7 +855,7 @@ private struct OnboardingSetupStep: View {
         case .downloading:      return "Downloading voice models"
         case .warmingEngine:    return "Warming voice engine"
         case .brokerUnreachable:return "Engine isn't running"
-        case .installFailed:    return "Download didn't finish"
+        case .installFailed:    return setup.installState == "failed:insufficient_disk" ? "Not enough storage" : "Download didn't finish"
         case .preparing:        return "Preparing voice models"
         }
     }
@@ -860,8 +870,8 @@ private struct OnboardingSetupStep: View {
             return "Loading the models into memory — usually a few seconds."
         case .brokerUnreachable:
             return "Juno needs the local voice engine running to set up."
-        case .installFailed:
-            return "Check your connection and try again."
+        case .installFailed(let message):
+            return message
         }
     }
 
