@@ -6263,6 +6263,21 @@ final class HotkeyBridge {
                 // app has focus (where a local NSEvent monitor wouldn't
                 // see the keypress). Requires Accessibility / Input
                 // Monitoring trust on the helper binary.
+                if line.hasPrefix("HOTKEY_DEGRADED:") {
+                    // The helper's global key/Esc/flags monitor failed to
+                    // install — almost always because Accessibility / Input
+                    // Monitoring isn't granted. Previously this only went to
+                    // the helper's stderr (which nobody read), so the dictation
+                    // key silently received nothing and users reported "I press
+                    // it and nothing happens". Log it and nudge the permission
+                    // prompt so the cause is visible and actionable.
+                    let which = String(line.dropFirst("HOTKEY_DEGRADED:".count))
+                    NSLog("Juno: hotkey helper DEGRADED (%@) — Accessibility/Input Monitoring likely not granted", which)
+                    DispatchQueue.main.async {
+                        JunoPermissionMonitor.shared.noteHotkeyMonitorDegraded(which)
+                    }
+                    continue
+                }
                 if line == JunoHotkeyEventLine.escape {
                     NSLog("Juno: hotkey ESC")
                     DispatchQueue.main.async { self.onEscape() }
@@ -6464,6 +6479,12 @@ struct JunoShellApp: App {
 
         if !JunoShellAppBootstrap.didStart {
             JunoShellAppBootstrap.didStart = true
+            // Log where we launched from and, if running translocated (opened
+            // from the DMG / a quarantined folder), warn the user to move Juno
+            // to Applications — otherwise macOS keeps resetting TCC grants and
+            // the hotkey/mic silently stop working.
+            JunoAppLocation.logLaunchLocation()
+            Task { @MainActor in JunoAppLocation.warnIfTranslocated() }
             surf.startPolling()
             ovr.install(controller: ctrl)
             JunoPermissionMonitor.shared.startMonitoring()
