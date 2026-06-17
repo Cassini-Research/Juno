@@ -504,8 +504,10 @@ def expand_snippets(
       1. Collect snippets via ``resolver.list()`` (preferred) or fall
          back to per-token ``resolve`` calls when ``list`` isn't
          available (custom Protocol adapters in tests).
-      2. Index by ``fold_key(trigger)``; for clashes prefer the
-         scope-specific entry over the global one.
+      2. Index allowed snippets by ``fold_key(trigger)``; for clashes prefer
+         the scope-specific entry over the global one. Keep a second index of
+         every known trigger so a longer snippet from another scope protects
+         its words from being partially expanded by a shorter global trigger.
       3. Tokenize the text into alphanumeric runs (anchoring word
          boundaries on the alphanumeric side, so ``"brb"`` won't fire
          inside ``"brbrain"``).
@@ -534,25 +536,32 @@ def expand_snippets(
             text, resolver=resolver, scope=scope, max_expansions=max_expansions
         )
 
+    requested_scope = (scope or "global").strip() or "global"
+    allowed_scopes = {requested_scope, "global"}
+
     # Per (fold_key, case_sensitive) → snippet, scope-preferred.
     by_key: dict[tuple[str, bool], object] = {}
+    known_keys: set[tuple[str, bool]] = set()
     for snip in snippets:
         trigger = (getattr(snip, "trigger", "") or "").strip()
         body = getattr(snip, "body", None)
         if not trigger or not body:
             continue
+        snip_scope = (getattr(snip, "scope", "global") or "global").strip() or "global"
         case_sensitive = bool(getattr(snip, "case_sensitive", False))
         key = trigger if case_sensitive else fold_key(trigger)
         if not key:
+            continue
+        known_keys.add((key, case_sensitive))
+        if snip_scope not in allowed_scopes:
             continue
         composite = (key, case_sensitive)
         existing = by_key.get(composite)
         if existing is None:
             by_key[composite] = snip
             continue
-        existing_scope = getattr(existing, "scope", "global") or "global"
-        new_scope = getattr(snip, "scope", "global") or "global"
-        if existing_scope != scope and new_scope == scope:
+        existing_scope = (getattr(existing, "scope", "global") or "global").strip() or "global"
+        if existing_scope != requested_scope and snip_scope == requested_scope:
             by_key[composite] = snip
 
     if not by_key:
@@ -595,6 +604,14 @@ def expand_snippets(
             if snippet is None:
                 snippet = by_key.get((span, True))
             if snippet is None:
+                known_trigger = bool(
+                    (span_fold and (span_fold, False) in known_keys)
+                    or (span, True) in known_keys
+                )
+                if known_trigger:
+                    i += window
+                    matched = True
+                    break
                 continue
             case_sensitive = bool(getattr(snippet, "case_sensitive", False))
             stored_trigger = getattr(snippet, "trigger", "") or ""

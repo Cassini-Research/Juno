@@ -15,7 +15,7 @@ enum MainSidebar: String, CaseIterable, Identifiable {
         case .voiceCommands:   return "Voice Commands"
         case .history:         return "History"
         case .modes:           return "Styles"
-        case .personalization: return "Dictionary & Memory"
+        case .personalization: return "Snippets & Memory"
         case .surfacePresets:  return "Per-app writing"
         case .privacy:         return "Privacy"
         case .settings:        return "Settings"
@@ -1496,12 +1496,12 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned",
-                    message: "“\(trimmed)” is already in Dictionary & Memory."
+                    message: "“\(trimmed)” is already in Snippets & Memory."
                 ))
             } else if ok {
                 setBanner(JunoHistoryBannerState(
                     kind: .success,
-                    title: "Saved to Dictionary & Memory",
+                    title: "Saved to Snippets & Memory",
                     message: "“\(trimmed)” is now available for future dictations."
                 ))
             } else if errorCode == "protected_term" {
@@ -1514,7 +1514,7 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned differently",
-                    message: "Open Dictionary & Memory to review the existing entry before changing it."
+                    message: "Open Snippets & Memory to review the existing entry before changing it."
                 ))
             } else {
                 setBanner(JunoHistoryBannerState(
@@ -1928,7 +1928,7 @@ private struct HistoryDetailPane: View {
             return "Juno already knows that term."
         }
         if knownVocabularyTerms.contains(key) {
-            return "Already in Dictionary & Memory."
+            return "Already in Snippets & Memory."
         }
         return nil
     }
@@ -3766,7 +3766,7 @@ private struct HistoryDetailPane: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
                 Spacer()
-                Button("Open Dictionary & Memory") {
+                Button("Open Snippets & Memory") {
                     showSavePhrasePopover = false
                     // Only forward a prefill if it's actually a term-shaped
                     // string (short, no spaces). Otherwise open empty so
@@ -4388,16 +4388,13 @@ struct JunoMainShellView: View {
                 .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.88))
                 .lineLimit(2)
 
-            // Explicit break after the heart: the sidebar is too narrow for
-            // one line, and a natural wrap split "Cassini / Research Team".
-            (Text("Made with ")
-                + Text("♥").foregroundColor(JunoDesignTokens.danger.opacity(0.85))
-                + Text("\nby Cassini Research Team"))
+            Text(.init("Made with <3 by [Cassini Research](https://cassiniresearch.com)"))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.7))
+                .tint(JunoDesignTokens.accent)
                 .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(Text("Made with love by Cassini Research Team"))
+                .accessibilityLabel(Text("Made with love by Cassini Research"))
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 2)
@@ -4519,7 +4516,7 @@ enum JunoMainWindow {
     // launch.
     private static let preferredContentSize = NSSize(width: 1080, height: 680)
     /// Minimum width for nested splits: main sidebar + primary list column (History, Modes) + detail.
-    /// History and Modes use the same two-column inner split; Dictionary adds a category rail inside the detail.
+    /// History and Modes use the same two-column inner split; Snippets & Memory adds a category rail inside the detail.
     ///
     /// Detail-pane floor bumped 300 → 430 in the History redesign so the
     /// action-hero card has room to breathe (body wraps to readable

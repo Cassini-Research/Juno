@@ -337,6 +337,45 @@ def test_expand_snippets_case_sensitive_trigger() -> None:
     assert expand_snippets("BRB and brb", resolver=resolver) == "be right back and brb"
 
 
+def test_expand_snippets_ignores_unrelated_scopes() -> None:
+    resolver = _ListResolver(
+        [
+            _Snip("roadmap intro", "Docs-only intro", scope="docs"),
+            _Snip("intro", "Generic intro", scope="global"),
+        ]
+    )
+    assert (
+        expand_snippets("please include roadmap intro", resolver=resolver, scope="email")
+        == "please include roadmap intro"
+    )
+
+
+def test_expand_snippets_prefers_longer_allowed_trigger_over_shorter_global() -> None:
+    resolver = _ListResolver(
+        [
+            _Snip("roadmap intro", "Email roadmap intro", scope="email"),
+            _Snip("intro", "Generic intro", scope="global"),
+        ]
+    )
+    assert (
+        expand_snippets("please include roadmap intro", resolver=resolver, scope="email")
+        == "please include Email roadmap intro"
+    )
+
+
+def test_expand_snippets_prefers_requested_scope_then_global() -> None:
+    resolver = _ListResolver(
+        [
+            _Snip("intro", "Docs intro", scope="docs"),
+            _Snip("intro", "Global intro", scope="global"),
+            _Snip("intro", "Email intro", scope="email"),
+        ]
+    )
+    assert expand_snippets("intro", resolver=resolver, scope="email") == "Email intro"
+    assert expand_snippets("intro", resolver=resolver, scope="messaging") == "Global intro"
+    assert expand_snippets("intro", resolver=resolver, scope="global") == "Global intro"
+
+
 def test_expand_snippets_no_resolver_and_empty() -> None:
     assert expand_snippets("text", resolver=None) == "text"
     assert expand_snippets("", resolver=_ListResolver([])) == ""

@@ -15,7 +15,7 @@ final class JunoMainWindowNavigator: ObservableObject {
     /// `MemoryManagementView.Category` raw value, e.g. `vocab`.
     @Published var pendingMemoryCategoryRaw: String?
 
-    /// Prefills the vocabulary term field when opening Dictionary & Memory.
+    /// Prefills the vocabulary term field when opening Snippets & Memory.
     @Published var pendingMemoryVocabPrefill: String?
 
     /// When set, History pre-selects this ``UtteranceHistoryEntry/utteranceId`` on next successful load.
@@ -30,7 +30,7 @@ final class JunoMainWindowNavigator: ObservableObject {
         section = .surfacePresets
     }
 
-    /// Deep link into Dictionary & Memory with optional tab and vocabulary prefill.
+    /// Deep link into Snippets & Memory with optional tab and vocabulary prefill.
     func openDictionaryAndMemory(categoryRaw: String = "vocab", vocabPrefill: String? = nil) {
         pendingMemoryCategoryRaw = categoryRaw
         let t = (vocabPrefill ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

@@ -1762,8 +1762,8 @@ def test_turn_plan_snippet_insert_resolves_exact_trigger_from_memory() -> None:
     assert rendered.text == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
 
 
-def test_direct_snippet_insert_resolves_exact_trigger_without_saying_snippet() -> None:
-    with tempfile.TemporaryDirectory(prefix="juno-direct-snippet-") as tmp:
+def test_snippet_invocation_resolves_exact_trigger_without_saying_snippet() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-invocation-") as tmp:
         memory = JsonMemoryStore(tmp)
         memory.add_snippet(
             trigger="launch footer aurora temp",
@@ -1784,7 +1784,7 @@ def test_direct_snippet_insert_resolves_exact_trigger_without_saying_snippet() -
             "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
             "uncertainties": [],
         }).process_transcript(
-            utterance_id="utt-direct-snippet-no-word",
+            utterance_id="utt-snippet-invocation-no-word",
             final_text="add launch footer aurora temp",
             raw_text="add launch footer aurora temp",
             context=TypedContextBundle(app_name="Notes", app_category="docs"),

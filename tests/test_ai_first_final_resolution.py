@@ -52,6 +52,7 @@ from juno_v2.writer.config import WriterConfig
 from juno_v2.writer.final_formatter import FinalFormatter
 from juno_v2.writer.parser import WriterIntentParser
 from juno_v2.writer.service import WriterService
+from juno_v2.turn_plan.planner import TurnPlanResult
 from juno_v2.workbench.server import (
     _action_preview_display_text,
     _merge_action_preview_display_text,
@@ -66,6 +67,11 @@ class _Recorder:
 
     def record(self, *args: object, **kwargs: object) -> None:
         return None
+
+
+class _RejectingBackend:
+    def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+        raise AssertionError("model backend should not be called")
 
 
 def test_preview_repair_keeps_fuzzy_memory_terms_out_of_committed_hud() -> None:
@@ -1049,7 +1055,7 @@ def test_screen_term_does_not_pluralize_common_word_in_user_speech() -> None:
     repaired, replacements = _reconcile_protected_term_near_misses(
         text="Hey Juno, take a note, action items need to be finished",
         protected_terms=(
-            "Juno Home History Actions Voice Commands Styles Dictionary",
+            "Juno Home History Actions Voice Commands Styles Snippets Memory",
             "Actions",
             "Juno",
         ),
@@ -1575,7 +1581,396 @@ def test_explicit_snippet_insert_commits_body_without_final_formatting() -> None
 
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
     assert result.output_text == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
-    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_invocation"
+
+
+def test_explicit_snippet_insert_works_when_snippets_are_on_demand() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-verbatim-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="product intro",
+            body="Acme turns customer conversations into clear follow-up, owners, and next steps.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-verbatim",
+            final_text="Use product intro snippet.",
+            raw_text="Use product intro snippet.",
+            context=TypedContextBundle(app_name="Mail", app_category="email"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["verbatim"],
+            mode_selection=ModeSelection(
+                effective_mode="verbatim",
+                mode_source=ModeSource.MANUAL,
+                manual_mode_name="verbatim",
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Acme turns customer conversations into clear follow-up, owners, and next steps."
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_invocation"
+
+
+def test_bare_snippet_name_commits_body_before_model_lanes() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-exact-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="product intro",
+            body="Acme turns customer conversations into clear follow-up, owners, and next steps.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True),
+            recorder=_Recorder(),
+            backend=_RejectingBackend(),
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-exact",
+            final_text="Product Intro",
+            raw_text="Product Intro",
+            context=TypedContextBundle(app_name="Text Editor", app_category="unknown"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Acme turns customer conversations into clear follow-up, owners, and next steps."
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_invocation"
+    assert result.metadata["dictation_cleanup"]["match_kind"] == "bare_name"
+
+
+def test_more_specific_raw_snippet_name_survives_post_wake_tail() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-raw-wake-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="intro",
+            body="Short generic intro.",
+            scope="global",
+        )
+        memory.snippets.add(
+            trigger="product intro",
+            body="Acme turns customer conversations into clear follow-up, owners, and next steps.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True),
+            recorder=_Recorder(),
+            backend=_RejectingBackend(),
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-raw-wake",
+            final_text="Intro",
+            raw_text="Product Intro",
+            context=TypedContextBundle(app_name="Text Editor", app_category="unknown"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Acme turns customer conversations into clear follow-up, owners, and next steps."
+    assert result.metadata["dictation_cleanup"]["trigger"].casefold() == "product intro"
+    assert result.metadata["dictation_cleanup"]["source"] == "raw"
+
+
+def test_bare_snippet_name_does_not_override_action_command() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-action-guard-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="juno remind me to call sam tomorrow",
+            body="This should never replace an action command.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=False, enable_turn_planner=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-action-guard",
+            final_text="Juno remind me to call Sam tomorrow",
+            raw_text="Juno remind me to call Sam tomorrow",
+            context=TypedContextBundle(app_name="Text Editor", app_category="unknown"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.output_text != "This should never replace an action command."
+    assert result.metadata["snippet_expanded"] is False
+
+
+def test_explicit_snippet_invocation_can_use_command_like_trigger() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-explicit-commandlike-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="reminder template",
+            body="Reminder: owner, due date, context, and next step.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-commandlike-explicit",
+            final_text="Use reminder template snippet.",
+            raw_text="Use reminder template snippet.",
+            context=TypedContextBundle(app_name="Mail", app_category="email"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Reminder: owner, due date, context, and next step."
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_invocation"
+    assert result.metadata["dictation_cleanup"]["match_kind"] == "explicit"
+
+
+def test_snippet_invocation_beats_existing_turn_plan_result() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-existing-plan-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="product intro",
+            body="Acme turns customer conversations into clear follow-up, owners, and next steps.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True),
+            recorder=_Recorder(),
+            backend=_RejectingBackend(),
+        )
+        bad_plan = TurnPlanResult(
+            status="ok",
+            plan={
+                "schema_version": "turn_plan_v1",
+                "utterance_kind": "dictation",
+                "corrected_transcript": {"text": "Intro"},
+                "target": {"kind": "none", "confidence": 1.0},
+                "render_plan": {
+                    "render_kind": "plain",
+                    "markdown_allowed": False,
+                    "content_units": [
+                        {
+                            "kind": "paragraph",
+                            "text": "Intro",
+                            "source_span": "Intro",
+                            "order": 1,
+                        }
+                    ],
+                },
+                "transform": {
+                    "operation": "none",
+                    "instruction": "",
+                    "transformed_text": None,
+                    "requires_second_pass": False,
+                },
+                "actions": [],
+                "snippets": [],
+                "memory_candidates": [],
+                "safety": {"commit_policy": "commit", "execute_policy": "none"},
+                "uncertainties": [],
+            },
+            backend_name="fake-qwen",
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-existing-plan",
+            final_text="Intro",
+            raw_text="Product Intro",
+            context=TypedContextBundle(app_name="Text Editor", app_category="unknown"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+            turn_plan_result=bad_plan,
+            wake_verified=True,
+        )
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == "Acme turns customer conversations into clear follow-up, owners, and next steps."
+    assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_invocation"
+
+
+def test_email_inline_snippet_expands_only_email_or_global_scope() -> None:
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-email-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="product intro",
+            body="Acme turns customer conversations into clear follow-up, owners, and next steps.",
+            scope="email",
+        )
+        memory.snippets.add(
+            trigger="roadmap intro",
+            body="Docs-only roadmap body.",
+            scope="docs",
+        )
+        memory.snippets.add(
+            trigger="intro",
+            body="Generic intro body.",
+            scope="global",
+        )
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=False),
+            recorder=_Recorder(),
+            backend=None,
+        )
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-email",
+            final_text="please include product intro and roadmap intro in the reply",
+            raw_text="please include product intro and roadmap intro in the reply",
+            context=TypedContextBundle(app_name="Mail", app_category="email"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=BUILTIN_MODES["default_surface"],
+            mode_selection=ModeSelection(
+                effective_mode="default_surface",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert "Acme turns customer conversations into clear follow-up, owners, and next steps." in result.output_text
+    assert "roadmap intro" in result.output_text
+    assert "Docs-only roadmap body." not in result.output_text
+    assert "Generic intro body." not in result.output_text
+    assert result.metadata["snippet_expanded"] is True
+
+
+def test_final_formatting_cannot_rewrite_expanded_snippet_body() -> None:
+    snippet_body = (
+        "Acme turns customer conversations into clear follow-up, owners, and next steps.\n"
+        "It keeps the handoff consistent across every reply."
+    )
+
+    class RewriteSnippetBackend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text=(
+                    "Hi Maya,\n\n"
+                    "Acme turns customer conversations into clear follow-up, owners, and next steps. "
+                    "It keeps the handoff consistent across every reply.\n\n"
+                    "Best,"
+                ),
+                backend_name="fake_formatter",
+                decode_ms=1.0,
+                metadata={},
+            )
+
+    with tempfile.TemporaryDirectory(prefix="juno-snippet-format-test-") as tmp:
+        memory = JsonMemoryStore(tmp)
+        memory.snippets.add(
+            trigger="product intro",
+            body=snippet_body,
+            scope="email",
+        )
+        recorder = _Recorder()
+        service = WriterService(
+            config=WriterConfig(enable_model_transforms=True, dictation_editor_enabled=False),
+            recorder=recorder,
+            backend=RewriteSnippetBackend(),
+        )
+        mode_policy = replace(BUILTIN_MODES["formal_email"], final_formatting_policy="email")
+
+        result = service.process_transcript(
+            utterance_id="utt-snippet-format",
+            final_text="please send product intro to Maya",
+            raw_text="please send product intro to Maya",
+            context=TypedContextBundle(app_name="Mail", app_category="email"),
+            anchor_selection=None,
+            memory_store=memory,
+            memory_snapshot=memory.snapshot(),
+            memory_packet={},
+            mode_policy=mode_policy,
+            mode_selection=ModeSelection(
+                effective_mode="formal_email",
+                mode_source=ModeSource.AUTO,
+                manual_mode_name=None,
+                custom_mode_name=None,
+                resolved_from_surface=None,
+            ),
+            partial_text="",
+        )
+
+    assert snippet_body in result.output_text
+    assert "Acme turns customer conversations into clear follow-up, owners, and next steps. It keeps" not in result.output_text
+    assert result.metadata["snippet_expanded"] is True
+    assert result.metadata["dictation_cleanup"]["final_formatting_rejected"] == "snippet_placeholder_modified"
 
 
 def test_oneshot_response_exposes_snippet_expanded_metadata() -> None:
@@ -1626,7 +2021,7 @@ def test_oneshot_response_exposes_snippet_expanded_metadata() -> None:
     assert result.transcript == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
     assert writer_meta["snippet_expanded"] is True
     assert payload["metadata"]["snippet_expanded"] is True
-    assert writer_meta["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
+    assert writer_meta["dictation_cleanup"]["pipeline"] == "snippet_invocation"
 
 
 def test_recent_transform_command_uses_recent_clipboard_in_default_mode() -> None:

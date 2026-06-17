@@ -85,25 +85,26 @@ final class JunoPreviewEligibilityTests: XCTestCase {
         XCTAssertNil(JunoPreviewEligibility.appleChipGeneration(from: "Apple M"))
     }
 
-    func testEligibilityRequiresM3OrNewerAnd32GB() {
+    func testEligibilityRequiresM2OrNewerAnd32GB() {
         func snapshot(_ gen: Int?, _ gb: Int) -> JunoPreviewEligibility.Snapshot {
             JunoPreviewEligibility.Snapshot(chipName: "Test", chipGeneration: gen, memoryGB: gb)
         }
+        XCTAssertTrue(snapshot(2, 32).isEligible)
         XCTAssertTrue(snapshot(3, 32).isEligible)
         XCTAssertTrue(snapshot(4, 128).isEligible)
-        XCTAssertFalse(snapshot(2, 64).isEligible)   // chip too old
+        XCTAssertFalse(snapshot(1, 64).isEligible)   // chip too old
         XCTAssertFalse(snapshot(3, 16).isEligible)   // not enough memory
         XCTAssertFalse(snapshot(nil, 64).isEligible) // non-Apple-Silicon
     }
 
     func testUnavailableMessages() {
         let intel = JunoPreviewEligibility.Snapshot(chipName: "Intel", chipGeneration: nil, memoryGB: 64)
-        XCTAssertEqual(intel.unavailableMessage, "Live preview requires Apple Silicon M3 or newer.")
+        XCTAssertEqual(intel.unavailableMessage, "Live preview requires Apple Silicon M2 or newer.")
 
-        let m2 = JunoPreviewEligibility.Snapshot(chipName: "Apple M2", chipGeneration: 2, memoryGB: 64)
+        let m1 = JunoPreviewEligibility.Snapshot(chipName: "Apple M1", chipGeneration: 1, memoryGB: 64)
         XCTAssertEqual(
-            m2.unavailableMessage,
-            "Live preview requires Apple Silicon M3 or newer. This Mac reports Apple M2."
+            m1.unavailableMessage,
+            "Live preview requires Apple Silicon M2 or newer. This Mac reports Apple M1."
         )
 
         let lowMemory = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 16)
@@ -123,7 +124,7 @@ final class JunoPreviewEligibilityTests: XCTestCase {
         let big = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 128)
         XCTAssertNil(big.warningMessage)
 
-        let ineligible = JunoPreviewEligibility.Snapshot(chipName: "Apple M2", chipGeneration: 2, memoryGB: 32)
+        let ineligible = JunoPreviewEligibility.Snapshot(chipName: "Apple M1", chipGeneration: 1, memoryGB: 32)
         XCTAssertNil(ineligible.warningMessage)
     }
 }

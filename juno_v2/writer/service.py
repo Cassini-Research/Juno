@@ -49,7 +49,6 @@ from juno_v2.writer.backends.base import WriterBackend
 from juno_v2.writer.config import WriterConfig
 from juno_v2.writer.deterministic import (
     AppCategory,
-    expand_snippets,
     render_bullets,
     render_explicit_bullet_list_command,
     render_lowercase,
@@ -66,6 +65,14 @@ from juno_v2.writer.final_formatter import (
     should_run_final_formatting,
 )
 from juno_v2.writer.parser import WriterIntentParser
+from juno_v2.writer.snippets import (
+    SnippetBodyProtection,
+    SnippetTextCandidate,
+    expand_snippets,
+    looks_like_explicit_snippet_invocation,
+    resolve_snippet_invocation,
+    snippet_bodies_present_in_text,
+)
 from juno_v2.writer.state import WriterState
 
 
@@ -89,9 +96,33 @@ _TRANSFORM_VERB_RE = re.compile(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _FinalFormattingAttempt:
+    result: WriterTransformResult | None
+    rejection: dict[str, Any] | None = None
+
+
 def _mentions_recent_transform_target(text: str) -> bool:
     current = str(text or "")
     return bool(_RECENT_TRANSFORM_TARGET_RE.search(current) and _TRANSFORM_VERB_RE.search(current))
+
+
+def _final_formatting_dropped_snippet_placeholder(
+    rejection: dict[str, Any] | None,
+    *,
+    snippet_protection: SnippetBodyProtection,
+) -> bool:
+    if not snippet_protection.active or not isinstance(rejection, dict):
+        return False
+    missing_terms: list[str] = []
+    for key in ("missing_required_terms", "missing_source_required_terms"):
+        values = rejection.get(key)
+        if isinstance(values, (list, tuple)):
+            missing_terms.extend(str(value or "") for value in values)
+    if not missing_terms:
+        return False
+    missing = {term.casefold() for term in missing_terms if term}
+    return any(placeholder.casefold() in missing for placeholder, _body in snippet_protection.replacements)
 
 
 def _unresolved_correction_cues_present(text: str) -> bool:
@@ -448,8 +479,8 @@ class WriterService:
     ) -> bool:
         """Deterministic routes that must win over the dictation editor.
 
-        Commands ("next bullet", "make that shorter"), direct snippet
-        inserts, and explicit structure requests are advertised product
+        Commands ("next bullet", "make that shorter"), snippet
+        invocations, and explicit structure requests are advertised product
         behaviors handled by the parser / snippet / structural lanes below.
         The editor consuming them as prose pasted the literal words
         (production 2026-06-11). Returns True ⇒ skip the editor.
@@ -482,17 +513,11 @@ class WriterService:
             and not _unresolved_correction_cues_present(final_text)
         ):
             reason = "structural_instruction"
-        if reason is None:
-            try:
-                snippet_hit = self._direct_snippet_insert(
-                    final_text,
-                    memory_store=memory_store,
-                    app_category=getattr(context, "app_category", None),
-                )
-            except Exception:  # noqa: BLE001
-                snippet_hit = None
-            if snippet_hit is not None:
-                reason = "direct_snippet"
+        if reason is None and any(
+            looks_like_explicit_snippet_invocation(candidate)
+            for candidate in (final_text, raw_text)
+        ):
+            reason = "explicit_snippet_invocation"
         if reason is None:
             return False
         self.recorder.record(
@@ -662,6 +687,18 @@ class WriterService:
             mode_selection=mode_selection,
             writer_tone_addon=writer_tone_addon,
         )
+
+        snippet_invocation = self._snippet_invocation_outcome(
+            utterance_id=utterance_id,
+            final_text=final_text,
+            raw_text=raw_text,
+            memory_store=memory_store,
+            context=context,
+            language_hint=language_hint,
+            now_iso=now_iso,
+        )
+        if snippet_invocation is not None:
+            return self._annotate_outcome(snippet_invocation)
 
         explicit_bullet_list = self._explicit_bullet_list_outcome(
             utterance_id=utterance_id,
@@ -846,41 +883,6 @@ class WriterService:
             text = final_text
             cleanup_meta = {'pipeline': 'already_adjudicated_passthrough'}
             model_used = False
-            direct_snippet = self._direct_snippet_insert(
-                text,
-                memory_store=memory_store,
-                app_category=context.app_category,
-            )
-            if direct_snippet is not None:
-                body, snippet_meta = direct_snippet
-                self.recorder.record(
-                    TraceKind.WRITER,
-                    'writer_snippet_direct_inserted',
-                    {
-                        'utterance_id': utterance_id,
-                        **snippet_meta,
-                    },
-                )
-                return self._annotate_outcome(WriterOutcome(
-                    utterance_id=utterance_id,
-                    action=WriterActionKind.PASS_THROUGH_COMMIT,
-                    output_text=body,
-                    learn_from_commit=True,
-                    writer_mode=self.state.mode,
-                    structure_mode=self.state.structure_mode,
-                    deterministic_used=True,
-                    model_used=False,
-                    metadata={
-                        'raw_text': raw_text,
-                        'input_text': final_text,
-                        'snippet_expanded': True,
-                        'dictation_cleanup': {
-                            'pipeline': 'snippet_direct_insert',
-                            **snippet_meta,
-                        },
-                        'grammar_postpass': None,
-                    },
-                ))
             # Snippet expansion: expand user-defined triggers (e.g. ``brb`` ->
             # ``be right back``) before structure-mode formatting so a
             # snippet body participates in bullet / numbered rendering.
@@ -890,9 +892,11 @@ class WriterService:
             snippet_expanded = False
             _is_raw_surface = (context.app_category or '').strip().lower() in ('code', 'terminal')
             snippet_scopes: list[str] = []
+            snippet_protection = SnippetBodyProtection([])
             if (
                 self.state.mode != WriterMode.VERBATIM
                 and not _is_raw_surface
+                and not self._action_command_present(final_text, raw_text)
                 and memory_store is not None
                 and getattr(memory_store, "snippets", None) is not None
                 and text
@@ -903,6 +907,12 @@ class WriterService:
                     text = expand_snippets(text, resolver=memory_store.snippets, scope=scope)
                 snippet_expanded = text != before_snippets
                 if snippet_expanded:
+                    snippet_bodies = snippet_bodies_present_in_text(
+                        text,
+                        resolver=memory_store.snippets,
+                        scopes=snippet_scopes,
+                    )
+                    snippet_protection = SnippetBodyProtection.from_bodies(text, snippet_bodies)
                     self.recorder.record(
                         TraceKind.WRITER,
                         'writer_snippets_expanded',
@@ -915,6 +925,7 @@ class WriterService:
                     )
             grammar_postpass_meta: dict[str, Any] | None = None
             if self.state.mode != WriterMode.VERBATIM:
+                text = snippet_protection.protect(text) if snippet_protection.active else text
                 text = apply_commit_boundary_rules(text, app_category=context.app_category)
                 # Issue #12 — code_grammar / meeting_grammar auto-fire,
                 # gated by ``app_category``. Runs after boundary rules
@@ -940,21 +951,54 @@ class WriterService:
                         },
                     )
                 text = self._apply_structure_mode_to_dictation(text, context=context, anchor_selection=anchor_selection)
-                formatting_result = self._run_final_formatting_if_needed(
+                formatting_attempt = self._run_final_formatting_if_needed(
                     utterance_id=utterance_id,
                     text=text,
                     context=context,
                     memory_store=memory_store,
                 )
+                formatting_result = None if formatting_attempt is None else formatting_attempt.result
                 if formatting_result is not None:
-                    text = formatting_result.text
-                    model_used = model_used or not bool(formatting_result.metadata.get('deterministic'))
+                    if (
+                        snippet_protection.active
+                        and not snippet_protection.placeholders_preserved(formatting_result.text)
+                    ):
+                        self.recorder.record(
+                            TraceKind.WRITER,
+                            'writer_final_formatting_rejected',
+                            {
+                                'utterance_id': utterance_id,
+                                'reason': 'snippet_placeholder_modified',
+                                'snippet_body_count': len(snippet_protection.replacements),
+                                'backend': formatting_result.backend_name,
+                            },
+                        )
+                        cleanup_meta = {
+                            'pipeline': 'already_adjudicated_passthrough',
+                            'final_formatting_rejected': 'snippet_placeholder_modified',
+                        }
+                    else:
+                        text = formatting_result.text
+                        model_used = model_used or not bool(formatting_result.metadata.get('deterministic'))
+                        cleanup_meta = {
+                            'pipeline': 'writer_final_formatting_v1',
+                            'writer_backend': formatting_result.backend_name,
+                            'writer_decode_ms': formatting_result.decode_ms,
+                            **formatting_result.metadata,
+                        }
+                elif (
+                    formatting_attempt is not None
+                    and _final_formatting_dropped_snippet_placeholder(
+                        formatting_attempt.rejection,
+                        snippet_protection=snippet_protection,
+                    )
+                ):
                     cleanup_meta = {
-                        'pipeline': 'writer_final_formatting_v1',
-                        'writer_backend': formatting_result.backend_name,
-                        'writer_decode_ms': formatting_result.decode_ms,
-                        **formatting_result.metadata,
+                        'pipeline': 'already_adjudicated_passthrough',
+                        'final_formatting_rejected': 'snippet_placeholder_modified',
                     }
+                if snippet_protection.active:
+                    text = snippet_protection.restore(text)
             return self._annotate_outcome(WriterOutcome(
                 utterance_id=utterance_id,
                 action=WriterActionKind.PASS_THROUGH_COMMIT,
@@ -2611,7 +2655,7 @@ class WriterService:
         text: str,
         context: TypedContextBundle,
         memory_store: JsonMemoryStore | None,
-    ) -> WriterTransformResult | None:
+    ) -> _FinalFormattingAttempt | None:
         pol = self.state.mode_policy
         policy = getattr(pol, "final_formatting_policy", None)
         if self.state.mode == WriterMode.VERBATIM:
@@ -2672,7 +2716,10 @@ class WriterService:
                     'error': f'{type(exc).__name__}: {exc}',
                 },
             )
-            return None
+            return _FinalFormattingAttempt(
+                result=None,
+                rejection={'reason': 'exception', 'error': f'{type(exc).__name__}: {exc}'},
+            )
         rejection = getattr(formatter, "last_rejection", None)
         if result is None and rejection is not None:
             self.recorder.record(
@@ -2708,7 +2755,7 @@ class WriterService:
                     'target': 'final_formatting',
                 },
             )
-        return result
+        return _FinalFormattingAttempt(result=result, rejection=rejection)
 
     def _insert_context_field(
         self,
@@ -2780,12 +2827,16 @@ class WriterService:
         except ValueError:
             return WriterMode.DEFAULT_SURFACE
 
-    def _snippet_scopes_for_policy(self, app_category: str | None) -> list[str]:
+    def _snippet_scopes_for_policy(self, app_category: str | None, *, invoked: bool = False) -> list[str]:
         pol = self.state.mode_policy
         if pol is None:
             return [_snippet_scope_from_category(app_category), 'global']
         s = pol.snippet_scope_policy
-        if s in {'none', 'none_unless_invoked'}:
+        if s == 'none':
+            return []
+        if s == 'none_unless_invoked':
+            if invoked:
+                return list(dict.fromkeys([_snippet_scope_from_category(app_category), 'global']))
             return []
         if s == 'surface_plus_global':
             return list(dict.fromkeys([_snippet_scope_from_category(app_category), 'global']))
@@ -2801,41 +2852,136 @@ class WriterService:
             return [s.split(':', 1)[1].strip(), 'global']
         return [_snippet_scope_from_category(app_category), 'global']
 
-    def _direct_snippet_insert(
+    def _snippet_invocation_outcome(
+        self,
+        *,
+        utterance_id: str,
+        final_text: str,
+        raw_text: str,
+        memory_store: JsonMemoryStore | None,
+        context: TypedContextBundle,
+        language_hint: str | None,
+        now_iso: str | None,
+    ) -> WriterOutcome | None:
+        if memory_store is None or getattr(memory_store, "snippets", None) is None:
+            return None
+        app_category = getattr(context, "app_category", None)
+        if (app_category or "").strip().lower() in {"code", "terminal"}:
+            return None
+        scopes = self._snippet_scopes_for_policy(app_category, invoked=True)
+        if not scopes:
+            return None
+        candidates = [
+            SnippetTextCandidate(
+                source="final",
+                text=final_text,
+                allow_bare=self._bare_snippet_name_allowed(
+                    final_text,
+                    context=context,
+                    language_hint=language_hint,
+                    now_iso=now_iso,
+                ),
+            ),
+            SnippetTextCandidate(
+                source="raw",
+                text=raw_text,
+                allow_bare=self._bare_snippet_name_allowed(
+                    raw_text,
+                    context=context,
+                    language_hint=language_hint,
+                    now_iso=now_iso,
+                ),
+            ),
+        ]
+        invocation = resolve_snippet_invocation(
+            candidates,
+            resolver=memory_store.snippets,
+            scopes=scopes,
+        )
+        if invocation is None:
+            return None
+        snippet_meta = invocation.metadata()
+        self.recorder.record(
+            TraceKind.WRITER,
+            'writer_snippet_invocation_resolved',
+            {
+                'utterance_id': utterance_id,
+                **snippet_meta,
+            },
+        )
+        return WriterOutcome(
+            utterance_id=utterance_id,
+            action=WriterActionKind.PASS_THROUGH_COMMIT,
+            output_text=invocation.body,
+            learn_from_commit=True,
+            writer_mode=self.state.mode,
+            structure_mode=self.state.structure_mode,
+            deterministic_used=True,
+            model_used=False,
+            metadata={
+                'raw_text': raw_text,
+                'input_text': final_text,
+                'snippet_expanded': True,
+                'dictation_cleanup': {
+                    'pipeline': 'snippet_invocation',
+                    **snippet_meta,
+                },
+                'grammar_postpass': None,
+            },
+        )
+
+    def _bare_snippet_name_allowed(
         self,
         text: str,
         *,
-        memory_store: JsonMemoryStore | None,
-        app_category: str | None,
-    ) -> tuple[str, dict[str, Any]] | None:
-        if self.state.mode == WriterMode.VERBATIM:
-            return None
-        if not text or memory_store is None or getattr(memory_store, "snippets", None) is None:
-            return None
-        if (app_category or '').strip().lower() in {'code', 'terminal'}:
-            return None
-        match = _DIRECT_SNIPPET_INSERT_RE.match(text)
-        if match is None:
-            return None
-        raw_trigger = re.sub(r"\s+", " ", (match.group("trigger") or "").strip(" .,!?:;\"'"))
-        if not raw_trigger:
-            return None
-        trigger_candidates = _direct_snippet_trigger_candidates(raw_trigger)
-        if not trigger_candidates:
-            return None
-        scopes = self._snippet_scopes_for_policy(app_category)
-        for scope in scopes:
-            for trigger in trigger_candidates:
-                snippet = memory_store.snippets.resolve(trigger, scope=scope)
-                body = str(getattr(snippet, "body", "") or "") if snippet is not None else ""
-                if body:
-                    return body, {
-                        'trigger': trigger,
-                        'spoken_trigger': raw_trigger,
-                        'scope': scope,
-                        'body_chars': len(body),
-                    }
-        return None
+        context: TypedContextBundle,
+        language_hint: str | None,
+        now_iso: str | None,
+    ) -> bool:
+        cleaned = re.sub(r"\s+", " ", (text or "").strip())
+        if not cleaned:
+            return False
+        if len(cleaned.split()) > 12:
+            return False
+        if structural_instruction_present(cleaned):
+            return False
+        selection_present = bool((getattr(context, "selected_text", "") or "").strip())
+        try:
+            intent = self.parser.parse(
+                cleaned,
+                language_hint=language_hint,
+                selection_present=selection_present,
+                active_mode=self.state.mode,
+                mode_policy=self.state.mode_policy,
+            )
+            kind = getattr(intent, "kind", None)
+            if kind is not None and kind is not WriterIntentKind.DICTATE:
+                return False
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self._action_command_present(cleaned):
+                return False
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+
+    @staticmethod
+    def _action_command_present(*texts: str) -> bool:
+        try:
+            from juno_core_v3.actions.grammar import parse_actions
+        except Exception:  # noqa: BLE001
+            return False
+        for text in texts:
+            cleaned = re.sub(r"\s+", " ", (text or "").strip())
+            if not cleaned:
+                continue
+            try:
+                if parse_actions(cleaned, now=None) is not None:
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
 
     def _deterministic_transform(self, transform_kind: str, text: str) -> str:
         if transform_kind == 'bullets':
@@ -3392,31 +3538,6 @@ def _memory_term_key(value: Any) -> str:
     text = str(value or "").casefold()
     text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
     return " ".join(text.split())
-
-
-_DIRECT_SNIPPET_INSERT_RE = re.compile(
-    r"^\s*(?:insert|paste|use|add)\s+(?:the\s+)?(?P<trigger>.+?)\s*[.!?]?\s*$",
-    flags=re.IGNORECASE,
-)
-
-
-def _direct_snippet_trigger_candidates(raw_trigger: str) -> list[str]:
-    trigger = re.sub(r"\s+", " ", (raw_trigger or "").strip())
-    if not trigger:
-        return []
-    words = trigger.casefold().split()
-    candidates: list[str] = []
-
-    def add(value: str) -> None:
-        cleaned = re.sub(r"\s+", " ", value.strip(" .,!?:;\"'"))
-        if cleaned and cleaned.casefold() not in {item.casefold() for item in candidates}:
-            candidates.append(cleaned)
-
-    add(trigger)
-    if "snippet" in words:
-        add(re.sub(r"(?i)^snippet\s+", "", trigger))
-        add(re.sub(r"(?i)\s+snippet$", "", trigger))
-    return candidates
 
 
 def _json_object_from_model_text(text: str) -> dict[str, Any] | None:

@@ -5963,21 +5963,12 @@ final class DictationController: ObservableObject {
 
     /// Post-paste HUD reveal for the final transcript.
     ///
-    /// With live preview ON the user already watched the words stream in, so
-    /// a transient "Text placed +N" flash is enough. With preview OFF this
-    /// moment is the first time the text is visible at all, so surface the
-    /// full final text in the expanded copy-ready island (full transcript +
-    /// Copy ⌘C / esc) — the same reveal the preview-on flow gives at done.
-    /// The overlay root swaps the compact pill for the expanded island while
-    /// ``copyableTranscript`` is set.
+    /// This is called only after paste succeeded. Copy-ready is reserved for
+    /// actual paste failure / no-destination recovery; reopening it after a
+    /// successful paste keeps the HUD alive and blocks the next hotkey.
     private func presentFinalTextReveal(for text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !JunoUserDefaults.hudLiveTranscriptionsEnabled, !trimmed.isEmpty {
-            copyableTranscript = text
-        } else {
-            copyableTranscript = nil
-            flashTransientDone(for: text)
-        }
+        copyableTranscript = nil
+        flashTransientDone(for: text)
     }
 
     private func showActionHUDResult(_ results: [JunoActionResult]) {
