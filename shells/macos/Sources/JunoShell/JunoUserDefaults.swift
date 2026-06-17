@@ -349,6 +349,19 @@ enum JunoUserDefaults {
         set { UserDefaults.standard.set(newValue, forKey: screenRecordingPromptRequestedKey) }
     }
 
+    static let screenRecordingPromptBuildKey = "JunoScreenRecordingPromptRequestedBuild"
+    /// The app build (CFBundleVersion) for which we last issued the one-time
+    /// CGRequestScreenCaptureAccess() consent dialog. Tying "already prompted"
+    /// to the build — instead of a sticky Bool that survives reinstalls and
+    /// upgrades — means each UPGRADE does a clean first-request: it re-registers
+    /// the new binary with macOS and re-shows the consent dialog if the grant
+    /// didn't carry over, instead of jumping to a Screen Recording list the new
+    /// build isn't in yet.
+    static var screenRecordingPromptRequestedBuild: String? {
+        get { UserDefaults.standard.string(forKey: screenRecordingPromptBuildKey) }
+        set { UserDefaults.standard.set(newValue, forKey: screenRecordingPromptBuildKey) }
+    }
+
     static var screenContextNudgeDismissedAt: Date? {
         let raw = UserDefaults.standard.double(forKey: screenContextNudgeDismissedAtKey)
         return raw > 0 ? Date(timeIntervalSince1970: raw) : nil
