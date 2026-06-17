@@ -30,29 +30,45 @@ enum JunoScreenContextAccess {
                 return
             }
 
-            // Preflight only checks existing approval; it does not create the
-            // row in System Settings. The request call is the macOS-supported
-            // way to register Juno for Screen Recording, so keep it behind one
-            // explicit user action and never call it from dictation/runtime paths.
+            // CGRequestScreenCaptureAccess() is the macOS-supported way to
+            // REGISTER Juno in System Settings → Privacy → Screen Recording
+            // (preflight only checks existing approval; it never creates the
+            // row). It is idempotent and must be called on EVERY explicit
+            // request — NOT gated behind a persisted flag.
             //
-            // macOS shows the consent dialog only for the very first request
-            // per install, and that dialog carries its own "Open System
-            // Settings" button — opening Settings ourselves at the same time
-            // stacks two prompts. Once the one-shot dialog has been consumed
-            // (this or any earlier session), the request is a silent no-op,
-            // so navigating to System Settings is the only useful action.
-            if !JunoUserDefaults.screenRecordingPromptRequested {
-                JunoUserDefaults.screenRecordingPromptRequested = true
-                _ = CGRequestScreenCaptureAccess()
-                completion(permissionGranted)
+            // Why this matters for reinstalls AND upgrades: the old code gated
+            // the request behind a sticky Bool in UserDefaults, which survives
+            // both. A freshly-installed/upgraded build is a (potentially) new
+            // code identity macOS hasn't registered, so the stale "already
+            // requested" flag made us skip the request entirely — the user then
+            // opened System Settings and Juno wasn't in the list at all (the
+            // reported bug). We now (1) always call the request so each build
+            // re-registers itself, and (2) tie "already prompted" to the
+            // current BUILD, so an upgrade re-shows the one-time consent dialog
+            // cleanly (when the grant didn't carry over) rather than jumping to
+            // a Settings list the new build isn't in yet.
+            let currentBuild = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? ""
+            let alreadyPromptedThisBuild = !currentBuild.isEmpty
+                && JunoUserDefaults.screenRecordingPromptRequestedBuild == currentBuild
+            JunoUserDefaults.screenRecordingPromptRequestedBuild = currentBuild
+            // Keep the legacy Bool updated too (some older support tooling reads it).
+            JunoUserDefaults.screenRecordingPromptRequested = true
+            _ = CGRequestScreenCaptureAccess()
+
+            if permissionGranted {
+                completion(true)
                 return
             }
 
-            let granted = permissionGranted
-            if !granted {
+            // First request for THIS build shows the one-time consent dialog,
+            // which carries its own "Open System Settings" button — don't stack
+            // a second navigation on top of it. A repeat request for the same
+            // build is a silent no-op, so take the user to Settings, where Juno
+            // is now listed because the call above registered it.
+            if alreadyPromptedThisBuild {
                 openSystemSettings()
             }
-            completion(granted)
+            completion(permissionGranted)
         }
         if Thread.isMainThread {
             request()
