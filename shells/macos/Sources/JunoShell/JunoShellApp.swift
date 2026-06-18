@@ -5,6 +5,7 @@ import Combine
 import CoreAudio
 import Darwin
 import JunoHotkeyCore
+import JunoObjCSupport
 import OSLog
 import SwiftUI
 
@@ -2295,6 +2296,22 @@ final class DictationRecorder {
         // Hardware format (e.g. 44.1 kHz / 48 kHz, stereo, float32).
         let hwFmt = input.outputFormat(forBus: 0)
 
+        // The input node can report a degenerate format (0 Hz / 0 channels)
+        // when there is no usable input device — e.g. right after sleep/wake,
+        // during a device hot-swap race, or when the default input was yanked.
+        // Installing a tap with such a format makes AVFoundation raise an
+        // *Objective-C* `NSException` from deep inside `installTapOnBus`, which
+        // Swift's `do`/`catch` cannot intercept — it tears straight down to
+        // `abort()` (see the 1.0.6 crash on a Mac16,11). Reject it up front and
+        // surface a recoverable Swift error the caller already handles.
+        guard hwFmt.sampleRate > 0, hwFmt.channelCount > 0 else {
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "No microphone is available right now. Check System Settings → Sound → Input, then try again."]
+            )
+        }
+
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16_000.0,
@@ -2316,6 +2333,11 @@ final class DictationRecorder {
             )
         }
 
+        // Wrap the tap install in the ObjC-exception guard: even with a
+        // validated format above, AVFoundation can still raise (e.g. the device
+        // changes between the format read and the install). Convert any such
+        // NSException into a Swift error so we degrade instead of aborting.
+        if let installError = JunoCatchNSException({
         input.installTap(onBus: 0, bufferSize: 4096, format: hwFmt) { [weak file, weak self] buf, _ in
             guard let file, let recorder = self else { return }
             let outLen = AVAudioFrameCount((Double(buf.frameLength) * ratio).rounded(.up))
@@ -2427,8 +2449,35 @@ final class DictationRecorder {
             // Live Speech must see 16 kHz mono float — not raw hardware buffers.
             bufferCallback?(out)
         }
+        }) {
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Could not start microphone capture (\(installError.localizedDescription))."]
+            )
+        }
 
-        try engine.start()
+        // `engine.start()` can also raise an ObjC exception when the audio HAL
+        // is wedged. Guard it too and tear down the tap before propagating.
+        var startSwiftError: Error?
+        if let startException = JunoCatchNSException({
+            do {
+                try engine.start()
+            } catch {
+                startSwiftError = error
+            }
+        }) {
+            input.removeTap(onBus: 0)
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Could not start the audio engine (\(startException.localizedDescription))."]
+            )
+        }
+        if let startSwiftError {
+            input.removeTap(onBus: 0)
+            throw startSwiftError
+        }
         self.engine = engine
         self.file = file
         if voiceProcessingEnabled {
@@ -6054,21 +6103,17 @@ final class DictationController: ObservableObject {
 
     /// Post-paste HUD reveal for the final transcript.
     ///
-    /// With live preview ON the user already watched the words stream in, so
-    /// a transient "Text placed +N" flash is enough. With preview OFF this
-    /// moment is the first time the text is visible at all, so surface the
-    /// full final text in the expanded copy-ready island (full transcript +
-    /// Copy ⌘C / esc) — the same reveal the preview-on flow gives at done.
-    /// The overlay root swaps the compact pill for the expanded island while
-    /// ``copyableTranscript`` is set.
+    /// This is only reached on a **successful** paste — the text now lives in
+    /// the user's focused field, so the HUD's job is done. We never keep the
+    /// expanded copy-ready island up here (regardless of the live-preview
+    /// setting); a brief "Text placed +N" flash acknowledges the insert and the
+    /// HUD then dismisses. Leaving the full transcript pinned after a good paste
+    /// reads as a "preview that won't go away." The expanded copy-ready island
+    /// is reserved for the paste-failed / no-field branches, which set
+    /// ``copyableTranscript`` directly so the user can still copy.
     private func presentFinalTextReveal(for text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !JunoUserDefaults.hudLiveTranscriptionsEnabled, !trimmed.isEmpty {
-            copyableTranscript = text
-        } else {
-            copyableTranscript = nil
-            flashTransientDone(for: text)
-        }
+        copyableTranscript = nil
+        flashTransientDone(for: text)
     }
 
     private func showActionHUDResult(_ results: [JunoActionResult]) {
@@ -7414,6 +7459,10 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Hard OS floor: Juno requires macOS Sequoia or newer. On anything
+        // older, show a blocking alert and quit before any engine / onboarding
+        // bring-up. No-op on supported systems.
+        JunoSystemRequirements.enforceMinimumOSOrTerminate()
         registerOpenWindowNotificationsIfNeeded()
         JunoDockVisibility.applyCurrent()
         if JunoClickDeliveryProbe.isRequested {
