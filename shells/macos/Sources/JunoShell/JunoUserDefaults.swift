@@ -218,8 +218,8 @@ enum JunoUserDefaults {
     static var hudLiveTranscriptionsEnabled: Bool {
         get {
             let ud = UserDefaults.standard
-            // Hardware gate: live preview decoding is never enabled on Macs
-            // below the resource floor (see ``JunoPreviewEligibility``).
+            // Hardware gate: live preview decoding is never enabled below
+            // the hard OS floor (see ``JunoPreviewEligibility``).
             guard JunoPreviewEligibility.current.isEligible else { return false }
             if ud.object(forKey: hudLiveTranscriptionsEnabledKey) == nil { return true }
             return ud.bool(forKey: hudLiveTranscriptionsEnabledKey)

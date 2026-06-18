@@ -14,9 +14,10 @@ import Foundation
 ///     surfaces a warning (``Snapshot/onboardingWarningMessage``) but the user
 ///     can still continue.
 ///
-/// Live HUD preview support is *tied to* meeting both floors (see
-/// ``JunoPreviewEligibility``), so any Mac that meets Juno's minimum gets live
-/// preview on by default rather than gating it behind a higher hardware bar.
+/// Live HUD preview support follows the hard OS floor (see
+/// ``JunoPreviewEligibility``). Memory remains warning-only: below the
+/// recommended floor, preview still defaults on but the UI surfaces a
+/// performance caveat.
 enum JunoSystemRequirements {
     /// macOS 15 Sequoia. Hard floor — Juno will not run below this.
     static let minimumMacOSMajorVersion = 15

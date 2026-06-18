@@ -118,31 +118,33 @@ final class JunoSystemRequirementsTests: XCTestCase {
 }
 
 // MARK: - JunoPreviewEligibility pure logic
-// (gates hudLiveTranscriptionsEnabled — preview is tied to the system
-// requirements: macOS Sequoia or newer AND at least 16 GB of memory.)
+// (gates hudLiveTranscriptionsEnabled — preview follows the hard OS floor;
+// memory is warning-only.)
 
 final class JunoPreviewEligibilityTests: XCTestCase {
     private func snapshot(os: Int, gb: Int, chip: String = "Apple M3") -> JunoPreviewEligibility.Snapshot {
         JunoPreviewEligibility.Snapshot(osMajorVersion: os, memoryGB: gb, chipName: chip)
     }
 
-    func testEligibilityRequiresSequoiaAnd16GB() {
+    func testEligibilityRequiresSequoiaOnly() {
         XCTAssertTrue(snapshot(os: 15, gb: 16).isEligible)
+        XCTAssertTrue(snapshot(os: 15, gb: 8).isEligible)    // memory is warning-only
         XCTAssertTrue(snapshot(os: 26, gb: 64).isEligible)
         XCTAssertFalse(snapshot(os: 14, gb: 64).isEligible)  // OS too old
-        XCTAssertFalse(snapshot(os: 15, gb: 8).isEligible)   // not enough memory
     }
 
-    func testUnavailableMessageForLowMemory() {
+    func testUnavailableMessageForUnsupportedOS() {
         let low = snapshot(os: 15, gb: 8)
-        XCTAssertEqual(
-            low.unavailableMessage,
-            "Live preview needs at least 16 GB of memory. This Mac has 8 GB."
-        )
+        XCTAssertNil(low.unavailableMessage)
+        XCTAssertEqual(snapshot(os: 14, gb: 64).unavailableMessage, "Live preview isn’t available on this Mac.")
         XCTAssertNil(snapshot(os: 15, gb: 16).unavailableMessage)
     }
 
     func testWarningMessageNearMemoryFloor() {
+        XCTAssertEqual(
+            snapshot(os: 15, gb: 8).warningMessage,
+            "Live preview can slow final transcription on 8 GB Macs."
+        )
         XCTAssertEqual(
             snapshot(os: 15, gb: 16).warningMessage,
             "Live preview can slow final transcription on 16 GB Macs."
