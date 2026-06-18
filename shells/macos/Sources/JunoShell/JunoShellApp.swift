@@ -4194,6 +4194,7 @@ final class DictationController: ObservableObject {
             return true
         } catch {
             NSLog("Juno: recorder start failed: \(error.localizedDescription)")
+            cancelEnginePreviewStreaming(reason: "recorder_start_failed")
             teardownRecognition()
             state = "error:\(error.localizedDescription)"
             return false
@@ -4356,6 +4357,7 @@ final class DictationController: ObservableObject {
             guard let self else { return }
             guard self.hudState == .checkingMic else { return }
             NSLog("Juno: no microphone frames within \(Self.micNoFrameTimeoutSeconds)s — check permission or input device.")
+            self.cancelEnginePreviewStreaming(reason: "mic_no_audio")
             self.teardownRecognition()
             _ = self.recorder.stop()
             self.pcmLock.lock()
@@ -6552,6 +6554,10 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
+        // Hard OS floor must run before app-owned helpers, polling, overlays,
+        // or update checks start. `applicationDidFinishLaunching` keeps a
+        // no-op safety check, but this is the real preflight gate.
+        JunoSystemRequirements.enforceMinimumOSOrTerminate()
         // **Run BEFORE legacy-defaults migration.** If the install was
         // re-run (TCC wiped) but the prefs plist still says
         // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
@@ -7459,9 +7465,8 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hard OS floor: Juno requires macOS Sequoia or newer. On anything
-        // older, show a blocking alert and quit before any engine / onboarding
-        // bring-up. No-op on supported systems.
+        // Defensive no-op on supported systems. The real preflight gate runs
+        // in `JunoShellApp.init` before helpers / polling / onboarding start.
         JunoSystemRequirements.enforceMinimumOSOrTerminate()
         registerOpenWindowNotificationsIfNeeded()
         JunoDockVisibility.applyCurrent()
