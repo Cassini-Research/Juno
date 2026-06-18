@@ -55,6 +55,9 @@ enum JunoDesignTokens {
     /// Danger / error red
     static let danger = Color(red: 1.0, green: 0.23, blue: 0.18)
 
+    /// Caution / non-blocking warning amber (e.g. below-recommended hardware).
+    static let warning = Color(red: 0.92, green: 0.62, blue: 0.13)
+
     /// Granted / success surfaces (onboarding, settings) — calmer than system `green`
     static let meadow = Color(red: 52/255, green: 138/255, blue: 110/255)
 
