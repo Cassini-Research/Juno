@@ -18,11 +18,14 @@
 //   CTRL_SPACE_DOWN / CTRL_SPACE_UP — Control + Space
 //   ESC                             — Escape (HUD dismiss / cancel dictation)
 //   COPY                            — Command + C
+//   HOTKEY_DEGRADED:<which>          — a monitor failed to install
 //
-// The Juno surface owns the policy ("which of these is the dictation key?"),
-// so this tool only reports low-level key events.
+// When launched with ``--consume-fn``, bare Fn/Globe ``flagsChanged`` events are
+// consumed via a session-level CGEventTap so macOS does not open the emoji
+// picker. JunoShell passes that flag only when Fn is the user's dictation key.
 
 import Cocoa
+import CoreGraphics
 import Darwin
 import JunoHotkeyCore
 
@@ -54,16 +57,89 @@ func emit(_ line: String) {
 var optSpaceDown = false
 var ctrlSpaceDown = false
 
+// When true, Fn is handled by the consuming CGEventTap below instead of the
+// passive NSEvent flags monitor.
+var consumeFnViaEventTap = CommandLine.arguments.contains(JunoFnGlobeKeyPolicy.consumeFnLaunchFlag)
+var fnTapHeld = false
+var fnEventTap: CFMachPort?
+var fnTapReEnableAttempts = 0
+let maxFnTapReEnableAttempts = 3
+
+func setupFnConsumeEventTap() -> Bool {
+    let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+
+    let callback: CGEventTapCallBack = { _, type, event, _ in
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            fnTapReEnableAttempts += 1
+            if fnTapReEnableAttempts <= maxFnTapReEnableAttempts, let tap = fnEventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        fnTapReEnableAttempts = 0
+
+        guard type == .flagsChanged else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let outcome = JunoFnGlobeKeyPolicy.decide(flags: event.flags, fnWasHeld: fnTapHeld)
+        fnTapHeld = outcome.fnNowHeld
+
+        if let line = JunoFnGlobeKeyPolicy.stdoutLine(for: outcome.decision.edge) {
+            emit(line)
+        }
+
+        if outcome.decision.consume {
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    guard let tap = CGEvent.tapCreate(
+        tap: .cgSessionEventTap,
+        place: .headInsertEventTap,
+        options: .defaultTap,
+        eventsOfInterest: eventMask,
+        callback: callback,
+        userInfo: nil
+    ) else {
+        return false
+    }
+
+    fnEventTap = tap
+    guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+        return false
+    }
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    CGEvent.tapEnable(tap: tap, enable: true)
+    return true
+}
+
+if consumeFnViaEventTap {
+    if setupFnConsumeEventTap() {
+        fnHeld = false
+    } else {
+        FileHandle.standardError.write(
+            Data("juno-hotkey: Fn consume tap unavailable — falling back to passive Fn monitor (Input Monitoring / Accessibility may be required).\n".utf8)
+        )
+        emit("HOTKEY_DEGRADED:fntap")
+        consumeFnViaEventTap = false
+    }
+}
+
 let monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
     let flags = event.modifierFlags
 
-    let fnNow = flags.contains(.function)
-    if fnNow && !fnHeld {
-        fnHeld = true
-        emit("FN_DOWN")
-    } else if !fnNow && fnHeld {
-        fnHeld = false
-        emit("FN_UP")
+    if !consumeFnViaEventTap {
+        let fnNow = flags.contains(.function)
+        if fnNow && !fnHeld {
+            fnHeld = true
+            emit("FN_DOWN")
+        } else if !fnNow && fnHeld {
+            fnHeld = false
+            emit("FN_UP")
+        }
     }
 
     let keyCode = event.keyCode
@@ -128,9 +204,6 @@ if keyMonitor == nil {
     FileHandle.standardError.write(
         Data("juno-hotkey: key monitor unavailable — Option/Ctrl+Space chords and Command+C disabled (Input Monitoring / Accessibility may be required).\n".utf8)
     )
-    // Also report over the stdout protocol the shell reads, so this otherwise
-    // silent failure (the dictation key receives nothing → "press twice and
-    // nothing happens") lands in the logs and can drive a permission prompt.
     emit("HOTKEY_DEGRADED:key")
 }
 

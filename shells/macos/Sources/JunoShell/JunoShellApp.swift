@@ -2672,6 +2672,20 @@ enum JunoShortcutPreference: String, CaseIterable {
         case .controlSpace: return "Control + Space"
         }
     }
+
+    /// Single entry when the user picks a dictation shortcut (onboarding or settings).
+    static func applyShortcutSelection(_ newValue: JunoShortcutPreference) {
+        let previous = stored
+        stored = newValue
+        if (previous == .fn) != (newValue == .fn) {
+            JunoShellRuntime.shared.restartHotkeyBridge()
+        }
+    }
+
+    /// Static note shown when Fn is selected; do not read ``AppleFnUsageType``
+    /// (unreliable on recent macOS).
+    static let fnGlobeConflictNote =
+        "If the emoji or symbols popup still appears, set System Settings → Keyboard → Press the Globe key to → Do Nothing."
 }
 
 // MARK: - Audio buffer RMS helper
@@ -6383,6 +6397,9 @@ final class HotkeyBridge {
         }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
+        task.arguments = JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(
+            consumeFn: JunoShortcutPreference.stored == .fn
+        )
 
         let stdout = Pipe()
         task.standardOutput = stdout
@@ -6482,6 +6499,11 @@ final class HotkeyBridge {
         task?.terminationHandler = nil
         task?.terminate()
         task = nil
+    }
+
+    func restart() {
+        stop()
+        start()
     }
 
     private func isDownEvent(_ line: String, shortcut: JunoShortcutPreference) -> Bool {
@@ -6614,6 +6636,9 @@ struct JunoShellApp: App {
         let hotkeyBridge = self.hotkey
         JunoShellRuntime.shared.startHotkeyBridge = {
             hotkeyBridge.start()
+        }
+        JunoShellRuntime.shared.restartHotkeyBridge = {
+            hotkeyBridge.restart()
         }
         if JunoUserDefaults.onboardingCompleted {
             hotkeyBridge.start()
@@ -7372,6 +7397,8 @@ final class JunoShellRuntime {
     /// Keeping them out of the first-run text-entry flow prevents app-level
     /// key monitors from sitting in front of the onboarding name field.
     var startHotkeyBridge: () -> Void = {}
+    /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
+    var restartHotkeyBridge: () -> Void = {}
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).

@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import XCTest
 @testable import JunoHotkeyCore
 
@@ -90,5 +91,44 @@ final class JunoHotkeyCoreTests: XCTestCase {
             copyableTranscript: " \n\t ",
             hudStateWire: "idle"
         ))
+    }
+
+    func testFnGlobeBarePressConsumesAndEmitsDown() {
+        let outcome = JunoFnGlobeKeyPolicy.decide(flags: .maskSecondaryFn, fnWasHeld: false)
+        XCTAssertEqual(outcome.decision.edge, .down)
+        XCTAssertTrue(outcome.decision.consume)
+        XCTAssertTrue(outcome.fnNowHeld)
+        XCTAssertEqual(JunoFnGlobeKeyPolicy.stdoutLine(for: outcome.decision.edge), "FN_DOWN")
+    }
+
+    func testFnGlobeBareReleaseConsumesAndEmitsUp() {
+        let outcome = JunoFnGlobeKeyPolicy.decide(flags: [], fnWasHeld: true)
+        XCTAssertEqual(outcome.decision.edge, .up)
+        XCTAssertTrue(outcome.decision.consume)
+        XCTAssertFalse(outcome.fnNowHeld)
+        XCTAssertEqual(JunoFnGlobeKeyPolicy.stdoutLine(for: outcome.decision.edge), "FN_UP")
+    }
+
+    func testFnGlobeWithCommandPassesThrough() {
+        let outcome = JunoFnGlobeKeyPolicy.decide(
+            flags: [.maskSecondaryFn, .maskCommand],
+            fnWasHeld: false
+        )
+        XCTAssertEqual(outcome.decision, .none)
+        XCTAssertFalse(outcome.fnNowHeld)
+    }
+
+    func testFnGlobeNoChangeIsNoOp() {
+        let outcome = JunoFnGlobeKeyPolicy.decide(flags: .maskSecondaryFn, fnWasHeld: true)
+        XCTAssertEqual(outcome.decision, .none)
+        XCTAssertTrue(outcome.fnNowHeld)
+    }
+
+    func testHotkeyLaunchArgumentsIncludeConsumeFlagOnlyForFnMode() {
+        XCTAssertEqual(
+            JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(consumeFn: true),
+            [JunoFnGlobeKeyPolicy.consumeFnLaunchFlag]
+        )
+        XCTAssertTrue(JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(consumeFn: false).isEmpty)
     }
 }
