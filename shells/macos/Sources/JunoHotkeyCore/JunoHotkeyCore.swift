@@ -85,7 +85,17 @@ public enum JunoFnGlobeKeyPolicy {
 
     public struct Outcome: Equatable {
         public let decision: Decision
-        public let fnNowHeld: Bool
+        public let fnState: FnState
+
+        public var fnNowHeld: Bool {
+            fnState != .up
+        }
+    }
+
+    public enum FnState: Equatable {
+        case up
+        case bare
+        case modified
     }
 
     private static let otherModifiers: CGEventFlags = [
@@ -96,18 +106,33 @@ public enum JunoFnGlobeKeyPolicy {
     ]
 
     public static func decide(flags: CGEventFlags, fnWasHeld: Bool) -> Outcome {
+        decide(flags: flags, fnState: fnWasHeld ? .bare : .up)
+    }
+
+    public static func decide(flags: CGEventFlags, fnState: FnState) -> Outcome {
         let fnDown = flags.contains(.maskSecondaryFn)
-        if !fnDown, fnWasHeld {
+        let hasOtherModifier = !flags.intersection(otherModifiers).isEmpty
+
+        if fnDown, hasOtherModifier {
+            let nextState: FnState = fnState == .bare ? .bare : .modified
+            return Outcome(decision: .none, fnState: nextState)
+        }
+
+        if fnDown {
+            switch fnState {
+            case .up:
+                return Outcome(decision: Decision(edge: .down, consume: true), fnState: .bare)
+            case .bare, .modified:
+                return Outcome(decision: .none, fnState: fnState)
+            }
+        }
+
+        if fnState == .bare {
             let consume = flags.intersection(otherModifiers).isEmpty
-            return Outcome(decision: Decision(edge: .up, consume: consume), fnNowHeld: false)
+            return Outcome(decision: Decision(edge: .up, consume: consume), fnState: .up)
         }
-        if !flags.intersection(otherModifiers).isEmpty {
-            return Outcome(decision: .none, fnNowHeld: fnWasHeld)
-        }
-        if fnDown, !fnWasHeld {
-            return Outcome(decision: Decision(edge: .down, consume: true), fnNowHeld: true)
-        }
-        return Outcome(decision: .none, fnNowHeld: fnDown)
+
+        return Outcome(decision: .none, fnState: .up)
     }
 
     public static func hotkeyLaunchArguments(consumeFn: Bool) -> [String] {

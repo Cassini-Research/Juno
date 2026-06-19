@@ -60,7 +60,7 @@ var ctrlSpaceDown = false
 // When true, Fn is handled by the consuming CGEventTap below instead of the
 // passive NSEvent flags monitor.
 var consumeFnViaEventTap = CommandLine.arguments.contains(JunoFnGlobeKeyPolicy.consumeFnLaunchFlag)
-var fnTapHeld = false
+var fnTapState = JunoFnGlobeKeyPolicy.FnState.up
 var fnEventTap: CFMachPort?
 var fnTapReEnableAttempts = 0
 let maxFnTapReEnableAttempts = 3
@@ -70,7 +70,7 @@ func fallBackToPassiveFnMonitor() {
         CFMachPortInvalidate(tap)
     }
     fnEventTap = nil
-    fnTapHeld = false
+    fnTapState = .up
     fnHeld = false
     fnTapReEnableAttempts = 0
     consumeFnViaEventTap = false
@@ -97,8 +97,8 @@ func setupFnConsumeEventTap() -> Bool {
             return Unmanaged.passUnretained(event)
         }
 
-        let outcome = JunoFnGlobeKeyPolicy.decide(flags: event.flags, fnWasHeld: fnTapHeld)
-        fnTapHeld = outcome.fnNowHeld
+        let outcome = JunoFnGlobeKeyPolicy.decide(flags: event.flags, fnState: fnTapState)
+        fnTapState = outcome.fnState
 
         if let line = JunoFnGlobeKeyPolicy.stdoutLine(for: outcome.decision.edge) {
             emit(line)

@@ -116,15 +116,37 @@ final class JunoHotkeyCoreTests: XCTestCase {
                 fnWasHeld: false
             )
             XCTAssertEqual(outcome.decision, .none)
-            XCTAssertFalse(outcome.fnNowHeld)
+            XCTAssertTrue(outcome.fnNowHeld)
+            XCTAssertEqual(outcome.fnState, .modified)
         }
+    }
+
+    func testFnGlobeModifiedChordDoesNotBecomeBarePressWhenModifierReleasesFirst() {
+        let modifiedDown = JunoFnGlobeKeyPolicy.decide(
+            flags: [.maskSecondaryFn, .maskCommand],
+            fnState: .up
+        )
+        XCTAssertEqual(modifiedDown.decision, .none)
+        XCTAssertEqual(modifiedDown.fnState, .modified)
+
+        let commandReleased = JunoFnGlobeKeyPolicy.decide(
+            flags: .maskSecondaryFn,
+            fnState: modifiedDown.fnState
+        )
+        XCTAssertEqual(commandReleased.decision, .none)
+        XCTAssertFalse(commandReleased.decision.consume)
+        XCTAssertEqual(commandReleased.fnState, .modified)
+
+        let fnReleased = JunoFnGlobeKeyPolicy.decide(flags: [], fnState: commandReleased.fnState)
+        XCTAssertEqual(fnReleased.decision, .none)
+        XCTAssertFalse(fnReleased.fnNowHeld)
     }
 
     func testFnGlobeReleaseWithOtherModifierEmitsUpButPassesThrough() {
         let down = JunoFnGlobeKeyPolicy.decide(flags: .maskSecondaryFn, fnWasHeld: false)
         let releasedWithCommand = JunoFnGlobeKeyPolicy.decide(
             flags: .maskCommand,
-            fnWasHeld: down.fnNowHeld
+            fnState: down.fnState
         )
 
         XCTAssertEqual(releasedWithCommand.decision.edge, .up)
