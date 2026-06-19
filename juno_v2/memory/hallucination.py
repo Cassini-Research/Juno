@@ -413,6 +413,33 @@ def looks_like_silence_hallucination(
 #: pure stock-phrase utterances. Matches the existing four-word floor used
 #: by surrounding memory heuristics.
 TRAILING_STRIP_MIN_WORDS = 4
+_REPEATED_STOCK_TAIL_WORDS = frozenset({"okay", "ok", "um", "uh", "hmm"})
+_REPEATED_STOCK_TAIL_MIN_REPEATS = 3
+_REPEATED_STOCK_TAIL_MIN_PREFIX_WORDS = 8
+_WORD_SPAN_RE = re.compile(r"\b[\w']+\b")
+_LOW_SIGNAL_ADJACENT_DUPLICATE_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "but",
+        "is",
+        "it",
+        "just",
+        "like",
+        "so",
+        "that",
+        "the",
+        "was",
+        "were",
+    }
+)
+_LOW_SIGNAL_ADJACENT_DUPLICATE_RE = re.compile(
+    r"\b(?P<word>a|an|and|are|but|is|it|just|like|so|that|the|was|were)\b"
+    r"(?P<repeat>(?:[\s,]+(?P=word)\b)+)",
+    re.IGNORECASE,
+)
 
 
 def strip_trailing_silence_hallucination(
@@ -586,6 +613,70 @@ def strip_trailing_silence_hallucination(
     return cleaned
 
 
+def strip_repeated_stock_hallucination_tail(
+    text: str,
+    *,
+    min_repeats: int = _REPEATED_STOCK_TAIL_MIN_REPEATS,
+    min_prefix_words: int = _REPEATED_STOCK_TAIL_MIN_PREFIX_WORDS,
+) -> str:
+    """Strip repeated stock-silence words after substantive dictated text.
+
+    Some final decodes append tails like ``"Okay, Okay Okay Okay"`` inside the
+    same final result, without a separate segment whose no-speech metadata can
+    corroborate the stock-phrase guard above. Keep this deliberately narrow:
+    only a repeated stock token, only after enough prior words, and only when
+    the suffix starts after a sentence/newline boundary.
+    """
+    if not text or not text.strip():
+        return text
+    matches = list(_WORD_SPAN_RE.finditer(text))
+    if len(matches) < min_prefix_words + min_repeats:
+        return text
+
+    def normalized(match: re.Match[str]) -> str:
+        return re.sub(r"[^a-z0-9]+", "", match.group(0).casefold())
+
+    tail_token = normalized(matches[-1])
+    if tail_token not in _REPEATED_STOCK_TAIL_WORDS:
+        return text
+
+    start = len(matches) - 1
+    while start > 0 and normalized(matches[start - 1]) == tail_token:
+        start -= 1
+    repeats = len(matches) - start
+    if repeats < min_repeats or start < min_prefix_words:
+        return text
+
+    separator = text[matches[start - 1].end() : matches[start].start()]
+    if not any(ch in separator for ch in ".!?\n"):
+        return text
+
+    cleaned = text[: matches[start].start()].rstrip()
+    cleaned = cleaned.rstrip(" ,;:")
+    return cleaned or text
+
+
+def strip_adjacent_low_signal_word_duplicates(text: str) -> str:
+    """Collapse adjacent duplicate filler/connective words in final text.
+
+    This is intentionally narrower than a general repetition cleaner. It only
+    targets low-information glue words that ASR/writer cleanup can accidentally
+    double ("just just", "that that") and leaves meaningful repetition such as
+    names, numbers, commands, "very very", and code-like tokens alone.
+    """
+    if not text or not text.strip():
+        return text
+
+    def repl(match: re.Match[str]) -> str:
+        word = match.group("word")
+        normalized = re.sub(r"[^a-z0-9']+", "", word.casefold())
+        if normalized not in _LOW_SIGNAL_ADJACENT_DUPLICATE_WORDS:
+            return match.group(0)
+        return word
+
+    return _LOW_SIGNAL_ADJACENT_DUPLICATE_RE.sub(repl, text)
+
+
 # ---------------------------------------------------------------------------
 # Low-yield garbage guard
 # ---------------------------------------------------------------------------
@@ -686,5 +777,7 @@ __all__ = [
     "looks_like_low_yield_garbage",
     "looks_like_silence_hallucination",
     "strip_leading_prompt_echo",
+    "strip_adjacent_low_signal_word_duplicates",
+    "strip_repeated_stock_hallucination_tail",
     "strip_trailing_silence_hallucination",
 ]

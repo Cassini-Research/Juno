@@ -231,13 +231,12 @@ enum JunoUserDefaults {
     }
 
     /// Run bounded model adjudication on in-speech snapshots while the user is
-    /// still dictating. Whisper's preview lane is intentionally conservative and
-    /// append-mostly, so this correction layer keeps personalized terms and
-    /// self-corrections from staying wrong in the HUD until final paste.
+    /// still dictating. This is intentionally opt-in: the live HUD should stay
+    /// on the preview lane unless a user explicitly enables this heavier path.
     static var liveAdjudicationEnabled: Bool {
         get {
             let ud = UserDefaults.standard
-            if ud.object(forKey: liveAdjudicationEnabledKey) == nil { return true }
+            if ud.object(forKey: liveAdjudicationEnabledKey) == nil { return false }
             return ud.bool(forKey: liveAdjudicationEnabledKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: liveAdjudicationEnabledKey) }
@@ -246,7 +245,7 @@ enum JunoUserDefaults {
     static func migrateWhisperPreviewDefaults() {
         let ud = UserDefaults.standard
         guard ud.object(forKey: whisperPreviewDefaultsMigratedKey) == nil else { return }
-        ud.set(true, forKey: liveAdjudicationEnabledKey)
+        ud.set(false, forKey: liveAdjudicationEnabledKey)
         ud.set(true, forKey: whisperPreviewDefaultsMigratedKey)
     }
 

@@ -200,6 +200,44 @@ def test_final_transcript_packet_keeps_screen_terms_but_filters_unrelated_memory
     assert "Chrome" not in packet.protected_terms
 
 
+def test_ocr_junk_does_not_become_final_context_terms() -> None:
+    compiled = compile_context(
+        utterance_id="utt-ocr-junk",
+        context=TypedContextBundle(
+            app_name="NovaDesk",
+            app_category="docs",
+            window_title="NovaDesk",
+            candidate_entities=["onboardin9", "Acces5ibility", "Rerninders", "JuDo", "NovaDesk"],
+        ),
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        mode_selection=ModeSelection(
+            effective_mode="default_surface",
+            mode_source=ModeSource.AUTO,
+            manual_mode_name=None,
+            custom_mode_name=None,
+            resolved_from_surface=None,
+        ),
+        mode_policy=BUILTIN_MODES["default_surface"],
+        transcript_hint="",
+        session_terms=[],
+        language="en",
+        stage="final_delivery",
+        final_transcript_text="I checked the onboarding flow and final paste.",
+    )
+    packet = compiled.transcript_packet(
+        stage="final",
+        whisper_text="I checked the onboarding flow and final paste.",
+        memory_candidate_text="I checked the onboarding flow and final paste.",
+        raw_text="I checked the onboarding flow and final paste.",
+    )
+    terms = {term.text for term in packet.context_terms}
+
+    assert "NovaDesk" in terms
+    for junk in ("onboardin9", "Acces5ibility", "Rerninders", "JuDo"):
+        assert junk not in terms
+        assert junk not in packet.protected_terms
+
+
 def test_action_preview_display_collapses_wake_gated_action_fragments_only() -> None:
     display = _action_preview_display_text(
         "Hey Juno, take a note. Jordan wants the proposal by Friday morning.",
@@ -262,6 +300,30 @@ def test_frozen_context_merges_visible_field_excerpt_terms() -> None:
     assert "Nilofar" in context.field_text_excerpt
     assert context.candidate_entities == ["Nilofar", "SilviaGamachi"]
     assert "explicit_candidate_entities" not in context.metadata
+
+
+def test_frozen_context_filters_screen_ocr_junk_candidates() -> None:
+    context = TypedContextBundle(app_name="NovaDesk", window_title="NovaDesk")
+
+    changed = merge_frozen_capability_into_bundle(
+        context,
+        {
+            "field_text_excerpt": "Visible page mentions NovaDesk and Cassini Research.",
+            "candidate_entities": [
+                "NovaDesk",
+                "Cassini Research",
+                "NOvaD",
+                "SettiThJs",
+                "CityXyoTer",
+                "Acces5ibility",
+                "bhlS.py",
+                "atlons/Junty.app",
+            ],
+        },
+    )
+
+    assert changed is True
+    assert context.candidate_entities == ["NovaDesk", "Cassini Research"]
 
 
 def test_frozen_context_keeps_explicit_repair_terms_separate_from_screen_candidates() -> None:
@@ -426,6 +488,49 @@ def test_final_formatter_required_terms_are_sent_to_backend() -> None:
     prompt = captured["prompt"]
     assert isinstance(prompt, dict)
     assert "SilviaGamachi" in prompt["reference_only_context"]["required_preserved_terms"]
+
+
+def test_final_formatter_filters_ocr_junk_required_terms() -> None:
+    captured: dict[str, object] = {}
+
+    class Backend:
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            captured["prompt"] = json.loads(_build_writer_prompt(req))
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text="- NovaDesk final paste.",
+                backend_name="fake-qwen",
+            )
+
+    packet = FormattingPacket(
+        utterance_id="utt-packet-ocr",
+        corrected_text="NovaDesk final paste.",
+        app_name="NovaDesk",
+        app_category="docs",
+        window_title="NovaDesk",
+        mode_name="structured_notes",
+        final_formatting_policy="structured_notes",
+        style_card=None,
+        focused_text_before="",
+        focused_text_after="",
+        selected_text_excerpt="",
+        writer_tone_addon=None,
+        metadata={
+            "candidate_entities": ["NovaDesk", "onboardin9", "Acces5ibility"],
+            "recent_screen_terms": ["Rerninders", "JuDo"],
+        },
+        mode_prompt_prefix="",
+    )
+
+    result = FinalFormatter(backend=Backend()).format(packet)
+
+    assert result is not None
+    prompt = captured["prompt"]
+    assert isinstance(prompt, dict)
+    required = set(prompt["reference_only_context"]["required_preserved_terms"])
+    assert "NovaDesk" in required
+    for junk in ("onboardin9", "Acces5ibility", "Rerninders", "JuDo"):
+        assert junk not in required
 
 
 def test_final_formatter_rejects_context_only_metadata_leak() -> None:
@@ -1038,6 +1143,36 @@ def test_protected_context_can_repair_common_word_to_glossary_term() -> None:
 
     assert repaired == "Use Gemma for the local model layer."
     assert replacements == [{"from": "gamma", "to": "Gemma", "source": "protected_term_near_miss"}]
+
+
+def test_protected_context_does_not_rewrite_audit_to_screen_ocr_name() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Run an end-to-end audit of the HUD punctuation path.",
+        protected_terms=("Audii",),
+    )
+
+    assert repaired == "Run an end-to-end audit of the HUD punctuation path."
+    assert replacements == []
+
+
+def test_protected_context_preserves_phonetic_person_name_repair() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Please send this to parish for review.",
+        protected_terms=("Paresh",),
+    )
+
+    assert repaired == "Please send this to Paresh for review."
+    assert replacements == [{"from": "parish", "to": "Paresh", "source": "protected_term_near_miss"}]
+
+
+def test_protected_context_does_not_rewrite_name_to_ocr_lookalike() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Ask Priya to check punctuation.",
+        protected_terms=("Prlya",),
+    )
+
+    assert repaired == "Ask Priya to check punctuation."
+    assert replacements == []
 
 
 def test_screen_term_does_not_pluralize_common_word_in_user_speech() -> None:
@@ -2042,7 +2177,11 @@ def _adjudication_result(
 
 
 def test_screen_terms_filtered_before_whisper_prompt() -> None:
-    from juno_v2.memory.bias import _diversify_bias_phrases
+    from juno_v2.memory.bias import (
+        _diversify_bias_phrases,
+        is_biasable_runtime_context_candidate,
+        screen_term_prompt_worthy,
+    )
 
     # Production 2026-06-11: with WhatsApp Web on screen the Whisper prompt
     # filled with UI chrome, OCR junk, and chat-contact handles — and a
@@ -2056,18 +2195,63 @@ def test_screen_terms_filtered_before_whisper_prompt() -> None:
         "lTr",                 # OCR junk — drop
         "Mwrk5pace",           # OCR junk with digit — drop
         "Adi41",               # contact handle with digit — drop
+        "onboardin9",          # OCR digit leak from onboarding text — drop
+        "Acces5ibility",       # OCR digit leak from Accessibility text — drop
+        "Rerninders",          # OCR near-miss of Reminders — drop
+        "JuDo",                # OCR near-miss / odd mixed-case short token — drop
+        "NOvaD",               # odd OCR camel-case fragment — drop
+        "SettiThJs",           # odd OCR camel-case fragment — drop
+        "CityXyoTer",          # three-part OCR camel fragment — drop
+        "bhlS.py",             # OCR-shaped dotted identifier — drop
+        "atlons/Junty.app",    # OCR-shaped path fragment — drop
         "FusionX Bookmarks New Tab Back Forward Reload Bookmark",  # run-on — drop
         "Cassini Research",    # name phrase — keep
+        "NovaDesk",            # product-style name — keep
+        "OpenAI",              # acronym-suffix product name — keep
         "VPN",                 # acronym — keep
+        "juno_v2",             # technical identifier — runtime seed only
     ]
     out = _diversify_bias_phrases([], screen_terms=screen_terms, cap=24)
 
     assert "WhatsApp" in out
     assert "Cassini Research" in out
+    assert "NovaDesk" in out
+    assert "OpenAI" in out
     assert "VPN" in out
-    for junk in ("High", "Back", "Reload", "lTr", "Mwrk5pace", "Adi41"):
+    for junk in (
+        "High", "Back", "Reload", "lTr", "Mwrk5pace", "Adi41",
+        "onboardin9", "Acces5ibility", "Rerninders", "JuDo", "NOvaD",
+        "SettiThJs", "CityXyoTer", "bhlS.py", "atlons/Junty.app", "juno_v2",
+    ):
         assert junk not in out, junk
     assert not any("Bookmarks New Tab" in t for t in out)
+    for junk in (
+        "onboardin9", "Acces5ibility", "Rerninders", "JuDo", "NOvaD",
+        "SettiThJs", "CityXyoTer", "bhlS.py", "atlons/Junty.app",
+    ):
+        assert not screen_term_prompt_worthy(junk)
+        assert not is_biasable_runtime_context_candidate(junk)
+    assert is_biasable_runtime_context_candidate("Cassini Research")
+    assert is_biasable_runtime_context_candidate("NovaDesk")
+    assert is_biasable_runtime_context_candidate("OpenAI")
+    assert is_biasable_runtime_context_candidate("juno_v2")
+
+
+def test_screen_ocr_junk_filtered_from_preview_repair_terms() -> None:
+    from juno_v2.preview.personalization_repair import collect_preview_personalization_terms
+
+    terms = collect_preview_personalization_terms(
+        {
+            "candidate_entities": ["onboardin9", "Acces5ibility", "NovaDesk"],
+            "recent_screen_terms": ["Rerninders", "JuDo", "Cassini Research"],
+        }
+    )
+    texts = {term.text for term in terms}
+
+    assert "NovaDesk" in texts
+    assert "Cassini Research" in texts
+    for junk in ("onboardin9", "Acces5ibility", "Rerninders", "JuDo"):
+        assert junk not in texts
 
 
 def test_memory_phrases_not_subject_to_screen_gate() -> None:

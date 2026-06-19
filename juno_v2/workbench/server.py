@@ -4490,12 +4490,16 @@ class WorkbenchApp:
             _preview_candidates_from_session_context_tape(payload.get("session_context_tape"))[:24]
         )
         if raw_payload_candidates:
+            from juno_v2.memory.bias import screen_term_prompt_worthy
+
             existing_candidates = preview_context_payload.get("candidate_entities")
             merged_candidates = list(existing_candidates) if isinstance(existing_candidates, list) else []
             seen_candidates = {str(item).casefold() for item in merged_candidates if str(item).strip()}
             for raw_candidate in raw_payload_candidates[:24]:
                 candidate = str(raw_candidate or "").strip()
                 if not candidate:
+                    continue
+                if not screen_term_prompt_worthy(candidate):
                     continue
                 key = candidate.casefold()
                 if key in seen_candidates:

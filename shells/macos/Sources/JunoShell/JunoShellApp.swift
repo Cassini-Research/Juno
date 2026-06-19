@@ -2095,41 +2095,14 @@ enum Clipboard {
         down.flags = .maskCommand
         up.flags = .maskCommand
 
-        // Sample the focused field's character count BEFORE the synthetic
-        // Cmd+V. If Accessibility can read the focused element, any change
-        // in count after the keystroke means the paste landed there. If
-        // the count is unchanged after a generous polling window, the
-        // paste went somewhere else (focus drift, secure widget, app that
-        // ignores Cmd+V) and we must report failure so the copy-ready
-        // overlay surfaces instead of the user seeing nothing.
-        //
-        // When AX cannot read the focused element (some Electron apps,
-        // Terminal, custom widgets), ``beforeCount`` is ``nil`` and we
-        // skip verification — there is no signal either way, and the
-        // pre-existing behavior was to trust the CGEvent post.
-        let beforeCount = JunoLocalCapability.focusedFieldCharacterCount()
         down.post(tap: .cgSessionEventTap)
         usleep(8_000)
         up.post(tap: .cgSessionEventTap)
-
-        guard let before = beforeCount else {
-            // No AX baseline — preserve original behavior (assume success).
-            usleep(20_000)
-            return true
-        }
-        // Poll for a count change. Native text widgets land in ~16 ms (one
-        // display tick); slower toolkits and apps under load need up to
-        // ~100 ms. Early-return on first detected change keeps the happy
-        // path snappy.
-        let pollWaits: [UInt32] = [16_000, 40_000, 60_000]
-        for wait in pollWaits {
-            usleep(wait)
-            if let after = JunoLocalCapability.focusedFieldCharacterCount(),
-               after != before {
-                return true
-            }
-        }
-        return false
+        // Return "posted", not "landed". ``observedUndoSafePaste`` owns
+        // read-back verification where available and deliberately assumes
+        // success for custom/Electron fields that expose no reliable AX value.
+        usleep(20_000)
+        return true
     }
 
     @discardableResult
@@ -3417,7 +3390,7 @@ final class DictationController: ObservableObject {
         guard steps.count > 1 else {
             cancelHUDCommittedReveal()
             _ = hudTranscriptStore.applyPreviewRevision(committed: targetCommitted, tail: targetTail)
-            enginePreviewPartialText = hudTranscriptStore.text
+            enginePreviewPartialText = hudTranscriptStore.rawText
             if liveSource == .engine {
                 livePartialText = hudTranscriptStore.text
                 syncHUDFromTranscriptStore()
@@ -3438,7 +3411,7 @@ final class DictationController: ObservableObject {
             committed: steps[index],
             tail: isLast ? tail : ""
         )
-        enginePreviewPartialText = hudTranscriptStore.text
+        enginePreviewPartialText = hudTranscriptStore.rawText
         if liveSource == .engine {
             livePartialText = hudTranscriptStore.text
             syncHUDFromTranscriptStore()
@@ -3477,6 +3450,16 @@ final class DictationController: ObservableObject {
 
     private func normalizedHUDText(_ raw: String?) -> String {
         repairLiveCaptionBoundaries(raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func rawLivePreviewTextForCorrection() -> String {
+        let rawStoreText = normalizedHUDText(hudTranscriptStore.rawText)
+        if !rawStoreText.isEmpty { return rawStoreText }
+        for candidate in [enginePreviewPartialText, livePartialText, liveDisplayTranscript] {
+            let normalized = normalizedHUDText(candidate)
+            if !normalized.isEmpty { return normalized }
+        }
+        return ""
     }
 
     private func repairLiveCaptionBoundaries(_ raw: String) -> String {
@@ -4241,9 +4224,7 @@ final class DictationController: ObservableObject {
         previewStreamer.start(utteranceId: uid)
         previewStreamer.visibleTextHint = { [weak self] in
             guard let self else { return "" }
-            return self.normalizedHUDText(
-                self.liveDisplayTranscript.isEmpty ? self.livePartialText : self.liveDisplayTranscript
-            )
+            return self.rawLivePreviewTextForCorrection()
         }
         previewStreamer.candidateEntities = { [weak self] in
             guard let self else { return [] }
@@ -4606,7 +4587,7 @@ final class DictationController: ObservableObject {
             return
         }
 
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         let words = visible.split { $0.isWhitespace || $0.isNewline }.count
         let chars = visible.count
@@ -4667,7 +4648,7 @@ final class DictationController: ObservableObject {
         guard now - sessionStartTime >= Self.liveAudioCheckpointMinAudioSeconds else { return }
         guard lastSpeechEnergyAt > sessionStartTime else { return }
 
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         let lastVisibleChangeAt = lastLiveHUDTextChangeAt > sessionStartTime
             ? lastLiveHUDTextChangeAt
@@ -4814,7 +4795,7 @@ final class DictationController: ObservableObject {
 
     private func fireLiveAdjudicationSnapshot(reason: String) {
         let now = Date().timeIntervalSinceReferenceDate
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         guard visible != lastLiveAdjudicationVisibleText else { return }
         let snapshot = LiveAdjudicationSnapshot(
@@ -4994,7 +4975,7 @@ final class DictationController: ObservableObject {
         markUtteranceTimeline("final_broker_request_sent_ms", at: brokerRequestSentMs)
         let shellTimeline = utteranceTimelinePayload()
         let finalTranscriptHintCandidates = [
-            hudTranscriptStore.text,
+            hudTranscriptStore.rawText,
             liveDisplayTranscript,
             livePartialText,
             engineSessionPartialText,

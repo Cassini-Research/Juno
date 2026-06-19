@@ -31,7 +31,33 @@ paths.
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass, field
+
+
+_NUMBER_WORD_AGREEMENT_KEYS = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+    "eleven": "11",
+    "twelve": "12",
+    "thirteen": "13",
+    "fourteen": "14",
+    "fifteen": "15",
+    "sixteen": "16",
+    "seventeen": "17",
+    "eighteen": "18",
+    "nineteen": "19",
+    "twenty": "20",
+}
 
 
 @dataclass(slots=True)
@@ -45,6 +71,18 @@ class Word:
     @property
     def normalized(self) -> str:
         return "".join(ch.lower() for ch in self.text if ch.isalnum())
+
+    @property
+    def agreement_key(self) -> str:
+        """Comparison key for LocalAgreement replay/overlap decisions.
+
+        Display text stays untouched, but agreement should treat common spoken
+        number words and their digit forms as the same word. Without this, a
+        rolling decode can restart the same numeric phrase in a different form,
+        which looks like a new phrase to the HUD matcher.
+        """
+        normalized = self.normalized
+        return _NUMBER_WORD_AGREEMENT_KEYS.get(normalized, normalized)
 
 
 @dataclass(slots=True)
@@ -82,7 +120,7 @@ class HypothesisBuffer:
 
         Returns a telemetry reason when a replayed committed prefix was dropped.
         """
-        words = [w for w in new_words if w.normalized]
+        words = [w for w in new_words if w.agreement_key]
         replay_drop_reason: str | None = None
         self.last_flush_replay_drop_reason = None
 
@@ -94,8 +132,8 @@ class HypothesisBuffer:
         return replay_drop_reason
 
     def _drop_committed_overlap(self, words: list[Word]) -> list[Word]:
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
-        word_norm = [w.normalized for w in words if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
+        word_norm = [w.agreement_key for w in words if w.agreement_key]
         if not committed_norm or not word_norm:
             return words
 
@@ -132,8 +170,8 @@ class HypothesisBuffer:
         of ≥5 words AND ≥20 characters (see ``_find_replayed_prefix_len``), so
         normal short repetition like "very very" or "I want to" is preserved.
         """
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
-        word_norm = [w.normalized for w in words if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
+        word_norm = [w.agreement_key for w in words if w.agreement_key]
         if len(committed_norm) < 5 or len(word_norm) < 5:
             match = _find_adjacent_duplicate_boundary(committed_norm, word_norm)
             if match is None:
@@ -169,7 +207,7 @@ class HypothesisBuffer:
         agreement: list[Word] = []
         i = 0
         while i < len(self.tail) and i < len(self._staged_new):
-            if self.tail[i].normalized and self.tail[i].normalized == self._staged_new[i].normalized:
+            if self.tail[i].agreement_key and self.tail[i].agreement_key == self._staged_new[i].agreement_key:
                 # Take the timestamps from the NEW hypothesis; they reflect
                 # the model's most-recent re-estimation of the word boundaries.
                 agreement.append(self._staged_new[i])
@@ -212,8 +250,8 @@ class HypothesisBuffer:
         prefix was dropped — the streaming-core wrapper logs it as a telemetry
         counter so we can spot the matcher misfiring in production.
         """
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
-        agreement_norm = [w.normalized for w in agreement if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
+        agreement_norm = [w.agreement_key for w in agreement if w.agreement_key]
         if len(committed_norm) < 5 or len(agreement_norm) < 5:
             return agreement, None
 
@@ -249,8 +287,8 @@ class HypothesisBuffer:
 
         if not self.committed or not agreement:
             return agreement, None
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
-        agreement_norm = [w.normalized for w in agreement if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
+        agreement_norm = [w.agreement_key for w in agreement if w.agreement_key]
         if len(committed_norm) != len(self.committed) or len(agreement_norm) != len(agreement):
             return agreement, None
 
@@ -274,8 +312,8 @@ class HypothesisBuffer:
         committed+tail; the second copy is entirely tail and should not render.
         """
 
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
-        tail_norm = [w.normalized for w in self.tail if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
+        tail_norm = [w.agreement_key for w in self.tail if w.agreement_key]
         if len(committed_norm) != len(self.committed) or len(tail_norm) != len(self.tail):
             return None
         if not committed_norm or len(tail_norm) < 4:
@@ -313,6 +351,30 @@ class HypothesisBuffer:
                 self.last_flush_replay_drop_reason = reason
                 return reason
         return None
+
+    def resolve_tail_reanchor_revision(self) -> str | None:
+        """Rollback a tiny suspicious committed suffix when tail re-anchors.
+
+        The ordinary replay guards only delete repeated tail words. That is not
+        enough when Whisper first commits a short garbled suffix and the next
+        hypothesis re-anchors at an earlier phrase. In that shape, keeping the
+        committed suffix creates a visible duplicate. This method is narrower:
+        it only rolls back to a recent tail-prefix anchor when the intervening
+        committed suffix contains an ASR-fragment shaped token.
+        """
+        match = _find_tail_reanchor_revision(
+            self.committed,
+            self.tail,
+        )
+        if match is None:
+            return None
+        rollback_start, reason = match
+        if rollback_start < 0 or rollback_start >= len(self.committed):
+            return None
+        del self.committed[rollback_start:]
+        self._refresh_last_committed_time()
+        self.last_flush_replay_drop_reason = reason
+        return reason
 
     def _drop_tail_prefix_repeating_committed_suffix(
         self,
@@ -371,7 +433,7 @@ class HypothesisBuffer:
 
         if old_len <= 0 or not agreement:
             return agreement, None
-        committed_norm = [w.normalized for w in self.committed if w.normalized]
+        committed_norm = [w.agreement_key for w in self.committed if w.agreement_key]
         if len(committed_norm) != len(self.committed):
             return agreement, None
         match = _find_adjacent_duplicate_boundary(
@@ -605,6 +667,41 @@ def _find_tail_prefix_repeating_recent_committed_phrase(
     return None
 
 
+def _find_tail_reanchor_revision(
+    committed_words: list[Word],
+    tail_words: list[Word],
+) -> tuple[int, str] | None:
+    if len(committed_words) < 5 or len(tail_words) < 4:
+        return None
+    committed_norm = [w.agreement_key for w in committed_words if w.agreement_key]
+    tail_norm = [w.agreement_key for w in tail_words if w.agreement_key]
+    if len(committed_norm) != len(committed_words) or len(tail_norm) != len(tail_words):
+        return None
+
+    search_start = max(0, len(committed_norm) - 16)
+    search_norm = committed_norm[search_start:]
+    max_width = min(6, len(tail_norm), len(search_norm))
+    for width in range(max_width, 1, -1):
+        prefix = tail_norm[:width]
+        if len("".join(prefix)) < 10 or not _meaningful_replay_phrase(prefix):
+            continue
+        for pos in range(len(search_norm) - width, -1, -1):
+            lag = len(search_norm) - (pos + width)
+            if lag < 1 or lag > 6:
+                continue
+            window = search_norm[pos : pos + width]
+            exact = window == prefix
+            near = width >= 3 and _phrase_compound_or_near_equal(window, prefix)
+            if not exact and not near:
+                continue
+            suffix_words = committed_words[search_start + pos + width :]
+            if not _committed_suffix_has_asr_fragment(suffix_words):
+                continue
+            rollback_start = search_start + pos
+            return rollback_start, f"tail_reanchor_suffix_revision_{width}_lag{lag}"
+    return None
+
+
 def _find_agreement_article_bridge_replay(
     committed_norm: list[str],
     agreement_norm: list[str],
@@ -814,6 +911,41 @@ def _phrase_compound_or_near_equal(left: list[str], right: list[str]) -> bool:
     if left[0] != right[0] or left[-1] != right[-1]:
         return False
     return difflib.SequenceMatcher(a=left_joined, b=right_joined, autojunk=False).ratio() >= 0.94
+
+
+_COMMON_SHORT_HYPHENATED_WORDS = {
+    "check-in",
+    "e-mail",
+    "end-to-end",
+    "follow-up",
+    "go-to",
+    "in-app",
+    "long-term",
+    "one-on-one",
+    "real-time",
+    "sign-in",
+    "sign-out",
+    "two-factor",
+    "up-to-date",
+}
+
+
+def _committed_suffix_has_asr_fragment(words: list[Word]) -> bool:
+    if not words or len(words) > 6:
+        return False
+    for word in words:
+        raw = (word.text or "").strip(".,!?;:'\"()[]{}")
+        if not raw:
+            continue
+        lowered = raw.casefold()
+        if lowered in _COMMON_SHORT_HYPHENATED_WORDS:
+            continue
+        if "-" not in lowered and "–" not in lowered and "—" not in lowered:
+            continue
+        parts = [p for p in re.split(r"[-–—]+", lowered) if p]
+        if len(parts) >= 2 and all(len(part) <= 4 for part in parts):
+            return True
+    return False
 
 
 def _meaningful_replay_phrase(tokens: list[str]) -> bool:

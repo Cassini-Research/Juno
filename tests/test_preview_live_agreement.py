@@ -3,8 +3,11 @@ import numpy as np
 from juno_v2.contracts.preview import PreviewDecodeRequest
 from juno_v2.preview.live_agreement import HypothesisBuffer, Word, _find_replayed_prefix_len
 from juno_v2.preview.streaming_core import (
+    StreamingPreviewState,
     StreamingPreviewSessionManager,
     WhisperDecodeOutput,
+    _guard_tail_hallucination,
+    _silence_retry_useful_for_dangling_commit,
 )
 
 
@@ -53,6 +56,30 @@ def test_preview_drops_short_boundary_revision_overlap() -> None:
     assert "Please keep the sentence Please keep this sentence" not in committed
     assert committed.endswith("Please keep the sentence readable and text our words")
     assert " ".join(w.text for w in newly_committed) == "readable and text our words"
+
+
+def test_preview_drops_numeric_word_replay_after_window_restart() -> None:
+    buffer = HypothesisBuffer()
+
+    buffer.insert(_words("In the past 3 to 4"))
+    assert buffer.flush() == []
+    buffer.insert(_words("In the past 3 to 4"))
+    newly_committed = buffer.flush()
+
+    assert " ".join(w.text for w in newly_committed) == "In the past 3 to 4"
+    assert buffer.committed_text() == "In the past 3 to 4"
+
+    replay_reason = buffer.insert(_words("In the past three to four utterances that I"))
+
+    assert replay_reason is None
+    assert " ".join(w.text for w in buffer._staged_new) == "utterances that I"
+
+
+def test_preview_tail_suppresses_standalone_subtitle_end() -> None:
+    cleaned, reason = _guard_tail_hallucination("End.")
+
+    assert cleaned == ""
+    assert reason == "tail_subtitle_stock_phrase"
 
 
 def test_preview_drops_short_reanchored_opener_after_segment_trim() -> None:
@@ -126,6 +153,32 @@ def test_preview_tail_drops_recent_committed_phrase_with_compound_drift() -> Non
     assert reason == "tail_recent_replay_phrase_5x7_lag0"
     assert buffer.committed_text() == "Ask ReviewMate to review the off-callback flow"
     assert buffer.tail_text() == "find edge cases"
+
+
+def test_preview_rolls_back_suspicious_suffix_when_tail_reanchors_phrase() -> None:
+    buffer = HypothesisBuffer()
+    buffer.committed = _words(
+        "For tomorrow ask Rahul to check on voting Maya to check paste behavior and pre-re to check"
+    )
+    buffer.tail = _words("paste behavior and Priya to check punctuation in long paragraphs")
+
+    reason = buffer.resolve_tail_reanchor_revision()
+
+    assert reason == "tail_reanchor_suffix_revision_3_lag3"
+    assert buffer.committed_text() == "For tomorrow ask Rahul to check on voting Maya to check"
+    assert buffer.tail_text() == "paste behavior and Priya to check punctuation in long paragraphs"
+
+
+def test_preview_does_not_roll_back_intentional_clean_repeat() -> None:
+    buffer = HypothesisBuffer()
+    buffer.committed = _words("For tomorrow ask Maya to check paste behavior and then")
+    buffer.tail = _words("paste behavior again for comparison")
+
+    reason = buffer.resolve_tail_reanchor_revision()
+
+    assert reason is None
+    assert buffer.committed_text() == "For tomorrow ask Maya to check paste behavior and then"
+    assert buffer.tail_text() == "paste behavior again for comparison"
 
 
 def test_preview_drops_adjacent_stem_duplicate_at_commit_boundary() -> None:
@@ -382,6 +435,20 @@ def test_root_final_blocks_display_suppressed_single_word_tail() -> None:
     assert final.metadata["tail_display_suppress_reason"] == "tail_single_word_quarantine"
     assert final.metadata["tail_final_promotion_status"] == "blocked"
     assert final.metadata["tail_final_promotion_reason"] == "tail_single_word_quarantine"
+
+
+def test_silence_retry_allowed_for_dangling_connector_only() -> None:
+    state = StreamingPreviewState(utterance_id="utt")
+    state.hypothesis.committed = _words("send the summary to")
+
+    assert _silence_retry_useful_for_dangling_commit(state)
+
+    state.same_buffer_silence_retries = 2
+    assert not _silence_retry_useful_for_dangling_commit(state)
+
+    state.same_buffer_silence_retries = 0
+    state.hypothesis.committed = _words("send the summary today")
+    assert not _silence_retry_useful_for_dangling_commit(state)
 
 
 def test_preview_canonicalizes_oke_before_agreement_overlap() -> None:

@@ -3774,11 +3774,12 @@ def _reconcile_protected_term_near_misses(
         observed = match.group(0)
         best_target: str | None = None
         best_ratio = 0.0
-        for term, source, _allow_common_target in candidates:
+        for term, source, allow_common_target in candidates:
             if not _protected_term_near_miss(
                 term,
                 observed,
                 static_glossary=source == "ai_glossary",
+                allow_common_target=allow_common_target,
             ):
                 continue
             ratio = difflib.SequenceMatcher(
@@ -3876,7 +3877,13 @@ def _single_letter_inflection_pair(a: str, b: str) -> bool:
     return False
 
 
-def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool = False) -> bool:
+def _protected_term_near_miss(
+    term: str,
+    observed: str,
+    *,
+    static_glossary: bool = False,
+    allow_common_target: bool = False,
+) -> bool:
     """True if ``observed`` is a near-miss for ``term``.
 
     Constraints (all must hold):
@@ -3902,21 +3909,30 @@ def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool
     target_folded = target.casefold()
     if obs_folded in _COMMON_PHONETIC_REPAIR_WORDS:
         return False
-    if static_glossary and common_english_single_word(obs_folded):
+    observed_is_common = common_english_single_word(obs_folded)
+    if static_glossary and observed_is_common:
         return False
     if (
-        common_english_single_word(obs_folded)
+        not allow_common_target
+        and not _single_token_has_identifier_shape(target)
+        and _soundex(obs_folded) != _soundex(target_folded)
+    ):
+        # Screen/context terms are useful for names, but edit distance alone is
+        # too weak for single-token protected repairs: OCR-like variants can
+        # rewrite ordinary words or unrelated names. Keep real phonetic repairs;
+        # block spelling-only rewrites without phonetic support.
+        return False
+    if (
+        observed_is_common
         and _single_letter_inflection_pair(obs_folded, target_folded)
         and not _single_token_has_identifier_shape(target)
     ):
         # A common word and its own plural/singular are not an ASR
         # near-miss — they are the same word inflected, and "repairing"
-        # one into the other rewrites the user's grammar. Screen-term
-        # phrase tokens made Juno's own sidebar label eligible here and
-        # "take a note, action items…" became "Actions items…" — which
-        # then broke turn-plan span grounding for the note body
-        # (production 2026-06-11). Distinct words that merely look alike
-        # ("gamma" → protected "Gemma") still repair.
+        # one into the other rewrites the user's grammar. Screen-term phrase
+        # tokens can otherwise turn ordinary prose into label-shaped text and
+        # break span grounding. Distinct words that merely look alike can still
+        # repair when the other guards supply evidence.
         return False
     if (
         len(obs_folded) > len(target_folded)

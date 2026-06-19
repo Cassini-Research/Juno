@@ -13,7 +13,11 @@ import pytest
 from juno_v2.memory.ai_dictionary import AI_GLOSSARY, is_ai_glossary_term
 from juno_v2.memory.correction_diff import diff_pasted_segment
 from juno_v2.memory.fold import fold_key, fold_match_pattern
-from juno_v2.memory.hallucination import looks_like_hallucination
+from juno_v2.memory.hallucination import (
+    looks_like_hallucination,
+    strip_adjacent_low_signal_word_duplicates,
+    strip_repeated_stock_hallucination_tail,
+)
 from juno_v2.memory.repetition import (
     collapse_tail_repetition,
     detect_tail_repetition,
@@ -396,6 +400,37 @@ def test_collapse_is_idempotent() -> None:
     twice, diag = collapse_tail_repetition(once, audio_duration_ms=None)
     assert twice == once
     assert not diag.collapsed
+
+
+def test_strip_repeated_stock_hallucination_tail_after_sentence_boundary() -> None:
+    text = (
+        "The HUD issue is clearly not resolved yet and the spoken new line cue "
+        "should stay visible. Okay, Okay Okay Okay"
+    )
+    assert (
+        strip_repeated_stock_hallucination_tail(text)
+        == "The HUD issue is clearly not resolved yet and the spoken new line cue should stay visible."
+    )
+
+
+def test_strip_repeated_stock_hallucination_tail_preserves_inline_emphasis() -> None:
+    text = "The plan is okay okay okay and we should ship it"
+    assert strip_repeated_stock_hallucination_tail(text) == text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_collapses_filler_only() -> None:
+    text = "The sentence is just just a tailing issue, and and it should be fixed."
+
+    assert (
+        strip_adjacent_low_signal_word_duplicates(text)
+        == "The sentence is just a tailing issue, and it should be fixed."
+    )
+
+
+def test_strip_adjacent_low_signal_word_duplicates_preserves_meaningful_repetition() -> None:
+    text = "Send Priya Priya the very very specific note for section 3 3."
+
+    assert strip_adjacent_low_signal_word_duplicates(text) == text
 
 
 # --------------------------------------------------------------------- #

@@ -49,6 +49,19 @@ _DISPLAY_NEWLINE_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _NEWLINE_CUE_DETERMINERS = {"the", "a", "an", "this", "that", "each", "every", "my", "your", "our"}
+_DISPLAY_SPOKEN_PUNCT_RE = re.compile(
+    r"\b(?P<cue>"
+    r"new\s+paragraph|new\s+line|newline|line\s+break|"
+    r"question\s+mark|exclamation\s+(?:point|mark)|full\s+stop|"
+    r"period|comma|colon|semicolon"
+    r")\b[.,!?]*",
+    re.IGNORECASE,
+)
+_DISPLAY_CUE_LITERAL_PREV_WORDS = {
+    "a", "an", "the", "this", "that", "each", "every", "my", "your", "our",
+    "their", "its", "his", "her", "word", "words", "term", "terms", "literal",
+    "called", "named", "say", "saying", "means", "mean", "use", "using",
+}
 
 
 def _smooth_window_joins(committed: str) -> str:
@@ -102,6 +115,7 @@ def normalize_preview_orthography(
         if raw_committed.strip()
         else ""
     )
+    committed_cues = _count_spoken_punctuation_cues(committed)
     tail_capitalize = _tail_starts_sentence(committed)
     tail = _normalize_inline_tail(
         raw_tail,
@@ -109,12 +123,42 @@ def normalize_preview_orthography(
         trust_sentence_boundaries=False,
         protected_word_norms=protected,
     )
+    tail_cues = _count_spoken_punctuation_cues(tail)
     applied = int(committed != raw_committed) + int(tail != raw_tail)
     return committed, tail, {
         "preview_orthography_applied": applied,
         "preview_orthography_committed_changed": committed != raw_committed,
         "preview_orthography_tail_changed": tail != raw_tail,
+        "preview_spoken_punctuation_cues": committed_cues + tail_cues,
     }
+
+
+def _count_spoken_punctuation_cues(text: str) -> int:
+    source = text or ""
+    count = 0
+    for match in _DISPLAY_SPOKEN_PUNCT_RE.finditer(source):
+        cue = re.sub(r"\s+", " ", match.group("cue").casefold().strip())
+        if _spoken_punctuation_cue_is_literal(source[: match.start()], cue):
+            continue
+        count += 1
+    return count
+
+
+def _spoken_punctuation_cue_is_literal(before: str, cue: str) -> bool:
+    prev = _previous_word(before)
+    if prev in _DISPLAY_CUE_LITERAL_PREV_WORDS:
+        return True
+    # Avoid turning leading noun phrases like "comma separated values" into
+    # punctuation. Formatting cues at the beginning are still allowed for
+    # line/paragraph commands and two-word mark names.
+    if not prev and cue in {"comma", "period", "colon", "semicolon"}:
+        return True
+    return False
+
+
+def _previous_word(text: str) -> str:
+    match = re.search(r"([A-Za-z']+)\W*$", text or "")
+    return match.group(1).casefold() if match else ""
 
 
 def _tail_starts_sentence(committed_text: str) -> bool:

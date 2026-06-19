@@ -75,6 +75,9 @@ final class HUDTranscriptStore: ObservableObject {
     @Published private(set) var spans: [HUDTranscriptSpan] = []
     private(set) var revision: Int = 0
     private(set) var lastHash: String = ""
+    var rawText: String {
+        Self.compose(committed: committedText, tail: tailText)
+    }
 
     /// Test-only instrumentation — true after the most recent public mutator's body
     /// executed on the main thread. Always true in production after a successful
@@ -336,6 +339,9 @@ final class HUDTranscriptStore: ObservableObject {
     }
 
     private static func acceptsPreviewSuffixRevision(current: String, incoming: String) -> Bool {
+        if acceptsSpokenPunctuationCueRevision(current: current, incoming: incoming) {
+            return true
+        }
         let currentTokens = previewRevisionTokens(current)
         let incomingTokens = previewRevisionTokens(incoming)
         let minCount = min(currentTokens.count, incomingTokens.count)
@@ -346,6 +352,30 @@ final class HUDTranscriptStore: ObservableObject {
         }
         let required = min(8, max(3, minCount / 2))
         return common >= required
+    }
+
+    private static func acceptsSpokenPunctuationCueRevision(current: String, incoming: String) -> Bool {
+        let currentTokens = previewRevisionTokens(current)
+        let incomingTokens = previewRevisionTokens(incoming)
+        guard currentTokens.count >= incomingTokens.count else { return false }
+        guard currentTokens.prefix(incomingTokens.count).elementsEqual(incomingTokens) else { return false }
+        let dropped = Array(currentTokens.dropFirst(incomingTokens.count))
+        guard !dropped.isEmpty, dropped.count <= 2 else { return false }
+        return isSpokenPunctuationCueSuffix(dropped)
+    }
+
+    private static func isSpokenPunctuationCueSuffix(_ tokens: [String]) -> Bool {
+        let joined = tokens.joined(separator: " ")
+        switch joined {
+        case "comma", "period", "colon", "semicolon",
+             "question", "question mark",
+             "exclamation", "exclamation point", "exclamation mark",
+             "full", "full stop",
+             "new", "new line", "newline", "line break", "new paragraph":
+            return true
+        default:
+            return false
+        }
     }
 
     private static func previewRevisionTokens(_ text: String) -> [String] {
@@ -435,8 +465,10 @@ final class HUDTranscriptStore: ObservableObject {
                 in: out, range: NSRange(out.startIndex..., in: out), withTemplate: "$1"
             )
         }
-        // Spoken newline cues become visible breaks unless preceded by a
-        // determiner ("the new line is short" stays literal).
+        // Spoken newline cues stay visible and also create the intended
+        // display break unless preceded by a determiner ("the new line is
+        // short" stays literal). The cue text remains on the HUD so users can
+        // see that Juno heard it before final paste converts it to structure.
         if let cue = try? NSRegularExpression(
             pattern: "(?:^|(?<= ))[Nn]ew +([Ll]ine|[Pp]aragraph)\\b[ .,]*",
             options: []
@@ -453,7 +485,11 @@ final class HUDTranscriptStore: ObservableObject {
                 if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
                     result += ns.substring(with: match.range)
                 } else {
-                    let cueWord = ns.substring(with: match.range).lowercased()
+                    let cueText = ns.substring(with: match.range)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?"))
+                    result += cueText
+                    let cueWord = cueText.lowercased()
                     result += cueWord.contains("paragraph") ? "\n\n" : "\n"
                 }
                 cursor = match.range.location + match.range.length

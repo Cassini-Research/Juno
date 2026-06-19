@@ -101,6 +101,10 @@ enum JunoLocalCapability {
         } else {
             return (false, "")
         }
+        let focusedRole = axString(focused, kAXRoleAttribute as CFString) ?? ""
+        guard pasteReadbackReliableRoles.contains(focusedRole) else {
+            return (false, "")
+        }
         if let v = axString(focused, kAXValueAttribute as CFString) {
             return (true, v)
         }
@@ -304,6 +308,13 @@ enum JunoLocalCapability {
         "AXComboBox",
         "AXSearchField",
         "AXWebArea",
+    ]
+
+    private static let pasteReadbackReliableRoles: Set<String> = [
+        "AXTextField",
+        "AXTextArea",
+        "AXComboBox",
+        "AXSearchField",
     ]
 
     private struct PasteCandidate {
@@ -745,7 +756,7 @@ enum JunoLocalCapability {
         func flushPhrase() {
             defer { phrase.removeAll(keepingCapacity: true) }
             guard !phrase.isEmpty else { return }
-            if phrase.count >= 2 {
+            if (2...3).contains(phrase.count) {
                 let phraseValue = phrase.joined(separator: " ")
                 if phrase.contains(where: { isSingleScreenCandidateToken($0) }) {
                     add(phraseValue)
@@ -792,36 +803,64 @@ enum JunoLocalCapability {
     ]
 
     private static func isTitleOrMixedCaseToken(_ token: String) -> Bool {
-        guard token.rangeOfCharacter(from: .letters) != nil else { return false }
-        let letters = token.filter { $0.isLetter }
-        guard !letters.isEmpty else { return false }
-        if let first = letters.first, first.isUppercase { return true }
-        return letters.dropFirst().contains { $0.isUppercase }
+        isSingleScreenCandidateToken(token)
     }
 
     private static func isSingleScreenCandidateToken(_ token: String) -> Bool {
         guard token.count >= 4 else { return false }
         guard !commonScreenCandidateWords.contains(token) else { return false }
         guard token.rangeOfCharacter(from: .letters) != nil else { return false }
+        guard !isLikelyScreenCandidateOCRJunk(token) else { return false }
         let letters = token.filter { $0.isLetter }
         guard !letters.isEmpty else { return false }
-        if letters.dropFirst().contains(where: { $0.isUppercase }) { return true }
         if letters.allSatisfy({ $0.isUppercase }) && (2...10).contains(letters.count) { return true }
-        return letters.first?.isUppercase == true
+        let letterString = String(letters)
+        if isSimpleCapitalizedToken(letterString) { return true }
+        if isTwoPartCamelOrAcronymToken(letterString) { return true }
+        return false
     }
 
     private static func isTechnicalScreenCandidateToken(_ token: String) -> Bool {
         let clean = token.trimmingCharacters(in: candidateTrimCharacters)
         guard (4...80).contains(clean.count) else { return false }
-        if clean.contains("_") || clean.contains("-") {
-            return clean.rangeOfCharacter(from: .letters) != nil
+        let patterns = [
+            "^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+(?:\\.[a-z0-9]{1,8})?$",
+            "^[a-z][a-z0-9]*(?:\\.[a-z0-9]{1,8})$",
+            "^[A-Z]{2,}\\d{1,6}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(clean.startIndex..., in: clean)
+            return regex.firstMatch(in: clean, range: range) != nil
         }
-        if clean.contains(".") {
-            let ext = clean.split(separator: ".").last.map(String.init)?.lowercased() ?? ""
-            return ["py", "swift", "ts", "tsx", "js", "jsx", "json", "md", "yml", "yaml"].contains(ext)
-        }
+    }
+
+    private static func isLikelyScreenCandidateOCRJunk(_ token: String) -> Bool {
+        let clean = token.trimmingCharacters(in: candidateTrimCharacters)
         let hasLetter = clean.contains { $0.isLetter }
         let hasDigit = clean.contains { $0.isNumber }
-        return hasLetter && hasDigit
+        let hasIdentifierSeparator = clean.contains("_") || clean.contains(".") || clean.contains("/") || clean.contains("-")
+        if hasLetter && hasDigit && !hasIdentifierSeparator {
+            return true
+        }
+        return false
+    }
+
+    private static func isSimpleCapitalizedToken(_ letters: String) -> Bool {
+        guard let first = letters.first, first.isUppercase else { return false }
+        let rest = letters.dropFirst()
+        return letters.count >= 3 && rest.allSatisfy { $0.isLowercase }
+    }
+
+    private static func isTwoPartCamelOrAcronymToken(_ letters: String) -> Bool {
+        let patterns = [
+            "^[A-Z][a-z]{2,}[A-Z][a-z]{2,}$",
+            "^[A-Z][a-z]{2,}[A-Z]{2,4}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(letters.startIndex..., in: letters)
+            return regex.firstMatch(in: letters, range: range) != nil
+        }
     }
 }
