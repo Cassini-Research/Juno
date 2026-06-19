@@ -2677,9 +2677,21 @@ enum JunoShortcutPreference: String, CaseIterable {
     static func applyShortcutSelection(_ newValue: JunoShortcutPreference) {
         let previous = stored
         stored = newValue
-        if (previous == .fn) != (newValue == .fn) {
+        if shouldRestartHotkeyBridge(
+            previous: previous,
+            new: newValue,
+            onboardingCompleted: JunoUserDefaults.onboardingCompleted
+        ) {
             JunoShellRuntime.shared.restartHotkeyBridge()
         }
+    }
+
+    static func shouldRestartHotkeyBridge(
+        previous: JunoShortcutPreference,
+        new: JunoShortcutPreference,
+        onboardingCompleted: Bool
+    ) -> Bool {
+        onboardingCompleted && ((previous == .fn) != (new == .fn))
     }
 
     /// Static note shown when Fn is selected; do not read ``AppleFnUsageType``
@@ -6358,6 +6370,7 @@ final class DictationController: ObservableObject {
 
 final class HotkeyBridge {
     private var task: Process?
+    private var stdoutHandle: FileHandle?
     private let onDown: () -> Void
     private let onUp: () -> Void
     private let onEscape: () -> Void
@@ -6402,10 +6415,11 @@ final class HotkeyBridge {
         )
 
         let stdout = Pipe()
+        let stdoutHandle = stdout.fileHandleForReading
         task.standardOutput = stdout
         task.standardError = Pipe()
 
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdoutHandle.readabilityHandler = { [weak self] handle in
             guard let self else { return }
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
@@ -6481,6 +6495,7 @@ final class HotkeyBridge {
         do {
             try task.run()
             self.task = task
+            self.stdoutHandle = stdoutHandle
             NSLog("Juno: hotkey bridge started shortcut=%@", JunoShortcutPreference.stored.rawValue)
             // Register a stop closure with the runtime singleton so
             // applicationWillTerminate can reach back into this bridge
@@ -6491,13 +6506,21 @@ final class HotkeyBridge {
                 self?.stop()
             }
         } catch {
+            stdoutHandle.readabilityHandler = nil
             NSLog("Juno: hotkey bridge launch failed: \(error.localizedDescription)")
         }
     }
 
     func stop() {
-        task?.terminationHandler = nil
-        task?.terminate()
+        stdoutHandle?.readabilityHandler = nil
+        stdoutHandle = nil
+        if let task {
+            task.terminationHandler = nil
+            if task.isRunning {
+                task.terminate()
+                task.waitUntilExit()
+            }
+        }
         task = nil
     }
 

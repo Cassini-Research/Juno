@@ -97,14 +97,15 @@ public enum JunoFnGlobeKeyPolicy {
 
     public static func decide(flags: CGEventFlags, fnWasHeld: Bool) -> Outcome {
         let fnDown = flags.contains(.maskSecondaryFn)
+        if !fnDown, fnWasHeld {
+            let consume = flags.intersection(otherModifiers).isEmpty
+            return Outcome(decision: Decision(edge: .up, consume: consume), fnNowHeld: false)
+        }
         if !flags.intersection(otherModifiers).isEmpty {
             return Outcome(decision: .none, fnNowHeld: fnWasHeld)
         }
         if fnDown, !fnWasHeld {
             return Outcome(decision: Decision(edge: .down, consume: true), fnNowHeld: true)
-        }
-        if !fnDown, fnWasHeld {
-            return Outcome(decision: Decision(edge: .up, consume: true), fnNowHeld: false)
         }
         return Outcome(decision: .none, fnNowHeld: fnDown)
     }

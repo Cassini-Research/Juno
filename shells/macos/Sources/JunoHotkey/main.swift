@@ -65,6 +65,18 @@ var fnEventTap: CFMachPort?
 var fnTapReEnableAttempts = 0
 let maxFnTapReEnableAttempts = 3
 
+func fallBackToPassiveFnMonitor() {
+    if let tap = fnEventTap {
+        CFMachPortInvalidate(tap)
+    }
+    fnEventTap = nil
+    fnTapHeld = false
+    fnHeld = false
+    fnTapReEnableAttempts = 0
+    consumeFnViaEventTap = false
+    emit("HOTKEY_DEGRADED:fntap")
+}
+
 func setupFnConsumeEventTap() -> Bool {
     let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
 
@@ -73,6 +85,8 @@ func setupFnConsumeEventTap() -> Bool {
             fnTapReEnableAttempts += 1
             if fnTapReEnableAttempts <= maxFnTapReEnableAttempts, let tap = fnEventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+            } else {
+                fallBackToPassiveFnMonitor()
             }
             return Unmanaged.passUnretained(event)
         }
@@ -107,10 +121,11 @@ func setupFnConsumeEventTap() -> Bool {
         return false
     }
 
-    fnEventTap = tap
     guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+        CFMachPortInvalidate(tap)
         return false
     }
+    fnEventTap = tap
     CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     CGEvent.tapEnable(tap: tap, enable: true)
     return true

@@ -109,13 +109,31 @@ final class JunoHotkeyCoreTests: XCTestCase {
         XCTAssertEqual(JunoFnGlobeKeyPolicy.stdoutLine(for: outcome.decision.edge), "FN_UP")
     }
 
-    func testFnGlobeWithCommandPassesThrough() {
-        let outcome = JunoFnGlobeKeyPolicy.decide(
-            flags: [.maskSecondaryFn, .maskCommand],
-            fnWasHeld: false
+    func testFnGlobeWithOtherModifierPassesThrough() {
+        for modifier: CGEventFlags in [.maskCommand, .maskAlternate, .maskControl, .maskShift] {
+            let outcome = JunoFnGlobeKeyPolicy.decide(
+                flags: [.maskSecondaryFn, modifier],
+                fnWasHeld: false
+            )
+            XCTAssertEqual(outcome.decision, .none)
+            XCTAssertFalse(outcome.fnNowHeld)
+        }
+    }
+
+    func testFnGlobeReleaseWithOtherModifierEmitsUpButPassesThrough() {
+        let down = JunoFnGlobeKeyPolicy.decide(flags: .maskSecondaryFn, fnWasHeld: false)
+        let releasedWithCommand = JunoFnGlobeKeyPolicy.decide(
+            flags: .maskCommand,
+            fnWasHeld: down.fnNowHeld
         )
-        XCTAssertEqual(outcome.decision, .none)
-        XCTAssertFalse(outcome.fnNowHeld)
+
+        XCTAssertEqual(releasedWithCommand.decision.edge, .up)
+        XCTAssertFalse(releasedWithCommand.decision.consume)
+        XCTAssertFalse(releasedWithCommand.fnNowHeld)
+
+        let commandRelease = JunoFnGlobeKeyPolicy.decide(flags: [], fnWasHeld: releasedWithCommand.fnNowHeld)
+        XCTAssertEqual(commandRelease.decision, .none)
+        XCTAssertFalse(commandRelease.fnNowHeld)
     }
 
     func testFnGlobeNoChangeIsNoOp() {
@@ -130,5 +148,9 @@ final class JunoHotkeyCoreTests: XCTestCase {
             [JunoFnGlobeKeyPolicy.consumeFnLaunchFlag]
         )
         XCTAssertTrue(JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(consumeFn: false).isEmpty)
+    }
+
+    func testFnGlobeNoEdgeHasNoStdoutLine() {
+        XCTAssertNil(JunoFnGlobeKeyPolicy.stdoutLine(for: .none))
     }
 }
