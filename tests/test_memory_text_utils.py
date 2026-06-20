@@ -368,6 +368,46 @@ def test_collapse_single_token_suffix_after_real_sentence() -> None:
     assert diag.removed_words == 30
 
 
+def test_collapse_noisy_low_entropy_suffix_after_sentence_boundary() -> None:
+    text = (
+        "Hey, Juno. We want to work on few things. New paragraph. "
+        "Fix existing issues. New paragraph. Audit the current code. New paragraph. "
+        "This is what we have to do. New paragraph. "
+        "Will you help me to do it all this thing? "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because satisfaction because satisfaction satisfaction "
+        "because satisfaction satisfaction satisfaction satisfaction satisfaction "
+        "satisfaction satisfaction"
+    )
+
+    cleaned, diag = collapse_tail_repetition(text, audio_duration_ms=29354)
+
+    assert cleaned == (
+        "Hey, Juno. We want to work on few things. New paragraph. "
+        "Fix existing issues. New paragraph. Audit the current code. New paragraph. "
+        "This is what we have to do. New paragraph. "
+        "Will you help me to do it all this thing?"
+    )
+    assert diag.collapsed
+    assert diag.reason == "low_entropy_repetition_tail_collapsed"
+    assert diag.repeated_token == "satisfaction"
+    assert diag.removed_words == 42
+
+
+def test_collapse_low_entropy_suffix_requires_complete_sentence_boundary() -> None:
+    text = (
+        "Please keep this exact sequence red blue red blue red blue red blue "
+        "red blue red blue red blue red blue red blue"
+    )
+
+    cleaned, diag = collapse_tail_repetition(text, audio_duration_ms=29354)
+
+    assert cleaned == text
+    assert not diag.collapsed
+
+
 def test_collapse_spares_intentional_short_emphasis() -> None:
     # All-same-token utterance without a substantive prefix: not ours.
     text = "yes yes yes yes yes yes yes"
