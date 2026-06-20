@@ -21,7 +21,7 @@
 //   HOTKEY_DEGRADED:<which>          — a monitor failed to install
 //
 // When launched with ``--consume-fn``, bare Fn/Globe ``flagsChanged`` events are
-// consumed via a session-level CGEventTap so macOS does not open the emoji
+// consumed via a HID-level CGEventTap so macOS does not open the emoji
 // picker. JunoShell passes that flag only when Fn is the user's dictation key.
 
 import Cocoa
@@ -111,7 +111,7 @@ func setupFnConsumeEventTap() -> Bool {
     }
 
     guard let tap = CGEvent.tapCreate(
-        tap: .cgSessionEventTap,
+        tap: .cghidEventTap,
         place: .headInsertEventTap,
         options: .defaultTap,
         eventsOfInterest: eventMask,
