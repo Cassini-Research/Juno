@@ -396,7 +396,7 @@ enum JunoLocalCapability {
         return CFGetTypeID(v) == AXValueGetTypeID()
     }
 
-    private static func knownPasteCentricAppAllowsFallback(bundleId: String?, role: String?) -> Bool {
+    static func knownPasteCentricAppAllowsFallback(bundleId: String?, role: String?) -> Bool {
         guard let bundleId = bundleId?.lowercased(), knownPasteCentricBundleIds.contains(bundleId) else {
             return false
         }
@@ -407,8 +407,12 @@ enum JunoLocalCapability {
     }
 
     private static let knownPasteCentricBundleIds: Set<String> = [
+        "com.apple.terminal",
         "com.apple.notes",
         "com.apple.textedit",
+        "com.googlecode.iterm2",
+        "com.mitchellh.ghostty",
+        "dev.warp.warp-stable",
     ]
 
     private struct PasteboardItemSnapshot {

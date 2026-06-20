@@ -2645,6 +2645,230 @@ enum JunoShortcutPreference: String, CaseIterable {
         case .controlSpace: return "Control + Space"
         }
     }
+
+    /// Single entry when the user picks a dictation shortcut (onboarding or settings).
+    static func applyShortcutSelection(_ newValue: JunoShortcutPreference) {
+        let previous = stored
+        stored = newValue
+        JunoFnGlobeSystemActionPreference.apply(shortcut: newValue)
+        if shouldRestartHotkeyBridge(
+            previous: previous,
+            new: newValue,
+            onboardingCompleted: JunoUserDefaults.onboardingCompleted
+        ) {
+            JunoShellRuntime.shared.restartHotkeyBridge()
+        }
+    }
+
+    static func shouldRestartHotkeyBridge(
+        previous: JunoShortcutPreference,
+        new: JunoShortcutPreference,
+        onboardingCompleted: Bool
+    ) -> Bool {
+        onboardingCompleted && ((previous == .fn) != (new == .fn))
+    }
+
+    /// Static note shown when Fn is selected.
+    static let fnGlobeConflictNote =
+        "Juno sets System Settings → Keyboard → Press the Globe key to → Do Nothing while Fn is selected, then restores your previous setting if you switch away."
+}
+
+enum JunoFnGlobeSystemActionPreference {
+    struct Backup: Equatable {
+        let wasPresent: Bool
+        let value: Int?
+    }
+
+    enum Action: Equatable {
+        case none
+        case disableEmoji(backup: Backup?)
+        case restore(value: Int?)
+    }
+
+    private static let hitoolboxDomain = "com.apple.HIToolbox" as CFString
+    private static let fnUsageKey = "AppleFnUsageType" as CFString
+    private static let doNothing = 0
+    private static let reloadGeneration = 1
+
+    private static let didOverrideKey = "JunoFnGlobeDidOverrideAppleFnUsageType"
+    private static let backupWasPresentKey = "JunoFnGlobeBackupAppleFnUsageTypeWasPresent"
+    private static let backupValueKey = "JunoFnGlobeBackupAppleFnUsageTypeValue"
+    private static let reloadGenerationKey = "JunoFnGlobeSystemActionReloadGeneration"
+
+    static func apply(shortcut: JunoShortcutPreference) {
+        let defaults = UserDefaults.standard
+        let currentValue = currentSystemValue()
+        let didOverride = defaults.bool(forKey: didOverrideKey)
+        if shouldRefreshExistingOverride(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            lastReloadGeneration: defaults.integer(forKey: reloadGenerationKey)
+        ) {
+            reloadTextInputAgents()
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: refreshed text input agents for existing Globe/Fn Do Nothing override")
+        }
+
+        let backupWasPresent = defaults.object(forKey: backupWasPresentKey) as? Bool ?? false
+        let backupValue = (defaults.object(forKey: backupValueKey) as? NSNumber)?.intValue
+        let action = plannedAction(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            backupWasPresent: backupWasPresent,
+            backupValue: backupValue
+        )
+
+        switch action {
+        case .none:
+            return
+        case .disableEmoji(let backup):
+            if let backup {
+                defaults.set(backup.wasPresent, forKey: backupWasPresentKey)
+                if let value = backup.value {
+                    defaults.set(value, forKey: backupValueKey)
+                } else {
+                    defaults.removeObject(forKey: backupValueKey)
+                }
+            }
+            setSystemValue(doNothing)
+            reloadTextInputAgents()
+            defaults.set(true, forKey: didOverrideKey)
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: set Globe/Fn system action to Do Nothing for Fn shortcut")
+        case .restore(let value):
+            setSystemValue(value)
+            reloadTextInputAgents()
+            clearBackup(defaults: defaults)
+            defaults.synchronize()
+            NSLog("Juno: restored previous Globe/Fn system action after leaving Fn shortcut")
+        }
+    }
+
+    static func plannedAction(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        backupWasPresent: Bool,
+        backupValue: Int?
+    ) -> Action {
+        if shortcut == .fn {
+            guard currentValue != doNothing else { return .none }
+            if didOverride {
+                return .disableEmoji(backup: nil)
+            }
+            return .disableEmoji(backup: Backup(wasPresent: currentValue != nil, value: currentValue))
+        }
+
+        guard didOverride else { return .none }
+        return .restore(value: backupWasPresent ? backupValue : nil)
+    }
+
+    static func shouldRefreshExistingOverride(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        lastReloadGeneration: Int
+    ) -> Bool {
+        shortcut == .fn
+            && currentValue == doNothing
+            && didOverride
+            && lastReloadGeneration < reloadGeneration
+    }
+
+    private static func currentSystemValue() -> Int? {
+        guard let raw = CFPreferencesCopyValue(
+            fnUsageKey,
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ) else {
+            return nil
+        }
+        if let number = raw as? NSNumber {
+            return number.intValue
+        }
+        if let string = raw as? String {
+            return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func setSystemValue(_ value: Int?) {
+        if let value {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                NSNumber(value: value),
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        } else {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                nil,
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        }
+        CFPreferencesSynchronize(
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+    }
+
+    private static func reloadTextInputAgents() {
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: ["-x", "TextInputMenuAgent"],
+            label: "TextInputMenuAgent"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-x",
+                "TextInputSwitcher",
+            ],
+            label: "TextInputSwitcher"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-f",
+                "CharacterPicker.framework/.*/com.apple.CharacterPicker.FileService",
+            ],
+            label: "CharacterPicker.FileService"
+        )
+    }
+
+    private static func runAndWait(executable: String, arguments: [String], label: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        do {
+            try task.run()
+            task.waitUntilExit()
+            if task.terminationStatus != 0 && task.terminationStatus != 1 {
+                NSLog("Juno: %@ reload exited with status %d after Globe/Fn system action change", label, task.terminationStatus)
+            }
+        } catch {
+            NSLog("Juno: failed to reload %@ after Globe/Fn system action change: %@", label, error.localizedDescription)
+        }
+    }
+
+    private static func clearBackup(defaults: UserDefaults) {
+        defaults.removeObject(forKey: didOverrideKey)
+        defaults.removeObject(forKey: backupWasPresentKey)
+        defaults.removeObject(forKey: backupValueKey)
+        defaults.removeObject(forKey: reloadGenerationKey)
+    }
 }
 
 // MARK: - Audio buffer RMS helper
@@ -6325,6 +6549,7 @@ final class DictationController: ObservableObject {
 
 final class HotkeyBridge {
     private var task: Process?
+    private var stdoutHandle: FileHandle?
     private let onDown: () -> Void
     private let onUp: () -> Void
     private let onEscape: () -> Void
@@ -6364,12 +6589,16 @@ final class HotkeyBridge {
         }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
+        task.arguments = JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(
+            consumeFn: JunoShortcutPreference.stored == .fn
+        )
 
         let stdout = Pipe()
+        let stdoutHandle = stdout.fileHandleForReading
         task.standardOutput = stdout
         task.standardError = Pipe()
 
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdoutHandle.readabilityHandler = { [weak self] handle in
             guard let self else { return }
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
@@ -6445,6 +6674,7 @@ final class HotkeyBridge {
         do {
             try task.run()
             self.task = task
+            self.stdoutHandle = stdoutHandle
             NSLog("Juno: hotkey bridge started shortcut=%@", JunoShortcutPreference.stored.rawValue)
             // Register a stop closure with the runtime singleton so
             // applicationWillTerminate can reach back into this bridge
@@ -6455,14 +6685,27 @@ final class HotkeyBridge {
                 self?.stop()
             }
         } catch {
+            stdoutHandle.readabilityHandler = nil
             NSLog("Juno: hotkey bridge launch failed: \(error.localizedDescription)")
         }
     }
 
     func stop() {
-        task?.terminationHandler = nil
-        task?.terminate()
+        stdoutHandle?.readabilityHandler = nil
+        stdoutHandle = nil
+        if let task {
+            task.terminationHandler = nil
+            if task.isRunning {
+                task.terminate()
+                task.waitUntilExit()
+            }
+        }
         task = nil
+    }
+
+    func restart() {
+        stop()
+        start()
     }
 
     private func isDownEvent(_ line: String, shortcut: JunoShortcutPreference) -> Bool {
@@ -6548,6 +6791,7 @@ struct JunoShellApp: App {
         JunoFreshInstallGuard.runOnce()
         JunoLegacyDefaultsMigration.runOnce()
         JunoUserDefaults.migrateWhisperPreviewDefaults()
+        JunoFnGlobeSystemActionPreference.apply(shortcut: JunoShortcutPreference.stored)
         JunoLocalAppLogTee.installIfEnabled()
         JunoSingleInstance.exitIfAlreadyRunning()
         JunoTargetApplicationTracker.shared.start()
@@ -6595,6 +6839,9 @@ struct JunoShellApp: App {
         let hotkeyBridge = self.hotkey
         JunoShellRuntime.shared.startHotkeyBridge = {
             hotkeyBridge.start()
+        }
+        JunoShellRuntime.shared.restartHotkeyBridge = {
+            hotkeyBridge.restart()
         }
         if JunoUserDefaults.onboardingCompleted {
             hotkeyBridge.start()
@@ -7353,6 +7600,8 @@ final class JunoShellRuntime {
     /// Keeping them out of the first-run text-entry flow prevents app-level
     /// key monitors from sitting in front of the onboarding name field.
     var startHotkeyBridge: () -> Void = {}
+    /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
+    var restartHotkeyBridge: () -> Void = {}
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).

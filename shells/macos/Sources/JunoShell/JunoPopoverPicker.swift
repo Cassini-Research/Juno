@@ -78,15 +78,32 @@ private struct JunoPopoverPickerRow<Leading: View, Accessory: View>: View {
     let title: String
     let subtitle: String?
     let isSelected: Bool
+    let leadingWidth: CGFloat
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var accessory: () -> Accessory
 
     @Environment(\.colorScheme) private var scheme
 
+    init(
+        title: String,
+        subtitle: String?,
+        isSelected: Bool,
+        leadingWidth: CGFloat = 28,
+        @ViewBuilder leading: @escaping () -> Leading,
+        @ViewBuilder accessory: @escaping () -> Accessory
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.isSelected = isSelected
+        self.leadingWidth = leadingWidth
+        self.leading = leading
+        self.accessory = accessory
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             leading()
-                .frame(width: 28, alignment: .center)
+                .frame(width: leadingWidth, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -117,11 +134,13 @@ extension JunoPopoverPickerRow where Accessory == EmptyView {
         title: String,
         subtitle: String?,
         isSelected: Bool,
+        leadingWidth: CGFloat = 28,
         @ViewBuilder leading: @escaping () -> Leading
     ) {
         self.title = title
         self.subtitle = subtitle
         self.isSelected = isSelected
+        self.leadingWidth = leadingWidth
         self.leading = leading
         self.accessory = { EmptyView() }
     }
@@ -420,9 +439,10 @@ struct ShortcutPopoverPicker: View {
                             title: pref.displayName,
                             subtitle: nil,
                             isSelected: selection == pref,
+                            leadingWidth: 88,
                             leading: {
                                 JunoInlineKeycapStrip(labels: junoInlineKeycapLabels(for: pref))
-                                    .frame(minWidth: 80, alignment: .leading)
+                                    .frame(width: 88, alignment: .leading)
                             },
                             accessory: {
                                 Group {

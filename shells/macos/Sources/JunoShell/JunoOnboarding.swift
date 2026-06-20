@@ -628,7 +628,7 @@ private struct OnboardingActivationStep: View {
         let isSelected = selected == pref
         return Button {
             selected = pref
-            JunoShortcutPreference.stored = pref
+            JunoShortcutPreference.applyShortcutSelection(pref)
         } label: {
             HStack(spacing: 12) {
                 ZStack {
@@ -692,7 +692,7 @@ private struct OnboardingActivationStep: View {
     /// flag the trade-off so they're not surprised.
     private func conflictNote(for pref: JunoShortcutPreference) -> String? {
         switch pref {
-        case .fn: return nil
+        case .fn: return "May still conflict with emoji picker"
         case .rightCommand, .rightOption: return nil
         case .optionSpace: return "May overlap with Spotlight alternatives"
         case .controlSpace: return "Often used by input switchers"
