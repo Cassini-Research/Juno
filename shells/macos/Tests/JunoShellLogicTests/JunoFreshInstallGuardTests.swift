@@ -6,11 +6,6 @@
 // system dialog — that requires requestAccess / AXIsProcessTrustedWithOptions
 // with the prompt option).
 //
-// Note: with currentOnboardingRequirementsVersion == 2, the
-// "completedRequirements < currentRequirements" reset branch is unreachable
-// (any stored version <= 0 is caught by the predate-marker branch first),
-// so only the reachable branches are exercised.
-
 import XCTest
 @testable import JunoShell
 
@@ -55,6 +50,21 @@ final class JunoFreshInstallGuardTests: JunoDefaultsRestoringTestCase {
         XCTAssertEqual(JunoUserDefaults.dictationCompletedCount, 1)
     }
 
+    func testOlderRequirementsVersionResetsOnboarding() {
+        UserDefaults.standard.set(true, forKey: JunoUserDefaults.onboardingCompletedKey)
+        JunoUserDefaults.onboardingRequirementsVersion =
+            JunoUserDefaults.currentOnboardingRequirementsVersion - 1
+        JunoUserDefaults.actionsEnabled = true
+        JunoUserDefaults.incrementDictationCompletedCount()
+
+        JunoFreshInstallGuard.runOnce()
+
+        XCTAssertFalse(JunoUserDefaults.onboardingCompleted)
+        XCTAssertEqual(JunoUserDefaults.onboardingRequirementsVersion, 0)
+        XCTAssertEqual(JunoUserDefaults.dictationCompletedCount, 0)
+        XCTAssertNil(UserDefaults.standard.object(forKey: JunoUserDefaults.actionsEnabledKey))
+    }
+
     func testFutureVersionStampIsLeftAlone() {
         // A downgrade scenario: stored version is newer than this build's.
         UserDefaults.standard.set(true, forKey: JunoUserDefaults.onboardingCompletedKey)
@@ -78,12 +88,15 @@ final class JunoSystemRequirementsTests: XCTestCase {
         JunoSystemRequirements.Snapshot(osMajorVersion: os, memoryGB: gb, chipName: chip)
     }
 
-    func testHardOSFloorAndSoftMemoryFloor() {
+    func testHardOSAndMemoryFloors() {
         let ok = snapshot(os: 15, gb: 24)
         XCTAssertTrue(ok.meetsMinimumOS)
         XCTAssertTrue(ok.meetsMinimumMemory)
         XCTAssertTrue(ok.meetsAllRequirements)
         XCTAssertNil(ok.unsupportedOSMessage)
+        XCTAssertNil(ok.unsupportedMemoryMessage)
+        XCTAssertNil(ok.unsupportedRequirementsMessage)
+        XCTAssertNil(ok.unsupportedRequirementsTitle)
         XCTAssertNil(ok.onboardingWarningMessage)
 
         // OS below Sequoia → hard-block message, regardless of memory.
@@ -91,19 +104,23 @@ final class JunoSystemRequirementsTests: XCTestCase {
         XCTAssertFalse(oldOS.meetsMinimumOS)
         XCTAssertFalse(oldOS.meetsAllRequirements)
         XCTAssertNotNil(oldOS.unsupportedOSMessage)
-        // OS-too-old is a hard block, never surfaced as a soft onboarding warning.
+        XCTAssertEqual(oldOS.unsupportedRequirementsMessage, oldOS.unsupportedOSMessage)
+        XCTAssertEqual(oldOS.unsupportedRequirementsTitle, "macOS Sequoia or newer required")
         XCTAssertNil(oldOS.onboardingWarningMessage)
 
-        // Supported OS but below the memory floor → soft warning, no block.
+        // Supported OS but below the memory floor → hard launch block.
         let lowRAM = snapshot(os: 15, gb: 8)
         XCTAssertTrue(lowRAM.meetsMinimumOS)
         XCTAssertFalse(lowRAM.meetsMinimumMemory)
         XCTAssertFalse(lowRAM.meetsAllRequirements)
         XCTAssertNil(lowRAM.unsupportedOSMessage)
         XCTAssertEqual(
-            lowRAM.onboardingWarningMessage,
-            "Juno runs best on Macs with at least 24 GB of memory. This Mac has 8 GB, so dictation and live preview may be slow."
+            lowRAM.unsupportedMemoryMessage,
+            "Juno requires at least 24 GB of memory. This Mac has 8 GB."
         )
+        XCTAssertEqual(lowRAM.unsupportedRequirementsMessage, lowRAM.unsupportedMemoryMessage)
+        XCTAssertEqual(lowRAM.unsupportedRequirementsTitle, "24 GB memory required")
+        XCTAssertNil(lowRAM.onboardingWarningMessage)
     }
 
     func testAppleChipGenerationParsing() {
@@ -118,38 +135,34 @@ final class JunoSystemRequirementsTests: XCTestCase {
 }
 
 // MARK: - JunoPreviewEligibility pure logic
-// (gates hudLiveTranscriptionsEnabled — preview follows the hard OS floor;
-// memory is warning-only.)
+// (gates hudLiveTranscriptionsEnabled — preview follows hard launch floors.)
 
 final class JunoPreviewEligibilityTests: XCTestCase {
     private func snapshot(os: Int, gb: Int, chip: String = "Apple M3") -> JunoPreviewEligibility.Snapshot {
         JunoPreviewEligibility.Snapshot(osMajorVersion: os, memoryGB: gb, chipName: chip)
     }
 
-    func testEligibilityRequiresSequoiaOnly() {
-        XCTAssertTrue(snapshot(os: 15, gb: 16).isEligible)
-        XCTAssertTrue(snapshot(os: 15, gb: 8).isEligible)    // memory is warning-only
+    func testEligibilityRequiresLaunchRequirements() {
+        XCTAssertTrue(snapshot(os: 15, gb: 24).isEligible)
+        XCTAssertFalse(snapshot(os: 15, gb: 8).isEligible)   // memory too low
         XCTAssertTrue(snapshot(os: 26, gb: 64).isEligible)
         XCTAssertFalse(snapshot(os: 14, gb: 64).isEligible)  // OS too old
     }
 
-    func testUnavailableMessageForUnsupportedOS() {
+    func testUnavailableMessageForUnsupportedRequirements() {
         let low = snapshot(os: 15, gb: 8)
-        XCTAssertNil(low.unavailableMessage)
+        XCTAssertEqual(low.unavailableMessage, "Live preview isn’t available on this Mac.")
         XCTAssertEqual(snapshot(os: 14, gb: 64).unavailableMessage, "Live preview isn’t available on this Mac.")
-        XCTAssertNil(snapshot(os: 15, gb: 16).unavailableMessage)
+        XCTAssertNil(snapshot(os: 15, gb: 24).unavailableMessage)
     }
 
     func testWarningMessageNearMemoryFloor() {
         XCTAssertEqual(
-            snapshot(os: 15, gb: 8).warningMessage,
-            "Live preview can slow final transcription on 8 GB Macs."
-        )
-        XCTAssertEqual(
-            snapshot(os: 15, gb: 16).warningMessage,
-            "Live preview can slow final transcription on 16 GB Macs."
+            snapshot(os: 15, gb: 24).warningMessage,
+            "Live preview can slow final transcription on 24 GB Macs."
         )
         XCTAssertNil(snapshot(os: 15, gb: 64).warningMessage)  // ample memory
-        XCTAssertNil(snapshot(os: 14, gb: 16).warningMessage)  // ineligible → no warning
+        XCTAssertNil(snapshot(os: 15, gb: 8).warningMessage)   // ineligible → no warning
+        XCTAssertNil(snapshot(os: 14, gb: 24).warningMessage)  // ineligible → no warning
     }
 }

@@ -331,8 +331,8 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
 
     func testHudLiveTranscriptionsDefaultMatchesEligibility() {
         // On first run (key unset) the preview default follows preview
-        // eligibility. Memory is warning-only; the eligibility gate is the
-        // supported macOS floor. Machine-independent assertion.
+        // eligibility, which mirrors Juno's hard launch requirements.
+        // Machine-independent assertion.
         XCTAssertEqual(
             JunoUserDefaults.hudLiveTranscriptionsEnabled,
             JunoPreviewEligibility.current.isEligible

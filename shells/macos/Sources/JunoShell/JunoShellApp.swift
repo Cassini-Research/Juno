@@ -6822,10 +6822,10 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
-        // Hard OS floor must run before app-owned helpers, polling, overlays,
+        // Hard launch requirements must run before app-owned helpers, polling, overlays,
         // or update checks start. `applicationDidFinishLaunching` keeps a
         // no-op safety check, but this is the real preflight gate.
-        JunoSystemRequirements.enforceMinimumOSOrTerminate()
+        JunoSystemRequirements.enforceMinimumRequirementsOrTerminate()
         // **Run BEFORE legacy-defaults migration.** If the install was
         // re-run (TCC wiped) but the prefs plist still says
         // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
@@ -7741,7 +7741,7 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Defensive no-op on supported systems. The real preflight gate runs
         // in `JunoShellApp.init` before helpers / polling / onboarding start.
-        JunoSystemRequirements.enforceMinimumOSOrTerminate()
+        JunoSystemRequirements.enforceMinimumRequirementsOrTerminate()
         registerOpenWindowNotificationsIfNeeded()
         JunoDockVisibility.applyCurrent()
         if JunoClickDeliveryProbe.isRequested {
