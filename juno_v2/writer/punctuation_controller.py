@@ -36,6 +36,8 @@ _PERSONAL_SUBJECTS = {
 _DEMONSTRATIVE_SUBJECTS = {"it", "this", "that", "these", "those"}
 _QUESTION_SUBJECTS = _PERSONAL_SUBJECTS | _DEMONSTRATIVE_SUBJECTS
 _WH_NOUN_BRIDGES = {
+    "branch", "build", "command", "commit", "file", "model", "option", "pr",
+    "release", "repo", "repository", "setting", "version",
     "day", "date", "kind", "name", "number", "one", "part", "place",
     "reason", "time", "type",
 }
@@ -180,7 +182,8 @@ def _wh_starts_question(words: list[str]) -> bool:
 
 
 def _looks_like_structured_text(text: str) -> bool:
+    markers = re.findall(r"(?:^|\s)(?:[-*•]|\d+[.)]|[a-z][.)])\s+", text, re.IGNORECASE)
     return bool(
         re.search(r"^\s*(?:[-*•]|\d+[.)]|[a-z][.)])\s+", text, re.IGNORECASE)
-        or re.search(r"\s(?:[-*•]|\d+[.)]|[a-z][.)])\s+", text, re.IGNORECASE)
+        or len(markers) >= 2
     )

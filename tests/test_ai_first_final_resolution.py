@@ -1711,6 +1711,11 @@ def test_explicit_snippet_insert_commits_body_without_final_formatting() -> None
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
     assert result.output_text == "Customer Follow-Up\nContext:\nPain:\nNext step:\nOwner:\nDeadline:"
     assert result.metadata["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
+    assert result.metadata["punctuation_floor"] == {
+        "changed": False,
+        "rules_applied": [],
+        "skip_reason": "snippet_expanded",
+    }
 
 
 def test_oneshot_response_exposes_snippet_expanded_metadata() -> None:
@@ -1762,6 +1767,11 @@ def test_oneshot_response_exposes_snippet_expanded_metadata() -> None:
     assert writer_meta["snippet_expanded"] is True
     assert payload["metadata"]["snippet_expanded"] is True
     assert writer_meta["dictation_cleanup"]["pipeline"] == "snippet_direct_insert"
+    assert writer_meta["punctuation_floor"] == {
+        "changed": False,
+        "rules_applied": [],
+        "skip_reason": "snippet_expanded",
+    }
 
 
 def test_recent_transform_command_uses_recent_clipboard_in_default_mode() -> None:

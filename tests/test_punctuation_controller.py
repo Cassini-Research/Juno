@@ -69,6 +69,45 @@ def test_keeps_question_marks_for_clear_question_shapes() -> None:
         assert result.rules_applied == ["terminal_question"]
 
 
+def test_keeps_question_marks_for_technical_noun_bridge_questions() -> None:
+    cases = [
+        "what version should we use",
+        "what branch should I use",
+        "what file did you change",
+        "which model should we use",
+        "which repo should this target",
+        "what PR did you update",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + "?"
+        assert result.changed is True
+        assert result.rules_applied == ["terminal_question"]
+
+
+def test_inline_marker_shaped_prose_still_gets_terminal_period() -> None:
+    cases = [
+        "option a. should remain available",
+        "version 1. 2 should be safe",
+        "this includes b) as a literal marker",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + "."
+        assert result.changed is True
+        assert result.rules_applied == ["terminal_period"]
+
+
+def test_skips_single_line_structured_marker_sequences() -> None:
+    result = _apply("1. first item 2. second item")
+
+    assert result.text == "1. first item 2. second item"
+    assert result.changed is False
+    assert result.skip_reason == "structured_text"
+
+
 def test_skips_short_command_shaped_utterances() -> None:
     result = _apply("new paragraph")
 

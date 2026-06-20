@@ -948,6 +948,11 @@ class WriterService:
                             **snippet_meta,
                         },
                         'grammar_postpass': None,
+                        'punctuation_floor': {
+                            'changed': False,
+                            'rules_applied': [],
+                            'skip_reason': 'snippet_expanded',
+                        },
                     },
                 ))
             # Snippet expansion: expand user-defined triggers (e.g. ``brb`` ->

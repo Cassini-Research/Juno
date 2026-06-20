@@ -2353,6 +2353,7 @@ class OneShotDictationPipeline:
                 "snippet_expanded",
                 "dictation_cleanup",
                 "grammar_postpass",
+                "punctuation_floor",
                 "transform_kind",
                 "reason",
                 "structure",
