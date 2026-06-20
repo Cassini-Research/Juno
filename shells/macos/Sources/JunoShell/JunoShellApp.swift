@@ -2715,19 +2715,35 @@ enum JunoFnGlobeSystemActionPreference {
     private static let hitoolboxDomain = "com.apple.HIToolbox" as CFString
     private static let fnUsageKey = "AppleFnUsageType" as CFString
     private static let doNothing = 0
+    private static let reloadGeneration = 1
 
     private static let didOverrideKey = "JunoFnGlobeDidOverrideAppleFnUsageType"
     private static let backupWasPresentKey = "JunoFnGlobeBackupAppleFnUsageTypeWasPresent"
     private static let backupValueKey = "JunoFnGlobeBackupAppleFnUsageTypeValue"
+    private static let reloadGenerationKey = "JunoFnGlobeSystemActionReloadGeneration"
 
     static func apply(shortcut: JunoShortcutPreference) {
         let defaults = UserDefaults.standard
+        let currentValue = currentSystemValue()
+        let didOverride = defaults.bool(forKey: didOverrideKey)
+        if shouldRefreshExistingOverride(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            lastReloadGeneration: defaults.integer(forKey: reloadGenerationKey)
+        ) {
+            reloadTextInputAgents()
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: refreshed text input agents for existing Globe/Fn Do Nothing override")
+        }
+
         let backupWasPresent = defaults.object(forKey: backupWasPresentKey) as? Bool ?? false
         let backupValue = (defaults.object(forKey: backupValueKey) as? NSNumber)?.intValue
         let action = plannedAction(
             shortcut: shortcut,
-            currentValue: currentSystemValue(),
-            didOverride: defaults.bool(forKey: didOverrideKey),
+            currentValue: currentValue,
+            didOverride: didOverride,
             backupWasPresent: backupWasPresent,
             backupValue: backupValue
         )
@@ -2747,6 +2763,7 @@ enum JunoFnGlobeSystemActionPreference {
             setSystemValue(doNothing)
             reloadTextInputAgents()
             defaults.set(true, forKey: didOverrideKey)
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
             defaults.synchronize()
             NSLog("Juno: set Globe/Fn system action to Do Nothing for Fn shortcut")
         case .restore(let value):
@@ -2775,6 +2792,18 @@ enum JunoFnGlobeSystemActionPreference {
 
         guard didOverride else { return .none }
         return .restore(value: backupWasPresent ? backupValue : nil)
+    }
+
+    static func shouldRefreshExistingOverride(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        lastReloadGeneration: Int
+    ) -> Bool {
+        shortcut == .fn
+            && currentValue == doNothing
+            && didOverride
+            && lastReloadGeneration < reloadGeneration
     }
 
     private static func currentSystemValue() -> Int? {
@@ -2821,16 +2850,43 @@ enum JunoFnGlobeSystemActionPreference {
     }
 
     private static func reloadTextInputAgents() {
-        for processName in ["TextInputMenuAgent", "TextInputSwitcher"] {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            task.arguments = ["-x", processName]
-            do {
-                try task.run()
-                task.waitUntilExit()
-            } catch {
-                NSLog("Juno: failed to restart %@ after Globe/Fn system action change: %@", processName, error.localizedDescription)
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: ["-x", "TextInputMenuAgent"],
+            label: "TextInputMenuAgent"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-x",
+                "TextInputSwitcher",
+            ],
+            label: "TextInputSwitcher"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-f",
+                "CharacterPicker.framework/.*/com.apple.CharacterPicker.FileService",
+            ],
+            label: "CharacterPicker.FileService"
+        )
+    }
+
+    private static func runAndWait(executable: String, arguments: [String], label: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        do {
+            try task.run()
+            task.waitUntilExit()
+            if task.terminationStatus != 0 && task.terminationStatus != 1 {
+                NSLog("Juno: %@ reload exited with status %d after Globe/Fn system action change", label, task.terminationStatus)
             }
+        } catch {
+            NSLog("Juno: failed to reload %@ after Globe/Fn system action change: %@", label, error.localizedDescription)
         }
     }
 
@@ -2838,6 +2894,7 @@ enum JunoFnGlobeSystemActionPreference {
         defaults.removeObject(forKey: didOverrideKey)
         defaults.removeObject(forKey: backupWasPresentKey)
         defaults.removeObject(forKey: backupValueKey)
+        defaults.removeObject(forKey: reloadGenerationKey)
     }
 }
 

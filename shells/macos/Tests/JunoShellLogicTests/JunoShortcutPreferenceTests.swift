@@ -123,4 +123,41 @@ final class JunoShortcutPreferenceTests: XCTestCase {
             .none
         )
     }
+
+    func testExistingFnOverrideRefreshesAgentsOnceAfterUpgrade() {
+        XCTAssertTrue(JunoFnGlobeSystemActionPreference.shouldRefreshExistingOverride(
+            shortcut: .fn,
+            currentValue: 0,
+            didOverride: true,
+            lastReloadGeneration: 0
+        ))
+
+        XCTAssertFalse(JunoFnGlobeSystemActionPreference.shouldRefreshExistingOverride(
+            shortcut: .fn,
+            currentValue: 0,
+            didOverride: true,
+            lastReloadGeneration: 1
+        ))
+    }
+
+    func testExistingFnOverrideRefreshRequiresJunoOverride() {
+        XCTAssertFalse(JunoFnGlobeSystemActionPreference.shouldRefreshExistingOverride(
+            shortcut: .fn,
+            currentValue: 0,
+            didOverride: false,
+            lastReloadGeneration: 0
+        ))
+        XCTAssertFalse(JunoFnGlobeSystemActionPreference.shouldRefreshExistingOverride(
+            shortcut: .rightOption,
+            currentValue: 0,
+            didOverride: true,
+            lastReloadGeneration: 0
+        ))
+        XCTAssertFalse(JunoFnGlobeSystemActionPreference.shouldRefreshExistingOverride(
+            shortcut: .fn,
+            currentValue: 2,
+            didOverride: true,
+            lastReloadGeneration: 0
+        ))
+    }
 }
