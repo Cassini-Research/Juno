@@ -71,59 +71,85 @@ final class JunoFreshInstallGuardTests: JunoDefaultsRestoringTestCase {
     }
 }
 
+// MARK: - JunoSystemRequirements pure logic
+
+final class JunoSystemRequirementsTests: XCTestCase {
+    private func snapshot(os: Int, gb: Int, chip: String = "Apple M3") -> JunoSystemRequirements.Snapshot {
+        JunoSystemRequirements.Snapshot(osMajorVersion: os, memoryGB: gb, chipName: chip)
+    }
+
+    func testHardOSFloorAndSoftMemoryFloor() {
+        let ok = snapshot(os: 15, gb: 16)
+        XCTAssertTrue(ok.meetsMinimumOS)
+        XCTAssertTrue(ok.meetsMinimumMemory)
+        XCTAssertTrue(ok.meetsAllRequirements)
+        XCTAssertNil(ok.unsupportedOSMessage)
+        XCTAssertNil(ok.onboardingWarningMessage)
+
+        // OS below Sequoia → hard-block message, regardless of memory.
+        let oldOS = snapshot(os: 14, gb: 64)
+        XCTAssertFalse(oldOS.meetsMinimumOS)
+        XCTAssertFalse(oldOS.meetsAllRequirements)
+        XCTAssertNotNil(oldOS.unsupportedOSMessage)
+        // OS-too-old is a hard block, never surfaced as a soft onboarding warning.
+        XCTAssertNil(oldOS.onboardingWarningMessage)
+
+        // Supported OS but below the memory floor → soft warning, no block.
+        let lowRAM = snapshot(os: 15, gb: 8)
+        XCTAssertTrue(lowRAM.meetsMinimumOS)
+        XCTAssertFalse(lowRAM.meetsMinimumMemory)
+        XCTAssertFalse(lowRAM.meetsAllRequirements)
+        XCTAssertNil(lowRAM.unsupportedOSMessage)
+        XCTAssertEqual(
+            lowRAM.onboardingWarningMessage,
+            "Juno runs best on Macs with at least 16 GB of memory. This Mac has 8 GB, so dictation and live preview may be slow."
+        )
+    }
+
+    func testAppleChipGenerationParsing() {
+        XCTAssertEqual(JunoSystemRequirements.appleChipGeneration(from: "Apple M1"), 1)
+        XCTAssertEqual(JunoSystemRequirements.appleChipGeneration(from: "Apple M3 Pro"), 3)
+        XCTAssertEqual(JunoSystemRequirements.appleChipGeneration(from: "Apple M4 Max"), 4)
+        XCTAssertEqual(JunoSystemRequirements.appleChipGeneration(from: "apple m2 ultra"), 2) // case-insensitive
+        XCTAssertNil(JunoSystemRequirements.appleChipGeneration(from: "Intel(R) Core(TM) i9-9980HK"))
+        XCTAssertNil(JunoSystemRequirements.appleChipGeneration(from: ""))
+        XCTAssertNil(JunoSystemRequirements.appleChipGeneration(from: "Apple M"))
+    }
+}
+
 // MARK: - JunoPreviewEligibility pure logic
-// (gates hudLiveTranscriptionsEnabled, tested above)
+// (gates hudLiveTranscriptionsEnabled — preview follows the hard OS floor;
+// memory is warning-only.)
 
 final class JunoPreviewEligibilityTests: XCTestCase {
-    func testAppleChipGenerationParsing() {
-        XCTAssertEqual(JunoPreviewEligibility.appleChipGeneration(from: "Apple M1"), 1)
-        XCTAssertEqual(JunoPreviewEligibility.appleChipGeneration(from: "Apple M3 Pro"), 3)
-        XCTAssertEqual(JunoPreviewEligibility.appleChipGeneration(from: "Apple M4 Max"), 4)
-        XCTAssertEqual(JunoPreviewEligibility.appleChipGeneration(from: "apple m2 ultra"), 2) // case-insensitive
-        XCTAssertNil(JunoPreviewEligibility.appleChipGeneration(from: "Intel(R) Core(TM) i9-9980HK"))
-        XCTAssertNil(JunoPreviewEligibility.appleChipGeneration(from: ""))
-        XCTAssertNil(JunoPreviewEligibility.appleChipGeneration(from: "Apple M"))
+    private func snapshot(os: Int, gb: Int, chip: String = "Apple M3") -> JunoPreviewEligibility.Snapshot {
+        JunoPreviewEligibility.Snapshot(osMajorVersion: os, memoryGB: gb, chipName: chip)
     }
 
-    func testEligibilityRequiresM3OrNewerAnd32GB() {
-        func snapshot(_ gen: Int?, _ gb: Int) -> JunoPreviewEligibility.Snapshot {
-            JunoPreviewEligibility.Snapshot(chipName: "Test", chipGeneration: gen, memoryGB: gb)
-        }
-        XCTAssertTrue(snapshot(3, 32).isEligible)
-        XCTAssertTrue(snapshot(4, 128).isEligible)
-        XCTAssertFalse(snapshot(2, 64).isEligible)   // chip too old
-        XCTAssertFalse(snapshot(3, 16).isEligible)   // not enough memory
-        XCTAssertFalse(snapshot(nil, 64).isEligible) // non-Apple-Silicon
+    func testEligibilityRequiresSequoiaOnly() {
+        XCTAssertTrue(snapshot(os: 15, gb: 16).isEligible)
+        XCTAssertTrue(snapshot(os: 15, gb: 8).isEligible)    // memory is warning-only
+        XCTAssertTrue(snapshot(os: 26, gb: 64).isEligible)
+        XCTAssertFalse(snapshot(os: 14, gb: 64).isEligible)  // OS too old
     }
 
-    func testUnavailableMessages() {
-        let intel = JunoPreviewEligibility.Snapshot(chipName: "Intel", chipGeneration: nil, memoryGB: 64)
-        XCTAssertEqual(intel.unavailableMessage, "Live preview requires Apple Silicon M3 or newer.")
+    func testUnavailableMessageForUnsupportedOS() {
+        let low = snapshot(os: 15, gb: 8)
+        XCTAssertNil(low.unavailableMessage)
+        XCTAssertEqual(snapshot(os: 14, gb: 64).unavailableMessage, "Live preview isn’t available on this Mac.")
+        XCTAssertNil(snapshot(os: 15, gb: 16).unavailableMessage)
+    }
 
-        let m2 = JunoPreviewEligibility.Snapshot(chipName: "Apple M2", chipGeneration: 2, memoryGB: 64)
+    func testWarningMessageNearMemoryFloor() {
         XCTAssertEqual(
-            m2.unavailableMessage,
-            "Live preview requires Apple Silicon M3 or newer. This Mac reports Apple M2."
+            snapshot(os: 15, gb: 8).warningMessage,
+            "Live preview can slow final transcription on 8 GB Macs."
         )
-
-        let lowMemory = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 16)
         XCTAssertEqual(
-            lowMemory.unavailableMessage,
-            "Live preview requires at least 32 GB memory. This Mac has 16 GB."
+            snapshot(os: 15, gb: 16).warningMessage,
+            "Live preview can slow final transcription on 16 GB Macs."
         )
-
-        let eligible = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 32)
-        XCTAssertNil(eligible.unavailableMessage)
-    }
-
-    func testWarningMessageOnlyForEligibleMacsUpTo64GB() {
-        let small = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 32)
-        XCTAssertEqual(small.warningMessage, "Live preview can hamper transcription performance on 32 GB Macs.")
-
-        let big = JunoPreviewEligibility.Snapshot(chipName: "Apple M3", chipGeneration: 3, memoryGB: 128)
-        XCTAssertNil(big.warningMessage)
-
-        let ineligible = JunoPreviewEligibility.Snapshot(chipName: "Apple M2", chipGeneration: 2, memoryGB: 32)
-        XCTAssertNil(ineligible.warningMessage)
+        XCTAssertNil(snapshot(os: 15, gb: 64).warningMessage)  // ample memory
+        XCTAssertNil(snapshot(os: 14, gb: 16).warningMessage)  // ineligible → no warning
     }
 }

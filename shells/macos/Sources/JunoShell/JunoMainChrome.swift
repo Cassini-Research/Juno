@@ -15,7 +15,7 @@ enum MainSidebar: String, CaseIterable, Identifiable {
         case .voiceCommands:   return "Voice Commands"
         case .history:         return "History"
         case .modes:           return "Styles"
-        case .personalization: return "Dictionary & Memory"
+        case .personalization: return "Snippets & Memory"
         case .surfacePresets:  return "Per-app writing"
         case .privacy:         return "Privacy"
         case .settings:        return "Settings"
@@ -1496,12 +1496,12 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned",
-                    message: "“\(trimmed)” is already in Dictionary & Memory."
+                    message: "“\(trimmed)” is already in Snippets & Memory."
                 ))
             } else if ok {
                 setBanner(JunoHistoryBannerState(
                     kind: .success,
-                    title: "Saved to Dictionary & Memory",
+                    title: "Saved to Snippets & Memory",
                     message: "“\(trimmed)” is now available for future dictations."
                 ))
             } else if errorCode == "protected_term" {
@@ -1514,7 +1514,7 @@ private struct JunoHistorySplitView: View {
                 setBanner(JunoHistoryBannerState(
                     kind: .warning,
                     title: "Already learned differently",
-                    message: "Open Dictionary & Memory to review the existing entry before changing it."
+                    message: "Open Snippets & Memory to review the existing entry before changing it."
                 ))
             } else {
                 setBanner(JunoHistoryBannerState(
@@ -1928,7 +1928,7 @@ private struct HistoryDetailPane: View {
             return "Juno already knows that term."
         }
         if knownVocabularyTerms.contains(key) {
-            return "Already in Dictionary & Memory."
+            return "Already in Snippets & Memory."
         }
         return nil
     }
@@ -3766,7 +3766,7 @@ private struct HistoryDetailPane: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(JunoTheme.primaryText(scheme))
                 Spacer()
-                Button("Open Dictionary & Memory") {
+                Button("Open Snippets & Memory") {
                     showSavePhrasePopover = false
                     // Only forward a prefill if it's actually a term-shaped
                     // string (short, no spaces). Otherwise open empty so
@@ -4367,26 +4367,44 @@ struct JunoMainShellView: View {
                 .opacity(0.55)
                 .padding(.top, 4)
 
-            if updater.updateAvailable {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(JunoDesignTokens.accent)
-                    Text("Update available")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(JunoTheme.primaryText(scheme))
-                    Spacer(minLength: 0)
-                    Button("Settings") { windowNav.section = .settings }
+            HStack(spacing: 8) {
+                Text(JunoProductIdentity.versionSummary)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.88))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if updater.updateAvailable {
+                    Button {
+                        updater.checkForUpdates()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .symbolRenderingMode(.hierarchical)
+                            Text("Update")
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(JunoDesignTokens.accent.opacity(scheme == .dark ? 0.18 : 0.11))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(JunoDesignTokens.accent.opacity(0.24), lineWidth: 0.6)
+                        )
+                    }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(JunoDesignTokens.accent)
+                    .disabled(updater.isConfigured && !updater.canCheckForUpdates)
+                    .help(updater.latestVersion.map { "Install Juno \($0)" } ?? "Install available update")
+                    .accessibilityLabel(Text("Install available update"))
                 }
             }
-
-            Text(JunoProductIdentity.versionSummary)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(JunoTheme.secondaryText(scheme).opacity(0.88))
-                .lineLimit(2)
 
             // Explicit break after the heart: the sidebar is too narrow for
             // one line, and a natural wrap split "Cassini / Research". The

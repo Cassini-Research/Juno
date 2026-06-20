@@ -5,6 +5,7 @@ import Combine
 import CoreAudio
 import Darwin
 import JunoHotkeyCore
+import JunoObjCSupport
 import OSLog
 import SwiftUI
 
@@ -2295,6 +2296,22 @@ final class DictationRecorder {
         // Hardware format (e.g. 44.1 kHz / 48 kHz, stereo, float32).
         let hwFmt = input.outputFormat(forBus: 0)
 
+        // The input node can report a degenerate format (0 Hz / 0 channels)
+        // when there is no usable input device — e.g. right after sleep/wake,
+        // during a device hot-swap race, or when the default input was yanked.
+        // Installing a tap with such a format makes AVFoundation raise an
+        // *Objective-C* `NSException` from deep inside `installTapOnBus`, which
+        // Swift's `do`/`catch` cannot intercept — it tears straight down to
+        // `abort()` (see the 1.0.6 crash on a Mac16,11). Reject it up front and
+        // surface a recoverable Swift error the caller already handles.
+        guard hwFmt.sampleRate > 0, hwFmt.channelCount > 0 else {
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "No microphone is available right now. Check System Settings → Sound → Input, then try again."]
+            )
+        }
+
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16_000.0,
@@ -2316,6 +2333,11 @@ final class DictationRecorder {
             )
         }
 
+        // Wrap the tap install in the ObjC-exception guard: even with a
+        // validated format above, AVFoundation can still raise (e.g. the device
+        // changes between the format read and the install). Convert any such
+        // NSException into a Swift error so we degrade instead of aborting.
+        if let installError = JunoCatchNSException({
         input.installTap(onBus: 0, bufferSize: 4096, format: hwFmt) { [weak file, weak self] buf, _ in
             guard let file, let recorder = self else { return }
             let outLen = AVAudioFrameCount((Double(buf.frameLength) * ratio).rounded(.up))
@@ -2427,8 +2449,35 @@ final class DictationRecorder {
             // Live Speech must see 16 kHz mono float — not raw hardware buffers.
             bufferCallback?(out)
         }
+        }) {
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Could not start microphone capture (\(installError.localizedDescription))."]
+            )
+        }
 
-        try engine.start()
+        // `engine.start()` can also raise an ObjC exception when the audio HAL
+        // is wedged. Guard it too and tear down the tap before propagating.
+        var startSwiftError: Error?
+        if let startException = JunoCatchNSException({
+            do {
+                try engine.start()
+            } catch {
+                startSwiftError = error
+            }
+        }) {
+            input.removeTap(onBus: 0)
+            throw NSError(
+                domain: "JunoDictationRecorder",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Could not start the audio engine (\(startException.localizedDescription))."]
+            )
+        }
+        if let startSwiftError {
+            input.removeTap(onBus: 0)
+            throw startSwiftError
+        }
         self.engine = engine
         self.file = file
         if voiceProcessingEnabled {
@@ -2543,6 +2592,46 @@ final class JunoTargetApplicationTracker {
         let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !appName.isEmpty && ignoredTargetNames.contains(appName)
     }
+
+    /// System panes that surface focusable (but effectively non-editable for
+    /// dictation) elements, so a posted Cmd+V is accepted by the event system
+    /// yet inserts nothing. Kept separate from ``isIgnoredSystemSurface``
+    /// (which also drives target tracking / context capture).
+    static let nonEditableSystemPasteBundleIds: Set<String> = [
+        "com.apple.systempreferences",   // System Settings (and legacy System Preferences)
+    ]
+    static let nonEditableSystemPasteNames: Set<String> = [
+        "system settings",
+        "system preferences",
+    ]
+    static func isNonEditableSystemPasteSurface(bundleId: String?, name: String?) -> Bool {
+        let bid = (bundleId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !bid.isEmpty, nonEditableSystemPasteBundleIds.contains(bid) { return true }
+        let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !appName.isEmpty && nonEditableSystemPasteNames.contains(appName)
+    }
+
+    /// How a frontmost app sampled at a paste boundary should affect the paste
+    /// target. Pure + testable.
+    enum PasteTargetDisposition: Equatable {
+        /// A real external app — resolve it as the paste target.
+        case adopt
+        /// Juno's own HUD / notification / control center transiently frontmost.
+        /// Keep the target captured at dictation start and do NOT gate the paste
+        /// off — Juno's floating HUD panel can be momentarily frontmost at the
+        /// finalize sample even while the user is dictating into another app, and
+        /// gating off here mis-files the result into the copy-ready overlay.
+        case preservePrior
+        /// A genuinely-focused non-editable system pane (System Settings): a
+        /// posted Cmd+V is accepted but inserts nothing, so fall back to copy.
+        case copyOnly
+    }
+
+    static func pasteTargetDisposition(bundleId: String?, name: String?) -> PasteTargetDisposition {
+        if isIgnoredSystemSurface(bundleId: bundleId, name: name) { return .preservePrior }
+        if isNonEditableSystemPasteSurface(bundleId: bundleId, name: name) { return .copyOnly }
+        return .adopt
+    }
 }
 
 // MARK: - Shortcut preference
@@ -2582,6 +2671,230 @@ enum JunoShortcutPreference: String, CaseIterable {
         case .optionSpace: return "Option + Space"
         case .controlSpace: return "Control + Space"
         }
+    }
+
+    /// Single entry when the user picks a dictation shortcut (onboarding or settings).
+    static func applyShortcutSelection(_ newValue: JunoShortcutPreference) {
+        let previous = stored
+        stored = newValue
+        JunoFnGlobeSystemActionPreference.apply(shortcut: newValue)
+        if shouldRestartHotkeyBridge(
+            previous: previous,
+            new: newValue,
+            onboardingCompleted: JunoUserDefaults.onboardingCompleted
+        ) {
+            JunoShellRuntime.shared.restartHotkeyBridge()
+        }
+    }
+
+    static func shouldRestartHotkeyBridge(
+        previous: JunoShortcutPreference,
+        new: JunoShortcutPreference,
+        onboardingCompleted: Bool
+    ) -> Bool {
+        onboardingCompleted && ((previous == .fn) != (new == .fn))
+    }
+
+    /// Static note shown when Fn is selected.
+    static let fnGlobeConflictNote =
+        "Juno sets System Settings → Keyboard → Press the Globe key to → Do Nothing while Fn is selected, then restores your previous setting if you switch away."
+}
+
+enum JunoFnGlobeSystemActionPreference {
+    struct Backup: Equatable {
+        let wasPresent: Bool
+        let value: Int?
+    }
+
+    enum Action: Equatable {
+        case none
+        case disableEmoji(backup: Backup?)
+        case restore(value: Int?)
+    }
+
+    private static let hitoolboxDomain = "com.apple.HIToolbox" as CFString
+    private static let fnUsageKey = "AppleFnUsageType" as CFString
+    private static let doNothing = 0
+    private static let reloadGeneration = 1
+
+    private static let didOverrideKey = "JunoFnGlobeDidOverrideAppleFnUsageType"
+    private static let backupWasPresentKey = "JunoFnGlobeBackupAppleFnUsageTypeWasPresent"
+    private static let backupValueKey = "JunoFnGlobeBackupAppleFnUsageTypeValue"
+    private static let reloadGenerationKey = "JunoFnGlobeSystemActionReloadGeneration"
+
+    static func apply(shortcut: JunoShortcutPreference) {
+        let defaults = UserDefaults.standard
+        let currentValue = currentSystemValue()
+        let didOverride = defaults.bool(forKey: didOverrideKey)
+        if shouldRefreshExistingOverride(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            lastReloadGeneration: defaults.integer(forKey: reloadGenerationKey)
+        ) {
+            reloadTextInputAgents()
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: refreshed text input agents for existing Globe/Fn Do Nothing override")
+        }
+
+        let backupWasPresent = defaults.object(forKey: backupWasPresentKey) as? Bool ?? false
+        let backupValue = (defaults.object(forKey: backupValueKey) as? NSNumber)?.intValue
+        let action = plannedAction(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            backupWasPresent: backupWasPresent,
+            backupValue: backupValue
+        )
+
+        switch action {
+        case .none:
+            return
+        case .disableEmoji(let backup):
+            if let backup {
+                defaults.set(backup.wasPresent, forKey: backupWasPresentKey)
+                if let value = backup.value {
+                    defaults.set(value, forKey: backupValueKey)
+                } else {
+                    defaults.removeObject(forKey: backupValueKey)
+                }
+            }
+            setSystemValue(doNothing)
+            reloadTextInputAgents()
+            defaults.set(true, forKey: didOverrideKey)
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: set Globe/Fn system action to Do Nothing for Fn shortcut")
+        case .restore(let value):
+            setSystemValue(value)
+            reloadTextInputAgents()
+            clearBackup(defaults: defaults)
+            defaults.synchronize()
+            NSLog("Juno: restored previous Globe/Fn system action after leaving Fn shortcut")
+        }
+    }
+
+    static func plannedAction(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        backupWasPresent: Bool,
+        backupValue: Int?
+    ) -> Action {
+        if shortcut == .fn {
+            guard currentValue != doNothing else { return .none }
+            if didOverride {
+                return .disableEmoji(backup: nil)
+            }
+            return .disableEmoji(backup: Backup(wasPresent: currentValue != nil, value: currentValue))
+        }
+
+        guard didOverride else { return .none }
+        return .restore(value: backupWasPresent ? backupValue : nil)
+    }
+
+    static func shouldRefreshExistingOverride(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        lastReloadGeneration: Int
+    ) -> Bool {
+        shortcut == .fn
+            && currentValue == doNothing
+            && didOverride
+            && lastReloadGeneration < reloadGeneration
+    }
+
+    private static func currentSystemValue() -> Int? {
+        guard let raw = CFPreferencesCopyValue(
+            fnUsageKey,
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ) else {
+            return nil
+        }
+        if let number = raw as? NSNumber {
+            return number.intValue
+        }
+        if let string = raw as? String {
+            return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func setSystemValue(_ value: Int?) {
+        if let value {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                NSNumber(value: value),
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        } else {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                nil,
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        }
+        CFPreferencesSynchronize(
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+    }
+
+    private static func reloadTextInputAgents() {
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: ["-x", "TextInputMenuAgent"],
+            label: "TextInputMenuAgent"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-x",
+                "TextInputSwitcher",
+            ],
+            label: "TextInputSwitcher"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-f",
+                "CharacterPicker.framework/.*/com.apple.CharacterPicker.FileService",
+            ],
+            label: "CharacterPicker.FileService"
+        )
+    }
+
+    private static func runAndWait(executable: String, arguments: [String], label: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        do {
+            try task.run()
+            task.waitUntilExit()
+            if task.terminationStatus != 0 && task.terminationStatus != 1 {
+                NSLog("Juno: %@ reload exited with status %d after Globe/Fn system action change", label, task.terminationStatus)
+            }
+        } catch {
+            NSLog("Juno: failed to reload %@ after Globe/Fn system action change: %@", label, error.localizedDescription)
+        }
+    }
+
+    private static func clearBackup(defaults: UserDefaults) {
+        defaults.removeObject(forKey: didOverrideKey)
+        defaults.removeObject(forKey: backupWasPresentKey)
+        defaults.removeObject(forKey: backupValueKey)
+        defaults.removeObject(forKey: reloadGenerationKey)
     }
 }
 
@@ -3924,47 +4237,29 @@ final class DictationController: ObservableObject {
     /// match what the user saw when they started dictating — only the
     /// *paste target* needs to track focus changes. So we refresh paste
     /// state exclusively at paste boundaries.
-    /// System panes that surface focusable (but effectively non-editable for
-    /// dictation) elements, so a posted Cmd+V is accepted by the event system
-    /// yet inserts nothing. Scoped to the paste decision only — intentionally
-    /// NOT folded into ``isIgnoredSystemSurface`` (which also drives target
-    /// tracking and context capture).
-    private static let nonEditableSystemPasteBundleIds: Set<String> = [
-        "com.apple.systempreferences",   // System Settings (and legacy System Preferences)
-    ]
-    private static let nonEditableSystemPasteNames: Set<String> = [
-        "system settings",
-        "system preferences",
-    ]
-    private static func isNonEditableSystemPasteSurface(bundleId: String?, name: String?) -> Bool {
-        let bid = (bundleId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !bid.isEmpty, nonEditableSystemPasteBundleIds.contains(bid) { return true }
-        let appName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !appName.isEmpty && nonEditableSystemPasteNames.contains(appName)
-    }
-
     private func refreshPasteTargetFromCurrentFocus() {
         let snap = JunoLocalCapability.snapshot()
         let snapBundleId = (snap["frontmost_app_bundle_id"] as? String)
             ?? (snap["app_bundle_id"] as? String)
         let snapName = (snap["frontmost_app_name"] as? String)
             ?? (snap["app_name"] as? String)
-        if JunoTargetApplicationTracker.isIgnoredSystemSurface(bundleId: snapBundleId, name: snapName) {
-            // Ignored system surfaces (our own UI, notification/control center)
-            // are never valid paste targets. Mark not-a-destination so finalize
-            // copies instead of firing a synthetic Cmd+V into a window that
-            // won't accept it — which used to read back as a false success.
+        switch JunoTargetApplicationTracker.pasteTargetDisposition(bundleId: snapBundleId, name: snapName) {
+        case .preservePrior:
+            // Juno's own floating HUD panel (canBecomeKey while visible) can be
+            // momentarily frontmost at this finalize sample even though the user
+            // is dictating into another app (e.g. Brave). Preserve the target
+            // captured at dictation start and let activateTargetForPasteIfNeeded
+            // re-front it before the Cmd+V — do NOT gate the paste off. Gating
+            // off here (regressed in PR #19) mis-filed the result into the
+            // copy-ready overlay instead of pasting into the real target.
+            return
+        case .copyOnly:
+            // A genuinely-focused non-editable system pane (System Settings)
+            // accepts the Cmd+V keystroke but inserts nothing; fall back to copy.
             likelyPasteDestination = false
             return
-        }
-        // Stopgap for non-editable system panes (e.g. System Settings). They
-        // expose focusable AX elements, so can_paste_at_focus reads true, then a
-        // posted Cmd+V is "accepted" by the event system but inserts nothing —
-        // a false success. Treat them as copy-only here; the general read-back
-        // verification in observedUndoSafePaste covers every other app.
-        if Self.isNonEditableSystemPasteSurface(bundleId: snapBundleId, name: snapName) {
-            likelyPasteDestination = false
-            return
+        case .adopt:
+            break
         }
         // PID/app/window: safe to refresh from NSWorkspace data even
         // without AX trust — these fields land in the snapshot before the
@@ -4123,6 +4418,7 @@ final class DictationController: ObservableObject {
             return true
         } catch {
             NSLog("Juno: recorder start failed: \(error.localizedDescription)")
+            cancelEnginePreviewStreaming(reason: "recorder_start_failed")
             teardownRecognition()
             state = "error:\(error.localizedDescription)"
             return false
@@ -4285,6 +4581,7 @@ final class DictationController: ObservableObject {
             guard let self else { return }
             guard self.hudState == .checkingMic else { return }
             NSLog("Juno: no microphone frames within \(Self.micNoFrameTimeoutSeconds)s — check permission or input device.")
+            self.cancelEnginePreviewStreaming(reason: "mic_no_audio")
             self.teardownRecognition()
             _ = self.recorder.stop()
             self.pcmLock.lock()
@@ -6032,21 +6329,17 @@ final class DictationController: ObservableObject {
 
     /// Post-paste HUD reveal for the final transcript.
     ///
-    /// With live preview ON the user already watched the words stream in, so
-    /// a transient "Text placed +N" flash is enough. With preview OFF this
-    /// moment is the first time the text is visible at all, so surface the
-    /// full final text in the expanded copy-ready island (full transcript +
-    /// Copy ⌘C / esc) — the same reveal the preview-on flow gives at done.
-    /// The overlay root swaps the compact pill for the expanded island while
-    /// ``copyableTranscript`` is set.
+    /// This is only reached on a **successful** paste — the text now lives in
+    /// the user's focused field, so the HUD's job is done. We never keep the
+    /// expanded copy-ready island up here (regardless of the live-preview
+    /// setting); a brief "Text placed +N" flash acknowledges the insert and the
+    /// HUD then dismisses. Leaving the full transcript pinned after a good paste
+    /// reads as a "preview that won't go away." The expanded copy-ready island
+    /// is reserved for the paste-failed / no-field branches, which set
+    /// ``copyableTranscript`` directly so the user can still copy.
     private func presentFinalTextReveal(for text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !JunoUserDefaults.hudLiveTranscriptionsEnabled, !trimmed.isEmpty {
-            copyableTranscript = text
-        } else {
-            copyableTranscript = nil
-            flashTransientDone(for: text)
-        }
+        copyableTranscript = nil
+        flashTransientDone(for: text)
     }
 
     private func showActionHUDResult(_ results: [JunoActionResult]) {
@@ -6275,6 +6568,7 @@ final class DictationController: ObservableObject {
 
 final class HotkeyBridge {
     private var task: Process?
+    private var stdoutHandle: FileHandle?
     private let onDown: () -> Void
     private let onUp: () -> Void
     private let onEscape: () -> Void
@@ -6314,12 +6608,16 @@ final class HotkeyBridge {
         }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
+        task.arguments = JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(
+            consumeFn: JunoShortcutPreference.stored == .fn
+        )
 
         let stdout = Pipe()
+        let stdoutHandle = stdout.fileHandleForReading
         task.standardOutput = stdout
         task.standardError = Pipe()
 
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdoutHandle.readabilityHandler = { [weak self] handle in
             guard let self else { return }
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
@@ -6395,6 +6693,7 @@ final class HotkeyBridge {
         do {
             try task.run()
             self.task = task
+            self.stdoutHandle = stdoutHandle
             NSLog("Juno: hotkey bridge started shortcut=%@", JunoShortcutPreference.stored.rawValue)
             // Register a stop closure with the runtime singleton so
             // applicationWillTerminate can reach back into this bridge
@@ -6405,14 +6704,27 @@ final class HotkeyBridge {
                 self?.stop()
             }
         } catch {
+            stdoutHandle.readabilityHandler = nil
             NSLog("Juno: hotkey bridge launch failed: \(error.localizedDescription)")
         }
     }
 
     func stop() {
-        task?.terminationHandler = nil
-        task?.terminate()
+        stdoutHandle?.readabilityHandler = nil
+        stdoutHandle = nil
+        if let task {
+            task.terminationHandler = nil
+            if task.isRunning {
+                task.terminate()
+                task.waitUntilExit()
+            }
+        }
         task = nil
+    }
+
+    func restart() {
+        stop()
+        start()
     }
 
     private func isDownEvent(_ line: String, shortcut: JunoShortcutPreference) -> Bool {
@@ -6485,6 +6797,10 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
+        // Hard OS floor must run before app-owned helpers, polling, overlays,
+        // or update checks start. `applicationDidFinishLaunching` keeps a
+        // no-op safety check, but this is the real preflight gate.
+        JunoSystemRequirements.enforceMinimumOSOrTerminate()
         // **Run BEFORE legacy-defaults migration.** If the install was
         // re-run (TCC wiped) but the prefs plist still says
         // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
@@ -6494,6 +6810,7 @@ struct JunoShellApp: App {
         JunoFreshInstallGuard.runOnce()
         JunoLegacyDefaultsMigration.runOnce()
         JunoUserDefaults.migrateWhisperPreviewDefaults()
+        JunoFnGlobeSystemActionPreference.apply(shortcut: JunoShortcutPreference.stored)
         JunoLocalAppLogTee.installIfEnabled()
         JunoSingleInstance.exitIfAlreadyRunning()
         JunoTargetApplicationTracker.shared.start()
@@ -6541,6 +6858,9 @@ struct JunoShellApp: App {
         let hotkeyBridge = self.hotkey
         JunoShellRuntime.shared.startHotkeyBridge = {
             hotkeyBridge.start()
+        }
+        JunoShellRuntime.shared.restartHotkeyBridge = {
+            hotkeyBridge.restart()
         }
         if JunoUserDefaults.onboardingCompleted {
             hotkeyBridge.start()
@@ -7299,6 +7619,8 @@ final class JunoShellRuntime {
     /// Keeping them out of the first-run text-entry flow prevents app-level
     /// key monitors from sitting in front of the onboarding name field.
     var startHotkeyBridge: () -> Void = {}
+    /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
+    var restartHotkeyBridge: () -> Void = {}
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).
@@ -7392,6 +7714,9 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Defensive no-op on supported systems. The real preflight gate runs
+        // in `JunoShellApp.init` before helpers / polling / onboarding start.
+        JunoSystemRequirements.enforceMinimumOSOrTerminate()
         registerOpenWindowNotificationsIfNeeded()
         JunoDockVisibility.applyCurrent()
         if JunoClickDeliveryProbe.isRequested {

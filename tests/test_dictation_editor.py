@@ -82,12 +82,66 @@ def _process(service: WriterService, text: str, **kwargs: Any):
         raw_text=text,
         context=kwargs.pop("context", TypedContextBundle(app_name="Notes", app_category="docs")),
         anchor_selection=None,
-        memory_store=None,
+        memory_store=kwargs.pop("memory_store", None),
         memory_snapshot=MemorySnapshot(schema_version=1),
         memory_packet={},
         mode_policy=BUILTIN_MODES["default_surface"],
         mode_selection=_selection(),
         **kwargs,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Snippet expansion through the dictation-editor path (regression)
+# --------------------------------------------------------------------------- #
+
+from dataclasses import dataclass as _dataclass  # noqa: E402
+from types import SimpleNamespace as _SimpleNamespace  # noqa: E402
+
+
+@_dataclass
+class _Snip:
+    trigger: str
+    body: str
+    scope: str = "global"
+    case_sensitive: bool = False
+
+
+class _ListResolver:
+    """Minimal SnippetResolver with the ``list()`` API the writer prefers."""
+
+    def __init__(self, snips: list[_Snip]) -> None:
+        self._snips = snips
+
+    def list(self) -> list[_Snip]:
+        return list(self._snips)
+
+    def resolve(self, trigger: str, *, scope: str = "global") -> _Snip | None:
+        return None
+
+
+def _store_with_snippets(*snips: _Snip):
+    return _SimpleNamespace(snippets=_ListResolver(list(snips)))
+
+
+def test_dictation_editor_path_expands_user_snippets() -> None:
+    """A saved snippet must still expand when the AI dictation editor is on.
+
+    Production runs with ``dictation_editor_enabled`` (JUNO_V2_DICTATION_EDITOR=1).
+    The editor path returns its result before the deterministic
+    ``expand_snippets`` step, so user snippets never came up in the real app
+    (they only expanded in the editor-off deterministic pipeline that the
+    other tests exercise). Editor returns the spoken text unchanged
+    ("VERDICT: clean"); the stored ``signoff`` snippet body must still appear.
+    """
+    service, _backend, _ = _editor_service("VERDICT: clean")
+    store = _store_with_snippets(_Snip("signoff", "Best, Juno"))
+
+    result = _process(service, "add my signoff", memory_store=store)
+
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert "Best, Juno" in result.output_text, (
+        f"snippet did not expand through the editor path: {result.output_text!r}"
     )
 
 

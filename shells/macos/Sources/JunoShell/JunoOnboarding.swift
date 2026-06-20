@@ -113,6 +113,12 @@ private struct OnboardingIntroStep: View {
                 .opacity(bodyVisible ? 1 : 0)
                 .offset(y: bodyVisible ? 0 : 10)
                 .animation(.easeOut(duration: 0.4).delay(0.22), value: bodyVisible)
+            if let requirementWarning = JunoSystemRequirements.current.onboardingWarningMessage {
+                requirementsBanner(requirementWarning)
+                    .opacity(bodyVisible ? 1 : 0)
+                    .offset(y: bodyVisible ? 0 : 10)
+                    .animation(.easeOut(duration: 0.4).delay(0.30), value: bodyVisible)
+            }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -144,6 +150,34 @@ private struct OnboardingIntroStep: View {
         }
         .shadow(color: Color.black.opacity(scheme == .dark ? 0.45 : 0.12), radius: 22, y: 10)
         .accessibilityHidden(true)
+    }
+
+    /// Non-blocking memory-floor warning. Juno still runs below the recommended
+    /// RAM; this just sets expectations during onboarding (see
+    /// ``JunoSystemRequirements``). The macOS-version floor is a hard block
+    /// handled at launch, so it never reaches this screen.
+    private func requirementsBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(JunoDesignTokens.warning)
+            Text(message)
+                .font(.system(size: 12.5, weight: .regular, design: .rounded))
+                .foregroundStyle(JunoTheme.secondaryText(scheme))
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: 420, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(JunoDesignTokens.warning.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(JunoDesignTokens.warning.opacity(0.32), lineWidth: 0.6)
+        )
     }
 
     private var nameField: some View {
@@ -594,7 +628,7 @@ private struct OnboardingActivationStep: View {
         let isSelected = selected == pref
         return Button {
             selected = pref
-            JunoShortcutPreference.stored = pref
+            JunoShortcutPreference.applyShortcutSelection(pref)
         } label: {
             HStack(spacing: 12) {
                 ZStack {
@@ -658,7 +692,7 @@ private struct OnboardingActivationStep: View {
     /// flag the trade-off so they're not surprised.
     private func conflictNote(for pref: JunoShortcutPreference) -> String? {
         switch pref {
-        case .fn: return nil
+        case .fn: return "May still conflict with emoji picker"
         case .rightCommand, .rightOption: return nil
         case .optionSpace: return "May overlap with Spotlight alternatives"
         case .controlSpace: return "Often used by input switchers"

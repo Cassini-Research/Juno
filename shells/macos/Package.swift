@@ -41,10 +41,19 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1"),
     ],
     targets: [
+        // Tiny Objective-C shim whose sole job is to convert raised
+        // NSExceptions (which Swift `do`/`catch` cannot intercept) into
+        // returned NSErrors. Used to make AVFoundation audio-engine setup
+        // crash-safe — see JunoExceptionGuard.h.
+        .target(
+            name: "JunoObjCSupport",
+            path: "Sources/JunoObjCSupport"
+        ),
         .executableTarget(
             name: "JunoShell",
             dependencies: [
                 "JunoHotkeyCore",
+                "JunoObjCSupport",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/JunoShell",

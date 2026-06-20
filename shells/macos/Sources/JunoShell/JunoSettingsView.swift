@@ -204,10 +204,23 @@ struct JunoSettingsView: View {
                             subtitle: "Press to start · press again to finish",
                             trailing: {
                                 ShortcutPopoverPicker(selection: $selectedShortcut) { newValue in
-                                    JunoShortcutPreference.stored = newValue
+                                    JunoShortcutPreference.applyShortcutSelection(newValue)
                                 }
                             }
                         )
+
+                        if selectedShortcut == .fn {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(JunoDesignTokens.accent)
+                                Text(JunoShortcutPreference.fnGlobeConflictNote)
+                                    .font(.caption)
+                                    .foregroundStyle(JunoTheme.secondaryText(scheme))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.top, 4)
+                        }
 
                         Divider().opacity(0.25)
 
