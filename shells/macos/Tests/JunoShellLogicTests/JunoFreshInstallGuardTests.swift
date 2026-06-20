@@ -6,7 +6,7 @@
 // system dialog — that requires requestAccess / AXIsProcessTrustedWithOptions
 // with the prompt option).
 //
-// Note: with currentOnboardingRequirementsVersion == 1, the
+// Note: with currentOnboardingRequirementsVersion == 2, the
 // "completedRequirements < currentRequirements" reset branch is unreachable
 // (any stored version <= 0 is caught by the predate-marker branch first),
 // so only the reachable branches are exercised.
@@ -79,7 +79,7 @@ final class JunoSystemRequirementsTests: XCTestCase {
     }
 
     func testHardOSFloorAndSoftMemoryFloor() {
-        let ok = snapshot(os: 15, gb: 16)
+        let ok = snapshot(os: 15, gb: 24)
         XCTAssertTrue(ok.meetsMinimumOS)
         XCTAssertTrue(ok.meetsMinimumMemory)
         XCTAssertTrue(ok.meetsAllRequirements)
@@ -102,7 +102,7 @@ final class JunoSystemRequirementsTests: XCTestCase {
         XCTAssertNil(lowRAM.unsupportedOSMessage)
         XCTAssertEqual(
             lowRAM.onboardingWarningMessage,
-            "Juno runs best on Macs with at least 16 GB of memory. This Mac has 8 GB, so dictation and live preview may be slow."
+            "Juno runs best on Macs with at least 24 GB of memory. This Mac has 8 GB, so dictation and live preview may be slow."
         )
     }
 

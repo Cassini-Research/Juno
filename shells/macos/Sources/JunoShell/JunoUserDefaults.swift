@@ -37,7 +37,7 @@ enum JunoUserDefaults {
     /// repeat (for example a new required permission). ``JunoFreshInstallGuard``
     /// only re-runs the welcome flow when this number grows past the version a
     /// user completed.
-    static let currentOnboardingRequirementsVersion = 1
+    static let currentOnboardingRequirementsVersion = 2
     static let preferredDisplayNameKey = "JunoPreferredDisplayName"
     static let onboardingBrandDelightShownKey = "JunoShellOnboardingBrandDelightShown"
     static let hudDelightAnimationsEnabledKey = "JunoHUDDelightAnimationsEnabled"

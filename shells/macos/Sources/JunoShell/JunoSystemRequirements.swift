@@ -22,8 +22,8 @@ enum JunoSystemRequirements {
     /// macOS 15 Sequoia. Hard floor — Juno will not run below this.
     static let minimumMacOSMajorVersion = 15
     static let minimumMacOSName = "Sequoia"
-    /// 16 GB. Soft floor — onboarding warns below this but still allows use.
-    static let minimumMemoryGB = 16
+    /// 24 GB. Soft floor — onboarding warns below this but still allows use.
+    static let minimumMemoryGB = 24
 
     struct Snapshot: Equatable {
         let osMajorVersion: Int
