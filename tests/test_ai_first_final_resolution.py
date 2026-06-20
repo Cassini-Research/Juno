@@ -2072,6 +2072,100 @@ def test_recent_transform_command_grammar_covers_natural_variants() -> None:
     assert shorter.payload["instruction"] == "Make the text more concise and direct. Preserve meaning."
 
 
+def test_final_asr_live_hint_audit_keeps_final_asr_on_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", raising=False)
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            self.calls += 1
+            return TranscribeResult(
+                transcript="final whisper transcript",
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=17.0,
+                model_path="fake-whisper",
+            )
+
+    transcriber = FakeTranscriber()
+    pipeline = OneShotDictationPipeline(
+        transcriber=transcriber,
+        recorder=_Recorder(),
+        writer_enabled=False,
+    )
+
+    result = pipeline.run(
+        _loud_wav_bytes(),
+        utterance_id="utt-final-asr-audit-default",
+        transcript_hint="live preview transcript",
+        shell_timeline={"final_preview_flush_received_ms": 123},
+        save_history=False,
+        save_audio=False,
+        app_bundle_id="com.apple.Terminal",
+    )
+
+    audit = result.metadata["final_asr_live_hint_audit"]
+    assert transcriber.calls == 1
+    assert result.raw_transcript == "final whisper transcript"
+    assert audit["hint_present"] is True
+    assert audit["final_preview_flush_received"] is True
+    assert audit["skip_eligible"] is True
+    assert audit["skip_enabled"] is False
+    assert audit["skip_used"] is False
+    assert audit["backend"] == "fake_asr"
+
+
+def test_final_asr_live_hint_skip_requires_explicit_env_and_final_preview_flush(monkeypatch) -> None:
+    monkeypatch.setenv("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", "1")
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            self.calls += 1
+            return TranscribeResult(
+                transcript="should not be used",
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=17.0,
+                model_path="fake-whisper",
+            )
+
+    transcriber = FakeTranscriber()
+    pipeline = OneShotDictationPipeline(
+        transcriber=transcriber,
+        recorder=_Recorder(),
+        writer_enabled=False,
+    )
+
+    result = pipeline.run(
+        _loud_wav_bytes(),
+        utterance_id="utt-final-asr-audit-skip",
+        transcript_hint="live preview transcript",
+        shell_timeline={"final_preview_flush_received_ms": 123},
+        save_history=False,
+        save_audio=False,
+        app_bundle_id="com.apple.Terminal",
+    )
+
+    audit = result.metadata["final_asr_live_hint_audit"]
+    assert transcriber.calls == 0
+    assert result.raw_transcript == "live preview transcript"
+    assert result.backend_name == "live_transcript_hint_final"
+    assert audit["skip_enabled"] is True
+    assert audit["skip_used"] is True
+    assert audit["decode_ms"] == 0.0
+
+
 def _loud_wav_bytes() -> bytes:
     import io
 

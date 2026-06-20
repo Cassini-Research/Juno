@@ -88,6 +88,7 @@ class InsertRequest:
     session_context_tape: dict[str, Any] | list[Any] | None = None
     transcript_hint: str | None = None
     language_mode: str | None = None
+    shell_timeline: dict[str, Any] | None = None
     # User-facing pause-sensitivity slider value (seconds of trailing silence
     # before the speech state machine declares an utterance done). ``None``
     # means "use the speech-profile default" — required for back-compat with
@@ -203,6 +204,7 @@ class InsertRunner:
                 "session_context_tape": req.session_context_tape,
                 "transcript_hint": req.transcript_hint,
                 "language_mode": req.language_mode,
+                "shell_timeline": req.shell_timeline,
                 "pause_sensitivity_seconds": req.pause_sensitivity_seconds,
             }
             raw = self.pipeline.run(req.wav_bytes, **self._accepted_run_kwargs(kwargs))

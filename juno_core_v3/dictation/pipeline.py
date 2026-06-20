@@ -397,6 +397,7 @@ class OneShotDictationPipeline:
         session_context_tape: dict[str, Any] | list[Any] | None = None,
         transcript_hint: str | None = None,
         language_mode: str | None = None,
+        shell_timeline: dict[str, Any] | None = None,
     ) -> OneShotDictationResult:
         started_ns = time.perf_counter_ns()
         uid = utterance_id or self._new_utterance_id()
@@ -404,7 +405,14 @@ class OneShotDictationPipeline:
         stage = _normalize_transcript_stage(transcript_stage)
         live_adjudication = stage == "live_adjudication"
         live_transcript_hint = _usable_transcript_hint_fallback(transcript_hint)
-        use_live_transcript_for_final = False
+        shell_timeline = _sanitize_shell_timeline_mapping(shell_timeline)
+        final_preview_flush_received = _shell_timeline_has_final_preview_flush(shell_timeline)
+        use_live_transcript_for_final = (
+            not live_adjudication
+            and bool(live_transcript_hint)
+            and final_preview_flush_received
+            and _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
+        )
         capability_mode: str | None = None
         if live_adjudication:
             save_history = False
@@ -812,6 +820,7 @@ class OneShotDictationPipeline:
                     {
                         "utterance_id": uid,
                         "hint_chars": len(live_transcript_hint),
+                        "reason": "final_preview_flush_received",
                         "audio_duration_ms": result.audio_duration_ms,
                     },
                 )
@@ -1004,6 +1013,23 @@ class OneShotDictationPipeline:
                 "audio_duration_ms": result.audio_duration_ms,
                 "decode_ms": result.decode_ms,
                 "raw_text": _text_debug_payload(raw_text),
+            },
+        )
+        final_asr_live_hint_audit = _final_asr_live_hint_audit_payload(
+            raw_text=raw_text,
+            transcript_hint=live_transcript_hint,
+            shell_timeline=shell_timeline,
+            backend_name=result.backend_name,
+            model_path=str(getattr(result, "model_path", "") or ""),
+            decode_ms=result.decode_ms,
+            skip_used=use_live_transcript_for_final,
+        )
+        self.recorder.record(
+            TraceKind.SYSTEM,
+            "oneshot_final_asr_live_hint_audit",
+            {
+                "utterance_id": uid,
+                **final_asr_live_hint_audit,
             },
         )
         final_asr_hallucination_fallback: dict[str, Any] | None = None
@@ -2302,6 +2328,7 @@ class OneShotDictationPipeline:
                 "backend": result.backend_name,
                 "model_path": resolved_model_path,
                 "writer_action": writer_action,
+                "final_asr_live_hint_audit": final_asr_live_hint_audit,
                 "memory_packet_summary": {
                     "lexicon_terms": len(memory_packet.lexicon_terms),
                     "replacements": len(memory_packet.replacements),
@@ -2318,7 +2345,10 @@ class OneShotDictationPipeline:
             "session_context_tape": tape_meta,
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
+            "final_asr_live_hint_audit": final_asr_live_hint_audit,
         }
+        if shell_timeline:
+            meta_out["shell_timeline"] = shell_timeline
         if audio_diag is not None:
             meta_out["audio_diagnostics"] = audio_diag.to_dict()
         if final_asr_hallucination_fallback is not None:
@@ -4546,6 +4576,70 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def _sanitize_shell_timeline_mapping(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str):
+            continue
+        safe_key = key.strip()
+        if not safe_key:
+            continue
+        if isinstance(raw, bool):
+            out[safe_key] = raw
+        elif isinstance(raw, (int, float, str)):
+            out[safe_key] = raw
+    return out
+
+
+def _shell_timeline_has_final_preview_flush(shell_timeline: dict[str, Any] | None) -> bool:
+    if not isinstance(shell_timeline, dict):
+        return False
+    value = shell_timeline.get("final_preview_flush_received_ms")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        return bool(value.strip())
+    return False
+
+
+def _final_asr_live_hint_audit_payload(
+    *,
+    raw_text: str,
+    transcript_hint: str,
+    shell_timeline: dict[str, Any] | None,
+    backend_name: str,
+    model_path: str,
+    decode_ms: float,
+    skip_used: bool,
+) -> dict[str, Any]:
+    raw = (raw_text or "").strip()
+    hint = _usable_transcript_hint_fallback(transcript_hint)
+    final_preview_flushed = _shell_timeline_has_final_preview_flush(shell_timeline)
+    skip_enabled = _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
+    similarity = None
+    if raw and hint:
+        similarity = round(difflib.SequenceMatcher(None, raw.casefold(), hint.casefold()).ratio(), 4)
+    return {
+        "hint_present": bool(hint),
+        "hint_chars": len(hint),
+        "hint_words": len(hint.split()) if hint else 0,
+        "raw_chars": len(raw),
+        "raw_words": len(raw.split()) if raw else 0,
+        "raw_hint_similarity": similarity,
+        "final_preview_flush_received": final_preview_flushed,
+        "skip_enabled": skip_enabled,
+        "skip_eligible": bool(hint and final_preview_flushed),
+        "skip_used": bool(skip_used),
+        "backend": backend_name,
+        "model_path": model_path,
+        "decode_ms": float(decode_ms or 0.0),
+    }
 
 
 def _fallback_adjudicated_text(
