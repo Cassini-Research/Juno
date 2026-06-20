@@ -105,3 +105,12 @@ def test_skips_existing_punctuation_and_structured_text() -> None:
     assert punctuated.skip_reason == "already_terminated"
     assert structured.changed is False
     assert structured.skip_reason == "structured_text"
+
+
+def test_skips_unicode_terminal_marks() -> None:
+    # Text already ending in a Unicode ellipsis or full-width/CJK terminal must
+    # not get a redundant ASCII "." or "?" appended.
+    for text in ("let me think about it…", "are we really done？", "今日は終わりだ。"):
+        result = _apply(text)
+        assert result.changed is False, text
+        assert result.skip_reason == "already_terminated", text

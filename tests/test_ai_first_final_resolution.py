@@ -2237,6 +2237,23 @@ def test_screen_terms_filtered_before_whisper_prompt() -> None:
     assert is_biasable_runtime_context_candidate("juno_v2")
 
 
+def test_common_ui_action_words_dropped_but_names_kept() -> None:
+    # Regression: the single-word screen-term gate must reject common email /
+    # chat / app action chrome (Send, Reply, Compose, ...) so it never floods
+    # the Whisper bias prompt, while still admitting genuine names/acronyms
+    # (which are also "common" words to the dictionary but worth biasing).
+    from juno_v2.memory.bias import screen_term_prompt_worthy
+
+    for ui_word in (
+        "Send", "Reply", "Compose", "Archive", "Spam", "Snooze",
+        "Filter", "Sort", "Move", "Print", "Share", "Delete", "Draft",
+    ):
+        assert not screen_term_prompt_worthy(ui_word), ui_word
+
+    for name in ("Maia", "Maya", "River", "Grace", "Nilofar", "Cassini Research", "OpenAI"):
+        assert screen_term_prompt_worthy(name), name
+
+
 def test_screen_ocr_junk_filtered_from_preview_repair_terms() -> None:
     from juno_v2.preview.personalization_repair import collect_preview_personalization_terms
 

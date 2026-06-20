@@ -417,6 +417,10 @@ _REPEATED_STOCK_TAIL_WORDS = frozenset({"okay", "ok", "um", "uh", "hmm"})
 _REPEATED_STOCK_TAIL_MIN_REPEATS = 3
 _REPEATED_STOCK_TAIL_MIN_PREFIX_WORDS = 8
 _WORD_SPAN_RE = re.compile(r"\b[\w']+\b")
+# Glue words that ASR/writer cleanup can accidentally double ("the the").
+# Deliberately excludes "is" and "that": their adjacent repeat is grammatical
+# ("what it is is fine", "I think that that works"), so collapsing them would
+# silently change meaning rather than fix a stutter.
 _LOW_SIGNAL_ADJACENT_DUPLICATE_WORDS = frozenset(
     {
         "a",
@@ -424,20 +428,23 @@ _LOW_SIGNAL_ADJACENT_DUPLICATE_WORDS = frozenset(
         "and",
         "are",
         "but",
-        "is",
         "it",
         "just",
         "like",
         "so",
-        "that",
         "the",
         "was",
         "were",
     }
 )
+# Only treat a same-line, whitespace-separated repeat as a stutter. The
+# separator class excludes commas and newlines ([^\S\n] is space/tab only):
+# a comma or line break between the copies marks a clause/list boundary where
+# the second word is a real word ("I know that, that was the plan"), not a
+# doubled token, and must be preserved.
 _LOW_SIGNAL_ADJACENT_DUPLICATE_RE = re.compile(
-    r"\b(?P<word>a|an|and|are|but|is|it|just|like|so|that|the|was|were)\b"
-    r"(?P<repeat>(?:[\s,]+(?P=word)\b)+)",
+    r"\b(?P<word>a|an|and|are|but|it|just|like|so|the|was|were)\b"
+    r"(?P<repeat>(?:[^\S\n]+(?P=word)\b)+)",
     re.IGNORECASE,
 )
 

@@ -433,6 +433,28 @@ def test_strip_adjacent_low_signal_word_duplicates_preserves_meaningful_repetiti
     assert strip_adjacent_low_signal_word_duplicates(text) == text
 
 
+def test_strip_adjacent_low_signal_word_duplicates_keeps_clause_boundary_repeats() -> None:
+    # A comma or newline between the copies marks a clause/list boundary where
+    # the second word is a real word, not a stutter — must never be dropped.
+    for text in (
+        "I know that, that being said we should leave",
+        "She said that, that was the plan",
+        "It is what it is, is it not",
+        "First line ends with the\nthe second line begins",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_keeps_valid_double_that_and_is() -> None:
+    # "that that" / "is is" are grammatical even with a plain space between
+    # them; collapsing would silently change meaning, so they are excluded.
+    for text in (
+        "I think that that approach works",
+        "What it is is a real mystery to me",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
 # --------------------------------------------------------------------- #
 # diff_pasted_segment
 # --------------------------------------------------------------------- #

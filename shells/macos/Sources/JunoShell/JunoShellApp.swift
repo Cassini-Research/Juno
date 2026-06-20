@@ -2010,7 +2010,41 @@ enum Clipboard {
     }
 
     @discardableResult
-    static func pasteAtCursor() -> Bool {
+    static func pasteAtCursor(verifyLanded: Bool = false) -> Bool {
+        // Sample the focused field's value BEFORE the synthetic Cmd+V so callers
+        // that do NOT go through DictationController.observedUndoSafePaste
+        // (Insert-again, session-result paste) can still tell whether the paste
+        // actually landed. The low-level post path only reports "keystroke
+        // posted", never "text landed", so without this a paste into a read-only
+        // or focus-drifted target falsely reports success. focusedValueSignature
+        // returns readable:false for roles without a trustworthy AXValue
+        // (web/Electron/Terminal); there we keep the historical "assume success"
+        // behavior to avoid turning real pastes into false failures.
+        let before = verifyLanded ? JunoLocalCapability.focusedValueSignature() : nil
+        let posted = postPasteKeystroke()
+        guard posted else { return false }
+        guard verifyLanded, let before, before.readable else { return posted }
+        return pasteLandedByReadback(beforeValue: before.value)
+    }
+
+    /// Poll the focused field's AX value after a synthetic Cmd+V. Any change is
+    /// strong evidence the paste landed (returns true immediately); a stable
+    /// readable value across the window means the keystroke was accepted but
+    /// nothing was inserted (read-only target, focus drift). Mirrors
+    /// ``DictationController.pasteLandedByReadback`` so both paste entry points
+    /// agree on what "landed" means.
+    private static func pasteLandedByReadback(beforeValue: String, deadlineMs: Int = 350, stepMs: Int = 40) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(deadlineMs) / 1000.0)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(Double(stepMs) / 1000.0))
+            guard let after = JunoLocalCapability.focusedValueSignature() else { return true }
+            guard after.readable else { return true }
+            if after.value != beforeValue { return true }
+        }
+        return false
+    }
+
+    private static func postPasteKeystroke() -> Bool {
         if JunoLocalCapability.processHasAccessibilityTrust() {
             Self.lastPasteFrontmostPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             return pasteAtCursorInProcess()
@@ -2106,10 +2140,10 @@ enum Clipboard {
     }
 
     @discardableResult
-    static func undoSafePaste(_ transcript: String, restoreAfterMs: Int = 400) -> Bool {
+    static func undoSafePaste(_ transcript: String, restoreAfterMs: Int = 400, verifyLanded: Bool = false) -> Bool {
         let snapshot = PasteboardSnapshot.capture()
         writeString(transcript)
-        let ok = pasteAtCursor()
+        let ok = pasteAtCursor(verifyLanded: verifyLanded)
         let delay = DispatchTime.now() + .milliseconds(restoreAfterMs)
         DispatchQueue.main.asyncAfter(deadline: delay) {
             snapshot.restore()
@@ -5849,7 +5883,17 @@ final class DictationController: ObservableObject {
         // caption draft, surface it via the copy overlay so the user
         // doesn't lose what they said.
         if finalText.isEmpty && brokerSnapshotFailedThisSession {
-            let fallback = livePartialText.trimmingCharacters(in: .whitespaces)
+            // Resolve spoken "new line"/"new paragraph" cues to real breaks and
+            // drop the literal cue words: the HUD keeps them visible during live
+            // preview, but this copy-overlay fallback must not paste literal
+            // "new line" text. Use the raw transcript (rawText), not the
+            // already-smoothed livePartialText, to avoid double line breaks.
+            let rawSource = hudTranscriptStore.rawText.isEmpty
+                ? livePartialText
+                : hudTranscriptStore.rawText
+            let fallback = HUDTranscriptStore
+                .transcriptWithSpokenBreakCuesResolved(rawSource)
+                .trimmingCharacters(in: .whitespaces)
             if !fallback.isEmpty {
                 copyableTranscript = fallback
             } else {

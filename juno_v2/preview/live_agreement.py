@@ -698,8 +698,31 @@ def _find_tail_reanchor_revision(
             if not _committed_suffix_has_asr_fragment(suffix_words):
                 continue
             rollback_start = search_start + pos
+            # Only roll back committed words the tail is genuinely re-decoding.
+            # The deleted region must line up with the tail's leading words; a
+            # divergent continuation means it is real text (a different phrase
+            # the tail does not cover), so keeping it avoids silent loss.
+            if not _reanchor_deleted_matches_tail(
+                committed_norm[rollback_start:], tail_norm
+            ):
+                continue
             return rollback_start, f"tail_reanchor_suffix_revision_{width}_lag{lag}"
     return None
+
+
+def _reanchor_deleted_matches_tail(deleted: list[str], tail_norm: list[str]) -> bool:
+    """True when the committed words about to be rolled back are a re-decode of
+    the tail's leading words (so the tail carries the better copy of the same
+    audio). A divergent continuation means the committed text is a genuinely
+    different phrase the tail does not cover, and must be preserved.
+    """
+    if not deleted:
+        return False
+    tail_lead = tail_norm[: len(deleted)]
+    if len(tail_lead) < len(deleted):
+        return False
+    mismatches = sum(1 for a, b in zip(deleted, tail_lead) if a != b)
+    return mismatches <= max(1, len(deleted) // 4)
 
 
 def _find_agreement_article_bridge_replay(
@@ -941,6 +964,12 @@ def _committed_suffix_has_asr_fragment(words: list[Word]) -> bool:
         if lowered in _COMMON_SHORT_HYPHENATED_WORDS:
             continue
         if "-" not in lowered and "–" not in lowered and "—" not in lowered:
+            continue
+        # A hyphenated proper name (Jo-Anne, Li-Na) has short parts too, but it
+        # is real text, not a garbled ASR fragment. Capitalized parts are the
+        # tell: skip them so the rollback never deletes a dictated name.
+        raw_parts = [p for p in re.split(r"[-–—]+", raw) if p]
+        if any(p[:1].isupper() for p in raw_parts):
             continue
         parts = [p for p in re.split(r"[-–—]+", lowered) if p]
         if len(parts) >= 2 and all(len(part) <= 4 for part in parts):

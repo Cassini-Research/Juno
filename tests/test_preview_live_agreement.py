@@ -181,6 +181,41 @@ def test_preview_does_not_roll_back_intentional_clean_repeat() -> None:
     assert buffer.tail_text() == "paste behavior again for comparison"
 
 
+def test_preview_does_not_roll_back_when_tail_continuation_diverges() -> None:
+    # The committed suffix re-anchors at "review the budget" but its real tail
+    # ("for the co-op") is NOT what the live tail re-decodes ("summary with
+    # finance team"). Rolling back here would silently delete "for the co-op".
+    buffer = HypothesisBuffer()
+    buffer.committed = _words(
+        "First review the budget then schedule please review the budget for the co-op"
+    )
+    buffer.tail = _words("review the budget summary with finance team")
+
+    reason = buffer.resolve_tail_reanchor_revision()
+
+    assert reason is None
+    assert buffer.committed_text() == (
+        "First review the budget then schedule please review the budget for the co-op"
+    )
+
+
+def test_preview_does_not_roll_back_hyphenated_proper_name_suffix() -> None:
+    # "Jo-Anne" has short hyphen parts but is a dictated name, not a garbled
+    # ASR fragment, so it must not be treated as rollback evidence.
+    buffer = HypothesisBuffer()
+    buffer.committed = _words(
+        "Please send the agenda to Jordan and send the agenda to Jo-Anne"
+    )
+    buffer.tail = _words("send the agenda to everyone before the deadline")
+
+    reason = buffer.resolve_tail_reanchor_revision()
+
+    assert reason is None
+    assert buffer.committed_text() == (
+        "Please send the agenda to Jordan and send the agenda to Jo-Anne"
+    )
+
+
 def test_preview_drops_adjacent_stem_duplicate_at_commit_boundary() -> None:
     buffer = HypothesisBuffer()
     buffer.committed = _words("copy text style format")

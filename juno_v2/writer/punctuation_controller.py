@@ -95,7 +95,15 @@ def apply_final_punctuation_floor(
         return _skip(original, "snippet_expanded")
     if "\n" in stripped or _looks_like_structured_text(stripped):
         return _skip(original, "structured_text")
-    if stripped.endswith((".", "!", "?", ":", ";", ")", "]", "}", '"')):
+    if stripped.endswith(
+        (
+            ".", "!", "?", ":", ";", ")", "]", "}", '"',
+            # Unicode terminals: ellipsis and full-width / CJK marks. Without
+            # these, text dictated/auto-formatted to end in "…" or "？" would
+            # get a redundant ASCII "." or "?" appended.
+            "…", "？", "！", "。", "：", "；", "”", "’",
+        )
+    ):
         return _skip(original, "already_terminated")
 
     words = _words(stripped)

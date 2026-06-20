@@ -367,11 +367,16 @@ final class HUDTranscriptStore: ObservableObject {
     private static func isSpokenPunctuationCueSuffix(_ tokens: [String]) -> Bool {
         let joined = tokens.joined(separator: " ")
         switch joined {
-        case "comma", "period", "colon", "semicolon",
-             "question", "question mark",
-             "exclamation", "exclamation point", "exclamation mark",
-             "full", "full stop",
-             "new", "new line", "newline", "line break", "new paragraph":
+        // Only accept shrinking committed HUD text when the dropped suffix is
+        // an unambiguous punctuation cue. The bare words "new", "full",
+        // "question", "exclamation" and "period" are excluded: they are also
+        // ordinary trailing words ("a grace period", "the full report"), and
+        // accepting them would silently drop a real dictated word from the HUD.
+        case "comma", "colon", "semicolon",
+             "question mark",
+             "exclamation point", "exclamation mark",
+             "full stop",
+             "new line", "newline", "line break", "new paragraph":
             return true
         default:
             return false
@@ -498,6 +503,43 @@ final class HUDTranscriptStore: ObservableObject {
             out = result
         }
         return out
+    }
+
+    /// Spoken "new line"/"new paragraph" cues → real breaks, with the literal
+    /// cue words REMOVED. `smoothForDisplay` deliberately keeps the cue text
+    /// visible on the live HUD; this variant is for copy/paste surfaces (e.g.
+    /// the broker-failure fallback transcript) where the literal words must
+    /// never reach the user's clipboard/document. The same determiner guard
+    /// ("the new line is short") keeps genuine prose literal. Pass RAW text
+    /// (e.g. `rawText`), not already-smoothed `text`, to avoid double breaks.
+    static func transcriptWithSpokenBreakCuesResolved(_ text: String) -> String {
+        guard !text.isEmpty,
+              let cue = try? NSRegularExpression(
+                pattern: "(?:^|(?<= ))[Nn]ew +([Ll]ine|[Pp]aragraph)\\b[ .,]*",
+                options: []
+              )
+        else { return text }
+        let ns = text as NSString
+        var result = ""
+        var cursor = 0
+        for match in cue.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let before = ns.substring(to: match.range.location)
+            let prevWord = before.split(separator: " ").last.map {
+                $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
+            } ?? ""
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
+                result += ns.substring(with: match.range)
+            } else {
+                let cueText = ns.substring(with: match.range)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?"))
+                result += cueText.lowercased().contains("paragraph") ? "\n\n" : "\n"
+            }
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
     }
 
     private func _rebuild(origin: HUDTranscriptSpan.Origin, changedRanges: [Range<Int>] = []) {
