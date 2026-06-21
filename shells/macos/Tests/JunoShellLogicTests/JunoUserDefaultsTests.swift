@@ -330,9 +330,9 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
     }
 
     func testHudLiveTranscriptionsDefaultMatchesEligibility() {
-        // On first run (key unset) the preview default follows hardware
-        // eligibility: on for Macs that meet Juno's minimum (macOS Sequoia+
-        // and ≥16 GB), off otherwise. Machine-independent assertion.
+        // On first run (key unset) the preview default follows preview
+        // eligibility, which mirrors Juno's hard launch requirements.
+        // Machine-independent assertion.
         XCTAssertEqual(
             JunoUserDefaults.hudLiveTranscriptionsEnabled,
             JunoPreviewEligibility.current.isEligible

@@ -66,6 +66,7 @@ from juno_v2.writer.final_formatter import (
     should_run_final_formatting,
 )
 from juno_v2.writer.parser import WriterIntentParser
+from juno_v2.writer.punctuation_controller import apply_final_punctuation_floor
 from juno_v2.writer.state import WriterState
 
 
@@ -87,6 +88,12 @@ _TRANSFORM_VERB_RE = re.compile(
     r"\b(?:make|turn|rewrite|change|convert|summari[sz]e|shorten|simplify|fix|correct|clean\s+up|translate)\b",
     re.IGNORECASE,
 )
+_SPOKEN_STRUCTURE_CUE_RE = re.compile(r"(?:^|(?<=\s))new\s+(?:line|paragraph)\b", re.IGNORECASE)
+_SPOKEN_STRUCTURE_LITERAL_PREV = {
+    "the", "a", "an", "this", "that", "each", "every", "my", "your", "our",
+    "their", "its", "his", "her", "word", "words", "term", "terms", "literal",
+    "called", "named", "say", "saying", "means", "mean", "use", "using",
+}
 
 
 def _mentions_recent_transform_target(text: str) -> bool:
@@ -110,6 +117,25 @@ def _unresolved_correction_cues_present(text: str) -> bool:
     from juno_core_v3.dictation.self_corrections import MID_UTTERANCE_EDIT_MARKER_RE
 
     return bool(MID_UTTERANCE_EDIT_MARKER_RE.search(text))
+
+
+def _explicit_paragraph_structure_present(final_text: str, raw_text: str) -> bool:
+    if "\n" in (final_text or "").strip():
+        return True
+    return _spoken_structure_cue_present(raw_text) or _spoken_structure_cue_present(final_text)
+
+
+def _spoken_structure_cue_present(text: str) -> bool:
+    source = text or ""
+    for match in _SPOKEN_STRUCTURE_CUE_RE.finditer(source):
+        before = source[: match.start()].rstrip()
+        prev = ""
+        if before:
+            prev_match = re.search(r"([A-Za-z']+)\W*$", before)
+            prev = prev_match.group(1).casefold() if prev_match else ""
+        if prev not in _SPOKEN_STRUCTURE_LITERAL_PREV:
+            return True
+    return False
 
 
 def _replace_commit_fields(target: dict, text: str) -> tuple[str, dict]:
@@ -482,6 +508,12 @@ class WriterService:
             and not _unresolved_correction_cues_present(final_text)
         ):
             reason = "structural_instruction"
+        if (
+            reason is None
+            and not _is_no_touch_context(context)
+            and _explicit_paragraph_structure_present(final_text, raw_text)
+        ):
+            reason = "structured_paragraph_text"
         if reason is None:
             try:
                 snippet_hit = self._direct_snippet_insert(
@@ -509,6 +541,8 @@ class WriterService:
         final_text: str,
         raw_text: str,
         context: TypedContextBundle,
+        anchor_selection: ClientSelection | None = None,
+        wake_verified: bool = False,
         memory_packet: dict | None = None,
         memory_store: Any = None,
     ) -> WriterOutcome | None:
@@ -584,7 +618,11 @@ class WriterService:
         if script.verdict == "clean" and not script.has_ops:
             edited, applied = final_text, {"edits": 0, "deletes": 0, "skipped": 0, "struct": None}
         else:
-            applied_result = apply_edit_script(final_text, script)
+            applied_result = apply_edit_script(
+                final_text,
+                script,
+                protected_terms=list(dict.fromkeys(terms)),
+            )
             if applied_result is None:
                 self.recorder.record(
                     TraceKind.WRITER,
@@ -638,6 +676,14 @@ class WriterService:
                     "pipeline": "dictation_editor",
                 },
             )
+        edited, punctuation_meta = self._apply_punctuation_floor_to_dictation(
+            utterance_id=utterance_id,
+            text=edited,
+            context=context,
+            anchor_selection=anchor_selection,
+            wake_verified=wake_verified,
+            snippet_expanded=editor_snippets_expanded,
+        )
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.PASS_THROUGH_COMMIT,
@@ -653,6 +699,7 @@ class WriterService:
                 "raw_text": raw_text,
                 "input_text": final_text,
                 "editor": {"verdict": script.verdict, "applied": applied, "decode_ms": decode_ms},
+                "punctuation_floor": punctuation_meta,
             },
         )
 
@@ -744,6 +791,8 @@ class WriterService:
                 final_text=final_text,
                 raw_text=raw_text,
                 context=context,
+                anchor_selection=anchor_selection,
+                wake_verified=wake_verified,
                 memory_packet=memory_packet,
                 memory_store=memory_store,
             )
@@ -899,6 +948,11 @@ class WriterService:
                             **snippet_meta,
                         },
                         'grammar_postpass': None,
+                        'punctuation_floor': {
+                            'changed': False,
+                            'rules_applied': [],
+                            'skip_reason': 'snippet_expanded',
+                        },
                     },
                 ))
             # Snippet expansion: expand user-defined triggers (e.g. ``brb`` ->
@@ -935,46 +989,63 @@ class WriterService:
                     )
             grammar_postpass_meta: dict[str, Any] | None = None
             if self.state.mode != WriterMode.VERBATIM:
-                text = apply_commit_boundary_rules(text, app_category=context.app_category)
-                # Issue #12 — code_grammar / meeting_grammar auto-fire,
-                # gated by ``app_category``. Runs after boundary rules
-                # (which is a no-op for code/terminal) so code surfaces
-                # still get their grammar pass even when the
-                # final-formatter chain below bails out.
-                grammar_result = apply_grammar_postpass(
-                    text, app_category=context.app_category
-                )
-                if grammar_result.applied:
-                    text = grammar_result.text
-                    grammar_postpass_meta = {
-                        'engine': grammar_result.engine,
-                        'rules_applied': list(grammar_result.rules_applied),
-                    }
-                    self.recorder.record(
-                        TraceKind.WRITER,
-                        'writer_grammar_postpass_applied',
-                        {
-                            'utterance_id': utterance_id,
-                            'app_category': context.app_category,
-                            **grammar_postpass_meta,
-                        },
+                if not snippet_expanded and _explicit_paragraph_structure_present(text, raw_text):
+                    cleanup_meta = {'pipeline': 'structured_paragraph_passthrough'}
+                else:
+                    text = apply_commit_boundary_rules(text, app_category=context.app_category)
+                    # Issue #12 — code_grammar / meeting_grammar auto-fire,
+                    # gated by ``app_category``. Runs after boundary rules
+                    # (which is a no-op for code/terminal) so code surfaces
+                    # still get their grammar pass even when the
+                    # final-formatter chain below bails out.
+                    grammar_result = apply_grammar_postpass(
+                        text, app_category=context.app_category
                     )
-                text = self._apply_structure_mode_to_dictation(text, context=context, anchor_selection=anchor_selection)
-                formatting_result = self._run_final_formatting_if_needed(
+                    if grammar_result.applied:
+                        text = grammar_result.text
+                        grammar_postpass_meta = {
+                            'engine': grammar_result.engine,
+                            'rules_applied': list(grammar_result.rules_applied),
+                        }
+                        self.recorder.record(
+                            TraceKind.WRITER,
+                            'writer_grammar_postpass_applied',
+                            {
+                                'utterance_id': utterance_id,
+                                'app_category': context.app_category,
+                                **grammar_postpass_meta,
+                            },
+                        )
+                    text = self._apply_structure_mode_to_dictation(text, context=context, anchor_selection=anchor_selection)
+                    formatting_result = self._run_final_formatting_if_needed(
+                        utterance_id=utterance_id,
+                        text=text,
+                        context=context,
+                        memory_store=memory_store,
+                    )
+                    if formatting_result is not None:
+                        text = formatting_result.text
+                        model_used = model_used or not bool(formatting_result.metadata.get('deterministic'))
+                        cleanup_meta = {
+                            'pipeline': 'writer_final_formatting_v1',
+                            'writer_backend': formatting_result.backend_name,
+                            'writer_decode_ms': formatting_result.decode_ms,
+                            **formatting_result.metadata,
+                        }
+                text, punctuation_meta = self._apply_punctuation_floor_to_dictation(
                     utterance_id=utterance_id,
                     text=text,
                     context=context,
-                    memory_store=memory_store,
+                    anchor_selection=anchor_selection,
+                    wake_verified=wake_verified,
+                    snippet_expanded=snippet_expanded,
                 )
-                if formatting_result is not None:
-                    text = formatting_result.text
-                    model_used = model_used or not bool(formatting_result.metadata.get('deterministic'))
-                    cleanup_meta = {
-                        'pipeline': 'writer_final_formatting_v1',
-                        'writer_backend': formatting_result.backend_name,
-                        'writer_decode_ms': formatting_result.decode_ms,
-                        **formatting_result.metadata,
-                    }
+            else:
+                punctuation_meta = {
+                    "changed": False,
+                    "rules_applied": [],
+                    "skip_reason": "verbatim_mode",
+                }
             return self._annotate_outcome(WriterOutcome(
                 utterance_id=utterance_id,
                 action=WriterActionKind.PASS_THROUGH_COMMIT,
@@ -990,6 +1061,7 @@ class WriterService:
                     'snippet_expanded': snippet_expanded,
                     'dictation_cleanup': cleanup_meta,
                     'grammar_postpass': grammar_postpass_meta,
+                    'punctuation_floor': punctuation_meta,
                 },
             ))
 
@@ -1198,6 +1270,45 @@ class WriterService:
         elif mode_policy is not None:
             self.state.mode = self._writer_mode_from_string(mode_policy.base_mode)
         self.state.writer_tone_addon = (writer_tone_addon or "").strip() or None
+
+    def _apply_punctuation_floor_to_dictation(
+        self,
+        *,
+        utterance_id: str,
+        text: str,
+        context: TypedContextBundle,
+        anchor_selection: ClientSelection | None,
+        wake_verified: bool,
+        snippet_expanded: bool,
+    ) -> tuple[str, dict[str, Any]]:
+        selection_active = bool(
+            anchor_selection is not None
+            and anchor_selection.start != anchor_selection.end
+        )
+        result = apply_final_punctuation_floor(
+            text,
+            app_category=getattr(context, "app_category", None),
+            writer_mode=self.state.mode.value if self.state.mode is not None else None,
+            punctuation_policy=getattr(self.state.mode_policy, "punctuation_policy", None),
+            final_formatting_policy=getattr(self.state.mode_policy, "final_formatting_policy", None),
+            selected_text=getattr(context, "selected_text", None),
+            selection_active=selection_active,
+            wake_verified=wake_verified,
+            snippet_expanded=snippet_expanded,
+        )
+        meta = result.metadata()
+        if result.changed:
+            self.recorder.record(
+                TraceKind.WRITER,
+                "writer_punctuation_floor_applied",
+                {
+                    "utterance_id": utterance_id,
+                    "rules_applied": meta["rules_applied"],
+                    "app_category": getattr(context, "app_category", None),
+                    "writer_mode": self.state.mode.value if self.state.mode is not None else None,
+                },
+            )
+        return result.text, meta
 
     def _outcome_from_turn_plan(
         self,

@@ -52,6 +52,7 @@ _SCREEN_PHRASE_REPAIR_SOURCES = {
     "recent_screen_term",
     "selection",
 }
+_SCREEN_TERM_GATE_SOURCES = {"candidate_entity", "preview_context", "recent_screen_term"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,6 +431,11 @@ def _term_allowed_for_preview_repair(term: PreviewPersonalizationTerm) -> bool:
     toks = term.tokens
     if not text or not toks or len(text) > 80 or len(toks) > 4:
         return False
+    if term.source in _SCREEN_TERM_GATE_SOURCES:
+        from juno_v2.memory.bias import screen_term_prompt_worthy
+
+        if not screen_term_prompt_worthy(text):
+            return False
     if len(term.norm) < 3:
         return False
     if len(toks) == 1 and toks[0].casefold() in _STOPWORDS:

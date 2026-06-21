@@ -75,6 +75,9 @@ final class HUDTranscriptStore: ObservableObject {
     @Published private(set) var spans: [HUDTranscriptSpan] = []
     private(set) var revision: Int = 0
     private(set) var lastHash: String = ""
+    var rawText: String {
+        Self.compose(committed: committedText, tail: tailText)
+    }
 
     /// Test-only instrumentation — true after the most recent public mutator's body
     /// executed on the main thread. Always true in production after a successful
@@ -336,6 +339,9 @@ final class HUDTranscriptStore: ObservableObject {
     }
 
     private static func acceptsPreviewSuffixRevision(current: String, incoming: String) -> Bool {
+        if acceptsSpokenPunctuationCueRevision(current: current, incoming: incoming) {
+            return true
+        }
         let currentTokens = previewRevisionTokens(current)
         let incomingTokens = previewRevisionTokens(incoming)
         let minCount = min(currentTokens.count, incomingTokens.count)
@@ -346,6 +352,51 @@ final class HUDTranscriptStore: ObservableObject {
         }
         let required = min(8, max(3, minCount / 2))
         return common >= required
+    }
+
+    /// Determiners that keep a following "new line"/"new paragraph"/"full stop"
+    /// etc. as literal prose ("the new line is short") rather than a spoken
+    /// cue. Shared by ``smoothForDisplay``, ``transcriptWithSpokenBreakCuesResolved``
+    /// and the committed-shrink gate so the three cannot drift apart.
+    private static let spokenBreakCueDeterminers: Set<String> = [
+        "the", "a", "an", "this", "that", "each", "every", "my", "your", "our",
+    ]
+
+    private static func acceptsSpokenPunctuationCueRevision(current: String, incoming: String) -> Bool {
+        let currentTokens = previewRevisionTokens(current)
+        let incomingTokens = previewRevisionTokens(incoming)
+        guard currentTokens.count >= incomingTokens.count else { return false }
+        guard currentTokens.prefix(incomingTokens.count).elementsEqual(incomingTokens) else { return false }
+        let dropped = Array(currentTokens.dropFirst(incomingTokens.count))
+        guard !dropped.isEmpty, dropped.count <= 2 else { return false }
+        // Determiner guard (mirrors smoothForDisplay / transcriptWithSpokenBreakCuesResolved):
+        // "...the new line", "...a full stop" is real dictated prose, not a
+        // spoken punctuation cue — never shrink those words off the committed
+        // HUD. The cue must not be immediately preceded by a determiner.
+        if let preceding = incomingTokens.last,
+           spokenBreakCueDeterminers.contains(preceding) {
+            return false
+        }
+        return isSpokenPunctuationCueSuffix(dropped)
+    }
+
+    private static func isSpokenPunctuationCueSuffix(_ tokens: [String]) -> Bool {
+        let joined = tokens.joined(separator: " ")
+        switch joined {
+        // Only accept shrinking committed HUD text when the dropped suffix is
+        // an unambiguous punctuation cue. The bare words "new", "full",
+        // "question", "exclamation" and "period" are excluded: they are also
+        // ordinary trailing words ("a grace period", "the full report"), and
+        // accepting them would silently drop a real dictated word from the HUD.
+        case "comma", "colon", "semicolon",
+             "question mark",
+             "exclamation point", "exclamation mark",
+             "full stop",
+             "new line", "newline", "line break", "new paragraph":
+            return true
+        default:
+            return false
+        }
     }
 
     private static func previewRevisionTokens(_ text: String) -> [String] {
@@ -435,8 +486,10 @@ final class HUDTranscriptStore: ObservableObject {
                 in: out, range: NSRange(out.startIndex..., in: out), withTemplate: "$1"
             )
         }
-        // Spoken newline cues become visible breaks unless preceded by a
-        // determiner ("the new line is short" stays literal).
+        // Spoken newline cues stay visible and also create the intended
+        // display break unless preceded by a determiner ("the new line is
+        // short" stays literal). The cue text remains on the HUD so users can
+        // see that Juno heard it before final paste converts it to structure.
         if let cue = try? NSRegularExpression(
             pattern: "(?:^|(?<= ))[Nn]ew +([Ll]ine|[Pp]aragraph)\\b[ .,]*",
             options: []
@@ -450,10 +503,14 @@ final class HUDTranscriptStore: ObservableObject {
                     $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
                 } ?? ""
                 result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-                if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
+                if spokenBreakCueDeterminers.contains(prevWord) {
                     result += ns.substring(with: match.range)
                 } else {
-                    let cueWord = ns.substring(with: match.range).lowercased()
+                    let cueText = ns.substring(with: match.range)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?"))
+                    result += cueText
+                    let cueWord = cueText.lowercased()
                     result += cueWord.contains("paragraph") ? "\n\n" : "\n"
                 }
                 cursor = match.range.location + match.range.length
@@ -462,6 +519,43 @@ final class HUDTranscriptStore: ObservableObject {
             out = result
         }
         return out
+    }
+
+    /// Spoken "new line"/"new paragraph" cues → real breaks, with the literal
+    /// cue words REMOVED. `smoothForDisplay` deliberately keeps the cue text
+    /// visible on the live HUD; this variant is for copy/paste surfaces (e.g.
+    /// the broker-failure fallback transcript) where the literal words must
+    /// never reach the user's clipboard/document. The same determiner guard
+    /// ("the new line is short") keeps genuine prose literal. Pass RAW text
+    /// (e.g. `rawText`), not already-smoothed `text`, to avoid double breaks.
+    static func transcriptWithSpokenBreakCuesResolved(_ text: String) -> String {
+        guard !text.isEmpty,
+              let cue = try? NSRegularExpression(
+                pattern: "(?:^|(?<= ))[Nn]ew +([Ll]ine|[Pp]aragraph)\\b[ .,]*",
+                options: []
+              )
+        else { return text }
+        let ns = text as NSString
+        var result = ""
+        var cursor = 0
+        for match in cue.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let before = ns.substring(to: match.range.location)
+            let prevWord = before.split(separator: " ").last.map {
+                $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
+            } ?? ""
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            if spokenBreakCueDeterminers.contains(prevWord) {
+                result += ns.substring(with: match.range)
+            } else {
+                let cueText = ns.substring(with: match.range)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?"))
+                result += cueText.lowercased().contains("paragraph") ? "\n\n" : "\n"
+            }
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
     }
 
     private func _rebuild(origin: HUDTranscriptSpan.Origin, changedRanges: [Range<Int>] = []) {

@@ -4,26 +4,21 @@ import Foundation
 
 /// Canonical hardware / OS floor for Juno.
 ///
-/// Two tiers, deliberately different in strictness:
+/// Hard launch requirements:
 ///
-///   * **macOS version is a hard requirement.** Juno refuses to launch below
-///     ``minimumMacOSMajorVersion`` (Sequoia) — enforced once at startup by
-///     ``enforceMinimumOSOrTerminate()``, which shows a blocking alert and
-///     quits.
-///   * **Memory is a soft requirement.** Below ``minimumMemoryGB`` onboarding
-///     surfaces a warning (``Snapshot/onboardingWarningMessage``) but the user
-///     can still continue.
+///   * **macOS version.** Juno refuses to launch below
+///     ``minimumMacOSMajorVersion`` (Sequoia).
+///   * **Memory.** Juno refuses to launch below ``minimumMemoryGB``.
 ///
 /// Live HUD preview support follows the hard OS floor (see
-/// ``JunoPreviewEligibility``). Memory remains warning-only: below the
-/// recommended floor, preview still defaults on but the UI surfaces a
-/// performance caveat.
+/// ``JunoPreviewEligibility``). The app-level launch gate runs before
+/// onboarding or engine startup.
 enum JunoSystemRequirements {
     /// macOS 15 Sequoia. Hard floor — Juno will not run below this.
     static let minimumMacOSMajorVersion = 15
     static let minimumMacOSName = "Sequoia"
-    /// 16 GB. Soft floor — onboarding warns below this but still allows use.
-    static let minimumMemoryGB = 16
+    /// 24 GB. Hard floor — Juno will not run below this.
+    static let minimumMemoryGB = 24
 
     struct Snapshot: Equatable {
         let osMajorVersion: Int
@@ -46,13 +41,32 @@ enum JunoSystemRequirements {
                 + "This Mac is running macOS \(osMajorVersion)."
         }
 
-        /// Non-blocking onboarding warning. The OS floor is handled by the hard
-        /// block, so this only ever covers the memory floor.
-        var onboardingWarningMessage: String? {
+        /// Blocking copy shown when the host has too little RAM to run Juno.
+        var unsupportedMemoryMessage: String? {
             guard meetsMinimumOS, !meetsMinimumMemory else { return nil }
-            return "Juno runs best on Macs with at least "
+            return "Juno requires at least "
                 + "\(JunoSystemRequirements.minimumMemoryGB) GB of memory. This Mac "
-                + "has \(memoryGB) GB, so dictation and live preview may be slow."
+                + "has \(memoryGB) GB."
+        }
+
+        var unsupportedRequirementsMessage: String? {
+            unsupportedOSMessage ?? unsupportedMemoryMessage
+        }
+
+        var unsupportedRequirementsTitle: String? {
+            if !meetsMinimumOS {
+                return "macOS \(JunoSystemRequirements.minimumMacOSName) or newer required"
+            }
+            if !meetsMinimumMemory {
+                return "\(JunoSystemRequirements.minimumMemoryGB) GB memory required"
+            }
+            return nil
+        }
+
+        /// Retained for onboarding UI compatibility. Hardware requirements are
+        /// hard launch gates, so no non-blocking warning is surfaced here.
+        var onboardingWarningMessage: String? {
+            nil
         }
     }
 
@@ -73,21 +87,22 @@ enum JunoSystemRequirements {
         return Snapshot(osMajorVersion: osMajor, memoryGB: memoryGB, chipName: chipName)
     }()
 
-    /// Present a blocking alert and terminate when the host macOS is older than
-    /// ``minimumMacOSMajorVersion``. Call once, early, on the main thread.
+    /// Present a blocking alert and terminate when this Mac does not meet
+    /// Juno's launch requirements. Call once, early, on the main thread.
     @MainActor
-    static func enforceMinimumOSOrTerminate() {
+    static func enforceMinimumRequirementsOrTerminate() {
         let snapshot = current
-        guard !snapshot.meetsMinimumOS else { return }
+        guard !snapshot.meetsAllRequirements else { return }
 
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
         alert.alertStyle = .critical
-        alert.messageText = "macOS \(minimumMacOSName) or newer required"
-        alert.informativeText = snapshot.unsupportedOSMessage
-            ?? "Juno requires macOS \(minimumMacOSName) (\(minimumMacOSMajorVersion)) or newer."
+        alert.messageText = snapshot.unsupportedRequirementsTitle ?? "Juno cannot run on this Mac"
+        alert.informativeText = snapshot.unsupportedRequirementsMessage
+            ?? "Juno requires macOS \(minimumMacOSName) (\(minimumMacOSMajorVersion)) or newer "
+            + "and at least \(minimumMemoryGB) GB of memory."
         alert.addButton(withTitle: "Quit")
         alert.runModal()
 

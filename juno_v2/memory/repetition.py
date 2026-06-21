@@ -42,6 +42,7 @@ guard because both are "post-hoc quality filters on ASR text".
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 
@@ -73,6 +74,18 @@ _MIN_PERIOD_WORDS = 2
 _MIN_SINGLE_TOKEN_SUFFIX_REPEATS = 8
 _MIN_PREFIX_WORDS_BEFORE_SINGLE_TOKEN_SUFFIX = 5
 _ABSURD_SINGLE_TOKEN_SUFFIX_REPEATS = 24
+
+# Noisy tail loops do not always stay perfectly periodic. A real example:
+# "... help me do it all this thing? of satisfaction because of satisfaction
+# because ... satisfaction satisfaction". The suffix is too degraded for the
+# strict phrase-period detector and not contiguous enough for the single-token
+# suffix detector, but it is still a long low-entropy tail after a complete
+# sentence.
+_MIN_LOW_ENTROPY_SUFFIX_WORDS = 18
+_MAX_LOW_ENTROPY_SUFFIX_DISTINCT_TOKENS = 4
+_MIN_LOW_ENTROPY_DOMINANT_REPEATS = 6
+_MIN_LOW_ENTROPY_REPEATED_TOKEN_COUNT = 2
+_MIN_LOW_ENTROPY_TOKEN_REPEATS = 4
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +248,21 @@ def collapse_tail_repetition(
     if detection is None:
         single_suffix = detect_single_token_tail_repetition(words)
         if single_suffix is None:
-            return text, RepetitionCollapse(collapsed=False, reason="no_repetition_found")
+            low_entropy_suffix = _detect_low_entropy_repetition_tail(words)
+            if low_entropy_suffix is None:
+                return text, RepetitionCollapse(collapsed=False, reason="no_repetition_found")
+            suffix_start, token, repeats = low_entropy_suffix
+            wps = _words_per_second(words, audio_duration_ms)
+            kept_words = words[:suffix_start]
+            return _rejoin_words(text, kept_words), RepetitionCollapse(
+                collapsed=True,
+                reason="low_entropy_repetition_tail_collapsed",
+                period_words=None,
+                copies=repeats,
+                removed_words=len(words) - suffix_start,
+                words_per_second=wps,
+                repeated_token=token,
+            )
         token, repeats, suffix_start = single_suffix
         wps = _words_per_second(words, audio_duration_ms)
         if (
@@ -335,6 +362,48 @@ def detect_single_token_tail_repetition(words: list[str]) -> tuple[str, int, int
     if start < _MIN_PREFIX_WORDS_BEFORE_SINGLE_TOKEN_SUFFIX:
         return None
     return token, repeats, start
+
+
+def _detect_low_entropy_repetition_tail(words: list[str]) -> tuple[int, str, int] | None:
+    """Return ``(start_index, dominant_token, repeats)`` for noisy tail loops.
+
+    This intentionally requires a sentence boundary before the suffix. The
+    strict detectors above handle whole-utterance loops and contiguous token
+    suffixes; this fallback is for a complete sentence followed by a degraded
+    ASR loop, so the boundary keeps it away from ordinary in-sentence wording.
+    """
+    n = len(words)
+    if n < _MIN_PREFIX_WORDS_BEFORE_SINGLE_TOKEN_SUFFIX + _MIN_LOW_ENTROPY_SUFFIX_WORDS:
+        return None
+
+    normalized = [_repetition_token(word) for word in words]
+    for start in range(_MIN_PREFIX_WORDS_BEFORE_SINGLE_TOKEN_SUFFIX, n - _MIN_LOW_ENTROPY_SUFFIX_WORDS + 1):
+        if not _ends_sentence_boundary(words[start - 1]):
+            continue
+        suffix = [token for token in normalized[start:] if token]
+        if len(suffix) < _MIN_LOW_ENTROPY_SUFFIX_WORDS:
+            continue
+        counts = Counter(suffix)
+        if len(counts) > _MAX_LOW_ENTROPY_SUFFIX_DISTINCT_TOKENS:
+            continue
+        dominant_token, dominant_count = counts.most_common(1)[0]
+        if dominant_count < _MIN_LOW_ENTROPY_DOMINANT_REPEATS:
+            continue
+        repeated_tokens = [
+            token
+            for token, count in counts.items()
+            if count >= _MIN_LOW_ENTROPY_TOKEN_REPEATS and len(token) >= 3
+        ]
+        if len(repeated_tokens) < _MIN_LOW_ENTROPY_REPEATED_TOKEN_COUNT:
+            continue
+        if counts.get(suffix[0], 0) < _MIN_LOW_ENTROPY_TOKEN_REPEATS:
+            continue
+        return start, dominant_token, dominant_count
+    return None
+
+
+def _ends_sentence_boundary(value: str) -> bool:
+    return bool(re.search(r"[.!?:;][\"')\]]*$", value or ""))
 
 
 def _repetition_token(value: str) -> str:

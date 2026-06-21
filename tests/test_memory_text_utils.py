@@ -13,7 +13,11 @@ import pytest
 from juno_v2.memory.ai_dictionary import AI_GLOSSARY, is_ai_glossary_term
 from juno_v2.memory.correction_diff import diff_pasted_segment
 from juno_v2.memory.fold import fold_key, fold_match_pattern
-from juno_v2.memory.hallucination import looks_like_hallucination
+from juno_v2.memory.hallucination import (
+    looks_like_hallucination,
+    strip_adjacent_low_signal_word_duplicates,
+    strip_repeated_stock_hallucination_tail,
+)
 from juno_v2.memory.repetition import (
     collapse_tail_repetition,
     detect_tail_repetition,
@@ -364,6 +368,46 @@ def test_collapse_single_token_suffix_after_real_sentence() -> None:
     assert diag.removed_words == 30
 
 
+def test_collapse_noisy_low_entropy_suffix_after_sentence_boundary() -> None:
+    text = (
+        "Hey, Juno. We want to work on few things. New paragraph. "
+        "Fix existing issues. New paragraph. Audit the current code. New paragraph. "
+        "This is what we have to do. New paragraph. "
+        "Will you help me to do it all this thing? "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because of satisfaction because of satisfaction because "
+        "of satisfaction because satisfaction because satisfaction satisfaction "
+        "because satisfaction satisfaction satisfaction satisfaction satisfaction "
+        "satisfaction satisfaction"
+    )
+
+    cleaned, diag = collapse_tail_repetition(text, audio_duration_ms=29354)
+
+    assert cleaned == (
+        "Hey, Juno. We want to work on few things. New paragraph. "
+        "Fix existing issues. New paragraph. Audit the current code. New paragraph. "
+        "This is what we have to do. New paragraph. "
+        "Will you help me to do it all this thing?"
+    )
+    assert diag.collapsed
+    assert diag.reason == "low_entropy_repetition_tail_collapsed"
+    assert diag.repeated_token == "satisfaction"
+    assert diag.removed_words == 42
+
+
+def test_collapse_low_entropy_suffix_requires_complete_sentence_boundary() -> None:
+    text = (
+        "Please keep this exact sequence red blue red blue red blue red blue "
+        "red blue red blue red blue red blue red blue"
+    )
+
+    cleaned, diag = collapse_tail_repetition(text, audio_duration_ms=29354)
+
+    assert cleaned == text
+    assert not diag.collapsed
+
+
 def test_collapse_spares_intentional_short_emphasis() -> None:
     # All-same-token utterance without a substantive prefix: not ours.
     text = "yes yes yes yes yes yes yes"
@@ -396,6 +440,93 @@ def test_collapse_is_idempotent() -> None:
     twice, diag = collapse_tail_repetition(once, audio_duration_ms=None)
     assert twice == once
     assert not diag.collapsed
+
+
+def test_strip_repeated_stock_hallucination_tail_after_sentence_boundary() -> None:
+    text = (
+        "The HUD issue is clearly not resolved yet and the spoken new line cue "
+        "should stay visible. Okay, Okay Okay Okay"
+    )
+    assert (
+        strip_repeated_stock_hallucination_tail(text)
+        == "The HUD issue is clearly not resolved yet and the spoken new line cue should stay visible."
+    )
+
+
+def test_strip_repeated_stock_hallucination_tail_preserves_inline_emphasis() -> None:
+    text = "The plan is okay okay okay and we should ship it"
+    assert strip_repeated_stock_hallucination_tail(text) == text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_collapses_filler_only() -> None:
+    text = "The sentence is just just a tailing issue, and and it should be fixed."
+
+    assert (
+        strip_adjacent_low_signal_word_duplicates(text)
+        == "The sentence is just a tailing issue, and it should be fixed."
+    )
+
+
+def test_strip_adjacent_low_signal_word_duplicates_preserves_meaningful_repetition() -> None:
+    text = "Send Priya Priya the very very specific note for section 3 3."
+
+    assert strip_adjacent_low_signal_word_duplicates(text) == text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_keeps_clause_boundary_repeats() -> None:
+    # A comma or newline between the copies marks a clause/list boundary where
+    # the second word is a real word, not a stutter — must never be dropped.
+    for text in (
+        "I know that, that being said we should leave",
+        "She said that, that was the plan",
+        "It is what it is, is it not",
+        "First line ends with the\nthe second line begins",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_keeps_valid_double_that_and_is() -> None:
+    # "that that" / "is is" are grammatical even with a plain space between
+    # them; collapsing would silently change meaning, so they are excluded.
+    for text in (
+        "I think that that approach works",
+        "What it is is a real mystery to me",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_keeps_hyphen_and_apostrophe_compounds() -> None:
+    # A glue word followed by whitespace and a hyphenated/apostrophe compound
+    # that begins with the same word is NOT a doubled token — the second
+    # occurrence is the start of a real word ("a-frame", "it's").
+    for text in (
+        "I want a a-frame for the tent",
+        "it it's cold outside",
+        "we are are-you-sure about this",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_skips_when_confident() -> None:
+    # When the ASR is internally confident, an adjacent glue-word repeat is
+    # almost always real speech (a stutter, the band name "The The", an
+    # emphatic "and and then") and must be preserved. Only low-confidence /
+    # unknown-confidence decodes are collapsed.
+    confident = "We saw the the band live"
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident, confidence=-0.4)
+        == confident
+    )
+    # Low confidence -> ASR doubling artifact -> collapse.
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident, confidence=-2.0)
+        == "We saw the band live"
+    )
+    # Unknown confidence keeps the historical (collapse) behaviour.
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident)
+        == "We saw the band live"
+    )
 
 
 # --------------------------------------------------------------------- #

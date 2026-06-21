@@ -262,6 +262,23 @@ def test_enforce_budgets_preserves_provenance_and_metadata() -> None:
     assert out.window_title == "My Note"
 
 
+def test_strip_format_marks_removes_bidi_isolates_from_screen_context() -> None:
+    # Bidi-aware apps (Telegram, RTL browsers) wrap window titles and message
+    # text in invisible bidi marks (LRM + first-strong-isolate … pop-isolate).
+    # Left in, they corrupt candidate_entities so an on-screen word like
+    # "Padel" never matches the spoken word as a recognition-bias term, and an
+    # uncommon term is mis-transcribed even though it was visible. The engine
+    # strips them before tokenizing screen context into candidates.
+    from juno_core_v3.dictation.pipeline import _strip_format_marks
+
+    assert _strip_format_marks("‎⁨Padel") == "Padel"
+    assert _strip_format_marks("Danube⁩") == "Danube"
+    assert _strip_format_marks("‎⁨Paresh Dudhat⁩") == "Paresh Dudhat"
+    # Ordinary text and spacing are untouched.
+    assert _strip_format_marks("Rokad Parivar") == "Rokad Parivar"
+    assert _strip_format_marks("") == ""
+
+
 def test_enforce_budgets_total_overflow_clears_clipboard_and_trims_selected() -> None:
     budgets = ContextPacketBudgets(
         max_total_chars=40,

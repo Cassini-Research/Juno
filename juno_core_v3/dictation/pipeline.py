@@ -397,6 +397,7 @@ class OneShotDictationPipeline:
         session_context_tape: dict[str, Any] | list[Any] | None = None,
         transcript_hint: str | None = None,
         language_mode: str | None = None,
+        shell_timeline: dict[str, Any] | None = None,
     ) -> OneShotDictationResult:
         started_ns = time.perf_counter_ns()
         uid = utterance_id or self._new_utterance_id()
@@ -404,7 +405,14 @@ class OneShotDictationPipeline:
         stage = _normalize_transcript_stage(transcript_stage)
         live_adjudication = stage == "live_adjudication"
         live_transcript_hint = _usable_transcript_hint_fallback(transcript_hint)
-        use_live_transcript_for_final = False
+        shell_timeline = _sanitize_shell_timeline_mapping(shell_timeline)
+        final_preview_flush_received = _shell_timeline_has_final_preview_flush(shell_timeline)
+        use_live_transcript_for_final = (
+            not live_adjudication
+            and bool(live_transcript_hint)
+            and final_preview_flush_received
+            and _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
+        )
         capability_mode: str | None = None
         if live_adjudication:
             save_history = False
@@ -812,6 +820,7 @@ class OneShotDictationPipeline:
                     {
                         "utterance_id": uid,
                         "hint_chars": len(live_transcript_hint),
+                        "reason": "final_preview_flush_received",
                         "audio_duration_ms": result.audio_duration_ms,
                     },
                 )
@@ -1004,6 +1013,23 @@ class OneShotDictationPipeline:
                 "audio_duration_ms": result.audio_duration_ms,
                 "decode_ms": result.decode_ms,
                 "raw_text": _text_debug_payload(raw_text),
+            },
+        )
+        final_asr_live_hint_audit = _final_asr_live_hint_audit_payload(
+            raw_text=raw_text,
+            transcript_hint=live_transcript_hint,
+            shell_timeline=shell_timeline,
+            backend_name=result.backend_name,
+            model_path=str(getattr(result, "model_path", "") or ""),
+            decode_ms=result.decode_ms,
+            skip_used=use_live_transcript_for_final,
+        )
+        self.recorder.record(
+            TraceKind.SYSTEM,
+            "oneshot_final_asr_live_hint_audit",
+            {
+                "utterance_id": uid,
+                **final_asr_live_hint_audit,
             },
         )
         final_asr_hallucination_fallback: dict[str, Any] | None = None
@@ -2151,7 +2177,13 @@ class OneShotDictationPipeline:
             paste_kind = "none"
             noop_reason = "action_rejected"
             writer_text = ""
-            recoverable_transcript = (adjudicated_text or "").strip()
+            # Strip the Juno wake phrase so the shell can paste the user's
+            # actual words (e.g. "set an alarm to publish the changelog") into
+            # the focused surface instead of dropping them — the wake word was
+            # only the address, not content the user wants written.
+            # ``_post_wake_from_adjudicated`` falls back to the full text when
+            # no wake phrase is found, so this never loses words.
+            recoverable_transcript = _post_wake_from_adjudicated(adjudicated_text)
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "action_extraction_rejected",
@@ -2302,6 +2334,7 @@ class OneShotDictationPipeline:
                 "backend": result.backend_name,
                 "model_path": resolved_model_path,
                 "writer_action": writer_action,
+                "final_asr_live_hint_audit": final_asr_live_hint_audit,
                 "memory_packet_summary": {
                     "lexicon_terms": len(memory_packet.lexicon_terms),
                     "replacements": len(memory_packet.replacements),
@@ -2318,7 +2351,10 @@ class OneShotDictationPipeline:
             "session_context_tape": tape_meta,
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
+            "final_asr_live_hint_audit": final_asr_live_hint_audit,
         }
+        if shell_timeline:
+            meta_out["shell_timeline"] = shell_timeline
         if audio_diag is not None:
             meta_out["audio_diagnostics"] = audio_diag.to_dict()
         if final_asr_hallucination_fallback is not None:
@@ -2353,6 +2389,7 @@ class OneShotDictationPipeline:
                 "snippet_expanded",
                 "dictation_cleanup",
                 "grammar_postpass",
+                "punctuation_floor",
                 "transform_kind",
                 "reason",
                 "structure",
@@ -2709,11 +2746,14 @@ class OneShotDictationPipeline:
             if key in seen_snapshot_keys:
                 continue
             seen_snapshot_keys.add(key)
-            chunks.extend([app, title, selected, before, after, field_excerpt, doc])
+            chunks.extend([
+                _strip_format_marks(x)
+                for x in (app, title, selected, before, after, field_excerpt, doc)
+            ])
             raw_candidates = item.get("candidate_entities") or item.get("candidate_terms")
             if isinstance(raw_candidates, list):
                 for raw in raw_candidates[:24]:
-                    value = _bounded_text(raw, 80)
+                    value = _strip_format_marks(_bounded_text(raw, 80))
                     if value and (_context_candidate_allowed is None or _context_candidate_allowed(value)):
                         explicit_terms.append(value)
 
@@ -3774,11 +3814,12 @@ def _reconcile_protected_term_near_misses(
         observed = match.group(0)
         best_target: str | None = None
         best_ratio = 0.0
-        for term, source, _allow_common_target in candidates:
+        for term, source, allow_common_target in candidates:
             if not _protected_term_near_miss(
                 term,
                 observed,
                 static_glossary=source == "ai_glossary",
+                allow_common_target=allow_common_target,
             ):
                 continue
             ratio = difflib.SequenceMatcher(
@@ -3876,7 +3917,13 @@ def _single_letter_inflection_pair(a: str, b: str) -> bool:
     return False
 
 
-def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool = False) -> bool:
+def _protected_term_near_miss(
+    term: str,
+    observed: str,
+    *,
+    static_glossary: bool = False,
+    allow_common_target: bool = False,
+) -> bool:
     """True if ``observed`` is a near-miss for ``term``.
 
     Constraints (all must hold):
@@ -3902,21 +3949,30 @@ def _protected_term_near_miss(term: str, observed: str, *, static_glossary: bool
     target_folded = target.casefold()
     if obs_folded in _COMMON_PHONETIC_REPAIR_WORDS:
         return False
-    if static_glossary and common_english_single_word(obs_folded):
+    observed_is_common = common_english_single_word(obs_folded)
+    if static_glossary and observed_is_common:
         return False
     if (
-        common_english_single_word(obs_folded)
+        not allow_common_target
+        and not _single_token_has_identifier_shape(target)
+        and _soundex(obs_folded) != _soundex(target_folded)
+    ):
+        # Screen/context terms are useful for names, but edit distance alone is
+        # too weak for single-token protected repairs: OCR-like variants can
+        # rewrite ordinary words or unrelated names. Keep real phonetic repairs;
+        # block spelling-only rewrites without phonetic support.
+        return False
+    if (
+        observed_is_common
         and _single_letter_inflection_pair(obs_folded, target_folded)
         and not _single_token_has_identifier_shape(target)
     ):
         # A common word and its own plural/singular are not an ASR
         # near-miss — they are the same word inflected, and "repairing"
-        # one into the other rewrites the user's grammar. Screen-term
-        # phrase tokens made Juno's own sidebar label eligible here and
-        # "take a note, action items…" became "Actions items…" — which
-        # then broke turn-plan span grounding for the note body
-        # (production 2026-06-11). Distinct words that merely look alike
-        # ("gamma" → protected "Gemma") still repair.
+        # one into the other rewrites the user's grammar. Screen-term phrase
+        # tokens can otherwise turn ordinary prose into label-shaped text and
+        # break span grounding. Distinct words that merely look alike can still
+        # repair when the other guards supply evidence.
         return False
     if (
         len(obs_folded) > len(target_folded)
@@ -4531,6 +4587,70 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() not in {"0", "false", "no", "off", ""}
 
 
+def _sanitize_shell_timeline_mapping(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str):
+            continue
+        safe_key = key.strip()
+        if not safe_key:
+            continue
+        if isinstance(raw, bool):
+            out[safe_key] = raw
+        elif isinstance(raw, (int, float, str)):
+            out[safe_key] = raw
+    return out
+
+
+def _shell_timeline_has_final_preview_flush(shell_timeline: dict[str, Any] | None) -> bool:
+    if not isinstance(shell_timeline, dict):
+        return False
+    value = shell_timeline.get("final_preview_flush_received_ms")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        return bool(value.strip())
+    return False
+
+
+def _final_asr_live_hint_audit_payload(
+    *,
+    raw_text: str,
+    transcript_hint: str,
+    shell_timeline: dict[str, Any] | None,
+    backend_name: str,
+    model_path: str,
+    decode_ms: float,
+    skip_used: bool,
+) -> dict[str, Any]:
+    raw = (raw_text or "").strip()
+    hint = _usable_transcript_hint_fallback(transcript_hint)
+    final_preview_flushed = _shell_timeline_has_final_preview_flush(shell_timeline)
+    skip_enabled = _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
+    similarity = None
+    if raw and hint:
+        similarity = round(difflib.SequenceMatcher(None, raw.casefold(), hint.casefold()).ratio(), 4)
+    return {
+        "hint_present": bool(hint),
+        "hint_chars": len(hint),
+        "hint_words": len(hint.split()) if hint else 0,
+        "raw_chars": len(raw),
+        "raw_words": len(raw.split()) if raw else 0,
+        "raw_hint_similarity": similarity,
+        "final_preview_flush_received": final_preview_flushed,
+        "skip_enabled": skip_enabled,
+        "skip_eligible": bool(hint and final_preview_flushed),
+        "skip_used": bool(skip_used),
+        "backend": backend_name,
+        "model_path": model_path,
+        "decode_ms": float(decode_ms or 0.0),
+    }
+
+
 def _fallback_adjudicated_text(
     *,
     raw_text: str,
@@ -4619,6 +4739,26 @@ def _bounded_text(value: Any, max_chars: int) -> str:
     if max_chars <= 0:
         return ""
     return text[:max_chars]
+
+
+def _strip_format_marks(value: Any) -> str:
+    """Drop invisible Unicode *format* characters (Cf: bidi marks/isolates,
+    zero-width joiners) before screen-context text becomes candidate_entities.
+
+    Bidi-aware apps (Telegram, browsers with RTL content) wrap titles and
+    message text in these marks, so a window title "‎⁨Padel in Danube⁩" makes
+    the recognizer see "‎⁨Padel" — an unmatchable bias term — and an
+    uncommon on-screen word is mis-transcribed ("pedal") even though it was
+    visible. The macOS shell strips these at the AX source; this is the
+    engine-side backstop for every screen-context field (title, selected text,
+    surrounding text), not just the window body.
+    """
+    import unicodedata
+
+    text = str(value or "")
+    if not text or not any(unicodedata.category(ch) == "Cf" for ch in text):
+        return text
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
 
 
 def _text_debug_payload(value: Any, *, max_preview_chars: int = 240) -> dict[str, Any]:

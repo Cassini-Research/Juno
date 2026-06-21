@@ -152,10 +152,8 @@ private struct OnboardingIntroStep: View {
         .accessibilityHidden(true)
     }
 
-    /// Non-blocking memory-floor warning. Juno still runs below the recommended
-    /// RAM; this just sets expectations during onboarding (see
-    /// ``JunoSystemRequirements``). The macOS-version floor is a hard block
-    /// handled at launch, so it never reaches this screen.
+    /// Non-blocking setup notice. Hard hardware requirements are handled at
+    /// launch, before onboarding reaches this screen.
     private func requirementsBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
