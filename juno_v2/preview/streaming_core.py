@@ -138,11 +138,13 @@ class StreamingPreviewState:
     silence_empty_decode_tail_preserved_events: int = 0
     silence_tail_quarantine_events: int = 0
     # Fingerprint of the audio buffer at the most recent silence-confirmation
-    # decode. We refuse to re-run a silence-confirmation pass over identical
-    # audio: it cannot produce new agreement (the HypothesisBuffer state has
-    # not advanced) and each call gives the replay-prefix matcher another
-    # chance to fire. ``None`` means we have not yet done a silence pass.
+    # decode. Identical-buffer silence decodes are normally skipped, with a
+    # small bounded retry for dangling connectors such as a committed "... to"
+    # where the final object/name often appears one pass late.
     last_silence_decode_buffer_sig: tuple[int, float] | None = None
+    same_buffer_silence_retries: int = 0
+    same_buffer_silence_retry_events: int = 0
+    tail_reanchor_revision_events: int = 0
     created_at_ns: int = field(default_factory=time.perf_counter_ns)
     # Last client activity for this utterance. This is intentionally updated
     # on every chunk, not just VAD-admitted speech: a long pause is still an
@@ -309,8 +311,17 @@ class StreamingPreviewSessionManager:
                 # output.
                 buffer_sig = (int(state.buffer_audio.size), float(state.buffer_start_t))
                 if state.last_silence_decode_buffer_sig == buffer_sig:
-                    decode_skip_reason = "silence_decode_already_done_for_buffer"
+                    if _silence_retry_useful_for_dangling_commit(state):
+                        decode_skip_reason = self._cadence_skip_reason(state, is_final=False)
+                        if decode_skip_reason is None:
+                            state.decode_silence_confirmations += 1
+                            state.same_buffer_silence_retries += 1
+                            state.same_buffer_silence_retry_events += 1
+                            decoded = self._run_decode(state, req)
+                    else:
+                        decode_skip_reason = "silence_decode_already_done_for_buffer"
                 else:
+                    state.same_buffer_silence_retries = 0
                     decode_skip_reason = self._cadence_skip_reason(state, is_final=False)
                     if decode_skip_reason is None:
                         state.decode_silence_confirmations += 1
@@ -529,6 +540,10 @@ class StreamingPreviewSessionManager:
                 state.last_language = decoded.language
 
         # 4. Build response. Committed/tail come from the HypothesisBuffer.
+        tail_reanchor_revision_reason = state.hypothesis.resolve_tail_reanchor_revision()
+        if tail_reanchor_revision_reason is not None:
+            state.tail_reanchor_revision_events += 1
+            state.committed_replay_agreement_drops += 1
         committed_text = state.hypothesis.committed_text()
         tail_text = state.hypothesis.tail_text()
         tail_repeat_drop_reason = state.hypothesis.drop_repeated_tail_suffix()
@@ -764,6 +779,7 @@ class StreamingPreviewSessionManager:
             "decode_skipped_too_short": state.decode_skipped_too_short,
             "decode_skipped_vad_silence": state.decode_skipped_vad_silence,
             "decode_silence_confirmations": state.decode_silence_confirmations,
+            "same_buffer_silence_retry_events": state.same_buffer_silence_retry_events,
             "decode_on_silence": decode_on_silence,
             "commit_events": state.commit_events,
             "segment_trim_events": state.segment_trim_events,
@@ -772,6 +788,8 @@ class StreamingPreviewSessionManager:
             "tail_suppressed_events": state.tail_suppressed_events,
             "tail_repeat_drop_events": state.tail_repeat_drop_events,
             "tail_repeat_drop_reason": tail_repeat_drop_reason,
+            "tail_reanchor_revision_events": state.tail_reanchor_revision_events,
+            "tail_reanchor_revision_reason": tail_reanchor_revision_reason,
             "committed_replay_suppressed_events": state.committed_replay_suppressed_events,
             "committed_replay_agreement_drops": state.committed_replay_agreement_drops,
             "committed_burst_budget_events": state.committed_burst_budget_events,
@@ -1342,6 +1360,7 @@ _TAIL_MAX_WORDS = 60
 # times, we treat the tail as a loop and suppress it.
 _TAIL_LOOP_WINDOW = 30
 _TAIL_LOOP_NGRAM_REPETITIONS = 3
+_STANDALONE_SUBTITLE_TAILS = frozenset({"end", "the end"})
 
 
 _VALID_LEADING_SINGLE_LETTERS = frozenset({"a", "i", "o"})
@@ -1440,6 +1459,10 @@ def _guard_tail_hallucination(tail_text: str) -> tuple[str, str | None]:
 
     if is_whisper_silence_hallucination(tail_text):
         return "", "tail_boh_blocklist"
+    normalized_tail_phrase = re.sub(r"[^a-z0-9\s']", "", tail_text.casefold())
+    normalized_tail_phrase = re.sub(r"\s+", " ", normalized_tail_phrase).strip()
+    if normalized_tail_phrase in _STANDALONE_SUBTITLE_TAILS and re.search(r"[.!?]\s*$", tail_text):
+        return "", "tail_subtitle_stock_phrase"
     _cleaned_tail, removed_suffix = strip_trailing_boh(tail_text)
     if removed_suffix is not None:
         # If a tail ends in a known signoff/subtitle hallucination, suppress the
@@ -1520,6 +1543,42 @@ _SILENCE_ONLY_SINGLE_WORD_BLOCKLIST = frozenset(
         "you",
     }
 )
+_DANGLING_CONNECTOR_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+)
+_MAX_SAME_BUFFER_SILENCE_RETRIES = 2
+
+
+def _silence_retry_useful_for_dangling_commit(state: StreamingPreviewState) -> bool:
+    if state.same_buffer_silence_retries >= _MAX_SAME_BUFFER_SILENCE_RETRIES:
+        return False
+    if state.hypothesis.tail:
+        return False
+    committed = state.hypothesis.committed
+    if len(committed) < 3:
+        return False
+    last = committed[-1].agreement_key
+    if not last or last not in _DANGLING_CONNECTOR_WORDS:
+        return False
+    text = state.hypothesis.committed_text().rstrip()
+    if not text or text[-1:] in ".!?":
+        return False
+    return True
 
 
 def _display_word_count(words: list[Word]) -> int:

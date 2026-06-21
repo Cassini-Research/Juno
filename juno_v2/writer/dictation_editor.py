@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from juno_v2.memory.entity_policy import common_english_single_word
+
 DICTATION_EDIT_TASK = "dictation_edit_v1"
 
 # Static system prompt — this exact string is the KV-cached prefix. Keep it
@@ -202,7 +204,12 @@ def _delete_is_evidenced(
     return False
 
 
-def apply_edit_script(source: str, script: EditScript) -> tuple[str, dict[str, Any]] | None:
+def apply_edit_script(
+    source: str,
+    script: EditScript,
+    *,
+    protected_terms: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, dict[str, Any]] | None:
     """Deterministically apply a parsed script. None ⇒ caller uses the floor."""
     text = source
     applied = {"edits": 0, "deletes": 0, "skipped": 0, "struct": None}
@@ -211,6 +218,15 @@ def apply_edit_script(source: str, script: EditScript) -> tuple[str, dict[str, A
     for phrase, replacement in script.edits:
         loc = _find_phrase(text, phrase)
         if loc is None or len(replacement) > max(24, 3 * len(phrase)):
+            applied["skipped"] += 1
+            continue
+        if _case_only_edit_without_evidence(
+            text,
+            loc[0],
+            phrase,
+            replacement,
+            protected_terms=protected_terms,
+        ):
             applied["skipped"] += 1
             continue
         spans.append((loc[0], loc[1], replacement))
@@ -298,6 +314,73 @@ def apply_edit_script(source: str, script: EditScript) -> tuple[str, dict[str, A
     if not text.strip():
         return None
     return text, applied
+
+
+def _case_only_edit_without_evidence(
+    source: str,
+    start: int,
+    phrase: str,
+    replacement: str,
+    *,
+    protected_terms: list[str] | tuple[str, ...] | None,
+) -> bool:
+    """Reject model-only capitalization of ordinary words inside prose.
+
+    Name/protected-term casing is useful, but screen/context junk can nudge the
+    editor to capitalize ordinary words. Sentence-start casing is handled by
+    the deterministic postpass, so mid-sentence common-word case edits need
+    exact protected-term evidence.
+    """
+    old = (phrase or "").strip()
+    new = (replacement or "").strip()
+    if not old or not new or old == new:
+        return False
+    if _casefold_alnum(old) != _casefold_alnum(new):
+        return False
+    if _protected_term_exact_match(new, protected_terms):
+        return False
+    if _identifier_case_shape(new):
+        return False
+    if _at_sentence_start(source, start):
+        return False
+    tokens = _norm_tokens(old)
+    if len(tokens) != 1:
+        return False
+    return common_english_single_word(tokens[0])
+
+
+def _casefold_alnum(text: str) -> str:
+    return re.sub(r"[^\w']+", "", (text or "").casefold())
+
+
+def _protected_term_exact_match(
+    replacement: str,
+    protected_terms: list[str] | tuple[str, ...] | None,
+) -> bool:
+    target = _casefold_alnum(replacement)
+    if not target:
+        return False
+    for term in protected_terms or ():
+        if _casefold_alnum(str(term or "")) == target:
+            return True
+    return False
+
+
+def _identifier_case_shape(text: str) -> bool:
+    core = re.sub(r"[^A-Za-z0-9_./-]+", "", text or "")
+    if not core:
+        return False
+    if any(ch.isdigit() for ch in core) and any(ch.isalpha() for ch in core):
+        return True
+    letters = [ch for ch in core if ch.isalpha()]
+    return len(letters) >= 2 and all(ch.isupper() for ch in letters)
+
+
+def _at_sentence_start(source: str, start: int) -> bool:
+    before = (source or "")[: max(0, start)].rstrip()
+    if not before:
+        return True
+    return before[-1] in ".!?\n"
 
 
 _ABBREV_BEFORE_PERIOD_RE = re.compile(r"\b(?:e\.g|i\.e|etc|vs|mr|mrs|ms|dr|st|no|inc|ltd)$", re.IGNORECASE)

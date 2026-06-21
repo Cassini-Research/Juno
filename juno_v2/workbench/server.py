@@ -4490,12 +4490,16 @@ class WorkbenchApp:
             _preview_candidates_from_session_context_tape(payload.get("session_context_tape"))[:24]
         )
         if raw_payload_candidates:
+            from juno_v2.memory.bias import screen_term_prompt_worthy
+
             existing_candidates = preview_context_payload.get("candidate_entities")
             merged_candidates = list(existing_candidates) if isinstance(existing_candidates, list) else []
             seen_candidates = {str(item).casefold() for item in merged_candidates if str(item).strip()}
             for raw_candidate in raw_payload_candidates[:24]:
                 candidate = str(raw_candidate or "").strip()
                 if not candidate:
+                    continue
+                if not screen_term_prompt_worthy(candidate):
                     continue
                 key = candidate.casefold()
                 if key in seen_candidates:
@@ -5967,6 +5971,7 @@ class WorkbenchApp:
         transcript_stage: str | None = None,
         session_context_tape: Dict[str, Any] | list[Any] | None = None,
         transcript_hint: str | None = None,
+        shell_timeline: Dict[str, Any] | None = None,
         save_history: bool = True,
         save_audio: bool = True,
         language_mode: str | None = None,
@@ -6006,6 +6011,7 @@ class WorkbenchApp:
                 transcript_stage=transcript_stage or "final_delivery",
                 session_context_tape=session_context_tape,
                 transcript_hint=transcript_hint,
+                shell_timeline=shell_timeline,
                 save_history=save_history,
                 save_audio=save_audio,
                 language_mode=language_mode,
@@ -6202,6 +6208,7 @@ class WorkbenchApp:
                 transcript_stage="live_adjudication" if live_adjudication else stage,
                 session_context_tape=session_context_tape,
                 transcript_hint=transcript_hint,
+                shell_timeline=shell_timeline,
                 save_history=False if live_adjudication else bool(privacy_summary.get("save_history", True)),
                 save_audio=False if live_adjudication else bool(privacy_summary.get("save_audio", True)),
                 language_mode=language_mode,

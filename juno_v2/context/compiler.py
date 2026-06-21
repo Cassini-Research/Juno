@@ -10,6 +10,7 @@ from juno_v2.context.provider import _context_candidate_allowed, _extract_candid
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.contracts.memory import MemoryServingPacket, MemorySnapshot
 from juno_v2.contracts.modes import ModePolicy, ModeSelection
+from juno_v2.memory.bias import screen_term_prompt_worthy
 from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.ranking import rank_memory_for_context
 from juno_v2.personalization.seed.models import SeedBiasAttachment
@@ -528,9 +529,11 @@ def _compile_terms(
     # tokens — they used to diverge because this compile path ran its
     # own stricter uppercase-only regex.
     for term in context.candidate_entities[:16]:
+        explicit = term.casefold() in explicit_candidate_terms
         if not _context_candidate_allowed(term):
             continue
-        explicit = term.casefold() in explicit_candidate_terms
+        if not explicit and not screen_term_prompt_worthy(term):
+            continue
         add(term, source="screen", priority=82.0, protected=explicit or _looks_identifier(term) or _looks_proper_noun(term))
 
     hint_tokens = _tokens(" ".join([transcript_hint or "", context.window_title or "", context.app_name or ""]))

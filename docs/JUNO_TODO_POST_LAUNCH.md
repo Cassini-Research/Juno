@@ -21,6 +21,6 @@
    acceptance quality from History; tighten the system prompt or model
    choice (verify current-gen small instruct models first).
 6. **KV cache quantization** for the editor prefix if memory pressure
-   appears on 16GB machines.
+   appears on lower-memory machines.
 7. **L6 replay fixture set** — record curated fixtures (silent-S endings,
    got/God minimal pairs, 20-action batch, letter-lists) with retention on.

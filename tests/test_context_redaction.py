@@ -233,7 +233,11 @@ def test_merge_explicit_candidate_entities_tracked_separately() -> None:
 
 def test_merge_candidate_entities_capped() -> None:
     ctx = TypedContextBundle()
-    frozen = {"candidate_entities": [f"Entity{i}" for i in range(60)]}
+    frozen = {
+        "candidate_entities": [
+            f"Entity{chr(97 + (i // 26))}{chr(97 + (i % 26))}" for i in range(60)
+        ]
+    }
     assert merge_frozen_capability_into_bundle(ctx, frozen) is True
     # Only the first 24 raw entries are even considered.
     assert len(ctx.candidate_entities) == 24

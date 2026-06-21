@@ -79,7 +79,7 @@ def _process(service: WriterService, text: str, **kwargs: Any):
     return service.process_transcript(
         utterance_id="utt-editor",
         final_text=text,
-        raw_text=text,
+        raw_text=kwargs.pop("raw_text", text),
         context=kwargs.pop("context", TypedContextBundle(app_name="Notes", app_category="docs")),
         anchor_selection=None,
         memory_store=kwargs.pop("memory_store", None),
@@ -143,6 +143,43 @@ def test_dictation_editor_path_expands_user_snippets() -> None:
     assert "Best, Juno" in result.output_text, (
         f"snippet did not expand through the editor path: {result.output_text!r}"
     )
+
+
+def test_structured_new_paragraph_dictation_skips_editor() -> None:
+    service, backend, recorder = _editor_service(
+        'VERDICT: edited\nEDIT: "final paste" => "HUD final"'
+    )
+    final_text = (
+        "Here is the release plan\n\n"
+        "first verify permissions\n\n"
+        "second test, the HUD\n\n"
+        "third test final paste"
+    )
+    raw_text = (
+        "Here is the release plan, new paragraph, first verify permissions, "
+        "new paragraph, second test, the HUD, new paragraph, third test final paste"
+    )
+
+    result = _process(service, final_text, raw_text=raw_text)
+
+    assert backend.requests == []
+    assert result.output_text == final_text
+    assert result.metadata.get("reason") != "dictation_editor"
+    assert any(
+        args[1] == "dictation_edit_bypassed"
+        and args[2]["reason"] == "structured_paragraph_text"
+        for args, _kwargs in recorder.events
+    )
+
+
+def test_literal_new_paragraph_phrase_can_still_use_editor() -> None:
+    service, backend, _recorder = _editor_service("VERDICT: clean")
+
+    result = _process(service, "the new paragraph is short")
+
+    assert len(backend.requests) == 1
+    assert result.metadata["reason"] == "dictation_editor"
+    assert result.output_text == "the new paragraph is short."
 
 
 def test_same_utterance_bullet_list_command_bypasses_editor() -> None:
@@ -311,11 +348,47 @@ def test_editor_outcome_is_primary_for_dictation() -> None:
     assert "dictation_edit_generated" in names
 
 
-def test_editor_clean_verdict_passes_text_through() -> None:
+def test_editor_rejects_case_only_common_word_without_protected_evidence() -> None:
+    service, _backend, _recorder = _editor_service(
+        'VERDICT: edited\nEDIT: "stable" => "Stable"'
+    )
+    context = TypedContextBundle(
+        app_name="Notes",
+        app_category="docs",
+        candidate_entities=["Stable Ihe"],
+    )
+
+    result = _process(
+        service,
+        "The first part is stable, the second part has commas",
+        context=context,
+    )
+
+    assert result.output_text == "The first part is stable, the second part has commas."
+    assert result.metadata["editor"]["applied"]["edits"] == 0
+    assert result.metadata["editor"]["applied"]["skipped"] == 1
+
+
+def test_editor_keeps_case_only_non_common_name_fix() -> None:
+    script = parse_edit_script('VERDICT: edited\nEDIT: "rahul" => "Rahul"')
+    assert script is not None
+
+    out, applied = apply_edit_script(
+        "ask rahul to check voting",
+        script,
+        protected_terms=["Rahul"],
+    )
+
+    assert out == "ask Rahul to check voting"
+    assert applied["edits"] == 1
+
+
+def test_editor_clean_verdict_gets_punctuation_floor() -> None:
     service, _, _ = _editor_service("VERDICT: clean")
     result = _process(service, "send the brief to Mira tonight")
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
-    assert result.output_text == "send the brief to Mira tonight"
+    assert result.output_text == "send the brief to Mira tonight."
+    assert result.metadata["punctuation_floor"]["rules_applied"] == ["terminal_period"]
 
 
 def test_editor_garbage_floors_to_legacy_lane() -> None:
@@ -675,3 +748,9 @@ def test_rejected_action_response_carries_recoverable_transcript() -> None:
     assert result.transcript == ""
     assert "publish the changelog" in result.recoverable_transcript
     assert result.to_dict().get("recoverable_transcript")
+    # Issue-2: the recoverable transcript is wake-stripped so the shell pastes
+    # the user's actual words ("set an alarm to publish the changelog") into the
+    # focused surface, not "juno set an alarm ...". The wake word was only the
+    # address, never content.
+    assert "juno" not in result.recoverable_transcript.lower().split()
+    assert result.recoverable_transcript.lower().startswith("set an alarm")

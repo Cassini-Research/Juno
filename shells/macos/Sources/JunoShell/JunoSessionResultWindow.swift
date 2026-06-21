@@ -226,7 +226,12 @@ private struct JunoSessionResultView: View {
                 app.activate(options: .activateIgnoringOtherApps)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                let ok = Clipboard.undoSafePaste(text)
+                // verifyLanded: without read-back this always reports success
+                // (the low-level path only confirms the keystroke posted), so a
+                // failed paste would dismiss the window AND revert the clipboard,
+                // silently losing the result. Verify so restoreAfterFailedPaste
+                // re-shows the window and re-arms the clipboard on a real miss.
+                let ok = Clipboard.undoSafePaste(text, verifyLanded: true)
                 if !ok {
                     JunoSessionResultWindow.restoreAfterFailedPaste(model: model)
                 }

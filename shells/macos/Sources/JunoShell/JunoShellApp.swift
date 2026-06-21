@@ -2010,7 +2010,41 @@ enum Clipboard {
     }
 
     @discardableResult
-    static func pasteAtCursor() -> Bool {
+    static func pasteAtCursor(verifyLanded: Bool = false) -> Bool {
+        // Sample the focused field's value BEFORE the synthetic Cmd+V so callers
+        // that do NOT go through DictationController.observedUndoSafePaste
+        // (Insert-again, session-result paste) can still tell whether the paste
+        // actually landed. The low-level post path only reports "keystroke
+        // posted", never "text landed", so without this a paste into a read-only
+        // or focus-drifted target falsely reports success. focusedValueSignature
+        // returns readable:false for roles without a trustworthy AXValue
+        // (web/Electron/Terminal); there we keep the historical "assume success"
+        // behavior to avoid turning real pastes into false failures.
+        let before = verifyLanded ? JunoLocalCapability.focusedValueSignature() : nil
+        let posted = postPasteKeystroke()
+        guard posted else { return false }
+        guard verifyLanded, let before, before.readable else { return posted }
+        return pasteLandedByReadback(beforeValue: before.value)
+    }
+
+    /// Poll the focused field's AX value after a synthetic Cmd+V. Any change is
+    /// strong evidence the paste landed (returns true immediately); a stable
+    /// readable value across the window means the keystroke was accepted but
+    /// nothing was inserted (read-only target, focus drift). Mirrors
+    /// ``DictationController.pasteLandedByReadback`` so both paste entry points
+    /// agree on what "landed" means.
+    private static func pasteLandedByReadback(beforeValue: String, deadlineMs: Int = 350, stepMs: Int = 40) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(deadlineMs) / 1000.0)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(Double(stepMs) / 1000.0))
+            guard let after = JunoLocalCapability.focusedValueSignature() else { return true }
+            guard after.readable else { return true }
+            if after.value != beforeValue { return true }
+        }
+        return false
+    }
+
+    private static func postPasteKeystroke() -> Bool {
         if JunoLocalCapability.processHasAccessibilityTrust() {
             Self.lastPasteFrontmostPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             return pasteAtCursorInProcess()
@@ -2095,48 +2129,21 @@ enum Clipboard {
         down.flags = .maskCommand
         up.flags = .maskCommand
 
-        // Sample the focused field's character count BEFORE the synthetic
-        // Cmd+V. If Accessibility can read the focused element, any change
-        // in count after the keystroke means the paste landed there. If
-        // the count is unchanged after a generous polling window, the
-        // paste went somewhere else (focus drift, secure widget, app that
-        // ignores Cmd+V) and we must report failure so the copy-ready
-        // overlay surfaces instead of the user seeing nothing.
-        //
-        // When AX cannot read the focused element (some Electron apps,
-        // Terminal, custom widgets), ``beforeCount`` is ``nil`` and we
-        // skip verification — there is no signal either way, and the
-        // pre-existing behavior was to trust the CGEvent post.
-        let beforeCount = JunoLocalCapability.focusedFieldCharacterCount()
         down.post(tap: .cgSessionEventTap)
         usleep(8_000)
         up.post(tap: .cgSessionEventTap)
-
-        guard let before = beforeCount else {
-            // No AX baseline — preserve original behavior (assume success).
-            usleep(20_000)
-            return true
-        }
-        // Poll for a count change. Native text widgets land in ~16 ms (one
-        // display tick); slower toolkits and apps under load need up to
-        // ~100 ms. Early-return on first detected change keeps the happy
-        // path snappy.
-        let pollWaits: [UInt32] = [16_000, 40_000, 60_000]
-        for wait in pollWaits {
-            usleep(wait)
-            if let after = JunoLocalCapability.focusedFieldCharacterCount(),
-               after != before {
-                return true
-            }
-        }
-        return false
+        // Return "posted", not "landed". ``observedUndoSafePaste`` owns
+        // read-back verification where available and deliberately assumes
+        // success for custom/Electron fields that expose no reliable AX value.
+        usleep(20_000)
+        return true
     }
 
     @discardableResult
-    static func undoSafePaste(_ transcript: String, restoreAfterMs: Int = 400) -> Bool {
+    static func undoSafePaste(_ transcript: String, restoreAfterMs: Int = 400, verifyLanded: Bool = false) -> Bool {
         let snapshot = PasteboardSnapshot.capture()
         writeString(transcript)
-        let ok = pasteAtCursor()
+        let ok = pasteAtCursor(verifyLanded: verifyLanded)
         let delay = DispatchTime.now() + .milliseconds(restoreAfterMs)
         DispatchQueue.main.asyncAfter(deadline: delay) {
             snapshot.restore()
@@ -2672,6 +2679,230 @@ enum JunoShortcutPreference: String, CaseIterable {
         case .controlSpace: return "Control + Space"
         }
     }
+
+    /// Single entry when the user picks a dictation shortcut (onboarding or settings).
+    static func applyShortcutSelection(_ newValue: JunoShortcutPreference) {
+        let previous = stored
+        stored = newValue
+        JunoFnGlobeSystemActionPreference.apply(shortcut: newValue)
+        if shouldRestartHotkeyBridge(
+            previous: previous,
+            new: newValue,
+            onboardingCompleted: JunoUserDefaults.onboardingCompleted
+        ) {
+            JunoShellRuntime.shared.restartHotkeyBridge()
+        }
+    }
+
+    static func shouldRestartHotkeyBridge(
+        previous: JunoShortcutPreference,
+        new: JunoShortcutPreference,
+        onboardingCompleted: Bool
+    ) -> Bool {
+        onboardingCompleted && ((previous == .fn) != (new == .fn))
+    }
+
+    /// Static note shown when Fn is selected.
+    static let fnGlobeConflictNote =
+        "Juno sets System Settings → Keyboard → Press the Globe key to → Do Nothing while Fn is selected, then restores your previous setting if you switch away."
+}
+
+enum JunoFnGlobeSystemActionPreference {
+    struct Backup: Equatable {
+        let wasPresent: Bool
+        let value: Int?
+    }
+
+    enum Action: Equatable {
+        case none
+        case disableEmoji(backup: Backup?)
+        case restore(value: Int?)
+    }
+
+    private static let hitoolboxDomain = "com.apple.HIToolbox" as CFString
+    private static let fnUsageKey = "AppleFnUsageType" as CFString
+    private static let doNothing = 0
+    private static let reloadGeneration = 1
+
+    private static let didOverrideKey = "JunoFnGlobeDidOverrideAppleFnUsageType"
+    private static let backupWasPresentKey = "JunoFnGlobeBackupAppleFnUsageTypeWasPresent"
+    private static let backupValueKey = "JunoFnGlobeBackupAppleFnUsageTypeValue"
+    private static let reloadGenerationKey = "JunoFnGlobeSystemActionReloadGeneration"
+
+    static func apply(shortcut: JunoShortcutPreference) {
+        let defaults = UserDefaults.standard
+        let currentValue = currentSystemValue()
+        let didOverride = defaults.bool(forKey: didOverrideKey)
+        if shouldRefreshExistingOverride(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            lastReloadGeneration: defaults.integer(forKey: reloadGenerationKey)
+        ) {
+            reloadTextInputAgents()
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: refreshed text input agents for existing Globe/Fn Do Nothing override")
+        }
+
+        let backupWasPresent = defaults.object(forKey: backupWasPresentKey) as? Bool ?? false
+        let backupValue = (defaults.object(forKey: backupValueKey) as? NSNumber)?.intValue
+        let action = plannedAction(
+            shortcut: shortcut,
+            currentValue: currentValue,
+            didOverride: didOverride,
+            backupWasPresent: backupWasPresent,
+            backupValue: backupValue
+        )
+
+        switch action {
+        case .none:
+            return
+        case .disableEmoji(let backup):
+            if let backup {
+                defaults.set(backup.wasPresent, forKey: backupWasPresentKey)
+                if let value = backup.value {
+                    defaults.set(value, forKey: backupValueKey)
+                } else {
+                    defaults.removeObject(forKey: backupValueKey)
+                }
+            }
+            setSystemValue(doNothing)
+            reloadTextInputAgents()
+            defaults.set(true, forKey: didOverrideKey)
+            defaults.set(reloadGeneration, forKey: reloadGenerationKey)
+            defaults.synchronize()
+            NSLog("Juno: set Globe/Fn system action to Do Nothing for Fn shortcut")
+        case .restore(let value):
+            setSystemValue(value)
+            reloadTextInputAgents()
+            clearBackup(defaults: defaults)
+            defaults.synchronize()
+            NSLog("Juno: restored previous Globe/Fn system action after leaving Fn shortcut")
+        }
+    }
+
+    static func plannedAction(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        backupWasPresent: Bool,
+        backupValue: Int?
+    ) -> Action {
+        if shortcut == .fn {
+            guard currentValue != doNothing else { return .none }
+            if didOverride {
+                return .disableEmoji(backup: nil)
+            }
+            return .disableEmoji(backup: Backup(wasPresent: currentValue != nil, value: currentValue))
+        }
+
+        guard didOverride else { return .none }
+        return .restore(value: backupWasPresent ? backupValue : nil)
+    }
+
+    static func shouldRefreshExistingOverride(
+        shortcut: JunoShortcutPreference,
+        currentValue: Int?,
+        didOverride: Bool,
+        lastReloadGeneration: Int
+    ) -> Bool {
+        shortcut == .fn
+            && currentValue == doNothing
+            && didOverride
+            && lastReloadGeneration < reloadGeneration
+    }
+
+    private static func currentSystemValue() -> Int? {
+        guard let raw = CFPreferencesCopyValue(
+            fnUsageKey,
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ) else {
+            return nil
+        }
+        if let number = raw as? NSNumber {
+            return number.intValue
+        }
+        if let string = raw as? String {
+            return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func setSystemValue(_ value: Int?) {
+        if let value {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                NSNumber(value: value),
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        } else {
+            CFPreferencesSetValue(
+                fnUsageKey,
+                nil,
+                hitoolboxDomain,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        }
+        CFPreferencesSynchronize(
+            hitoolboxDomain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+    }
+
+    private static func reloadTextInputAgents() {
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: ["-x", "TextInputMenuAgent"],
+            label: "TextInputMenuAgent"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-x",
+                "TextInputSwitcher",
+            ],
+            label: "TextInputSwitcher"
+        )
+        runAndWait(
+            executable: "/usr/bin/pkill",
+            arguments: [
+                "-9",
+                "-f",
+                "CharacterPicker.framework/.*/com.apple.CharacterPicker.FileService",
+            ],
+            label: "CharacterPicker.FileService"
+        )
+    }
+
+    private static func runAndWait(executable: String, arguments: [String], label: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        do {
+            try task.run()
+            task.waitUntilExit()
+            if task.terminationStatus != 0 && task.terminationStatus != 1 {
+                NSLog("Juno: %@ reload exited with status %d after Globe/Fn system action change", label, task.terminationStatus)
+            }
+        } catch {
+            NSLog("Juno: failed to reload %@ after Globe/Fn system action change: %@", label, error.localizedDescription)
+        }
+    }
+
+    private static func clearBackup(defaults: UserDefaults) {
+        defaults.removeObject(forKey: didOverrideKey)
+        defaults.removeObject(forKey: backupWasPresentKey)
+        defaults.removeObject(forKey: backupValueKey)
+        defaults.removeObject(forKey: reloadGenerationKey)
+    }
 }
 
 // MARK: - Audio buffer RMS helper
@@ -3139,6 +3370,14 @@ final class DictationController: ObservableObject {
     private var pendingTextMonExpectedPaste: String = ""
     /// Focused-field value observed immediately after paste, when AX exposes it.
     private var textMonInitialSnapshot: String?
+    /// Whether the most recent paste target exposed a trustworthy AX value
+    /// (one of ``pasteReadbackReliableRoles``). Captured per paste in
+    /// ``observedUndoSafePaste``. The async ``juno-textmon`` containment check
+    /// (``verifyPasteLandedIfNeeded``) reads this so it never declares a real
+    /// paste "may not have landed" on web/Electron/Terminal surfaces (Codex,
+    /// Claude, Claude Code) that render placeholders like "[Pasted text #1]"
+    /// instead of the literal pasted text.
+    private var lastPasteTargetReadbackReliable: Bool = false
     /// From capability probe: focused AX role looks like a text insertion target.
     private var likelyPasteDestination: Bool = true
     /// TOCTOU pin for ``JunoSecureFieldPolicy``. Captured at dictation
@@ -3267,6 +3506,12 @@ final class DictationController: ObservableObject {
             self.firstAudioFrameAt = 0
             self.lastSpeechEnergyAt = 0
             self.stopWorkbenchStatePolling(clear: true)
+            // Screen-term OCR harvesting is session-scoped; guarantee teardown
+            // on every idle transition — including capability-blocked and
+            // "stop ignored" early returns that bypass end/cancelEnginePreview
+            // Streaming — so the decoupled activation in the start path can
+            // never leave the 6s capture timer running after a session ends.
+            JunoScreenTermHarvester.shared.deactivate()
             self.lastPartialSnapshotSpeechAt = 0
             self.speechDetectedLoggedThisSession = false
             self.state = "idle"
@@ -3417,7 +3662,7 @@ final class DictationController: ObservableObject {
         guard steps.count > 1 else {
             cancelHUDCommittedReveal()
             _ = hudTranscriptStore.applyPreviewRevision(committed: targetCommitted, tail: targetTail)
-            enginePreviewPartialText = hudTranscriptStore.text
+            enginePreviewPartialText = hudTranscriptStore.rawText
             if liveSource == .engine {
                 livePartialText = hudTranscriptStore.text
                 syncHUDFromTranscriptStore()
@@ -3438,7 +3683,7 @@ final class DictationController: ObservableObject {
             committed: steps[index],
             tail: isLast ? tail : ""
         )
-        enginePreviewPartialText = hudTranscriptStore.text
+        enginePreviewPartialText = hudTranscriptStore.rawText
         if liveSource == .engine {
             livePartialText = hudTranscriptStore.text
             syncHUDFromTranscriptStore()
@@ -3477,6 +3722,16 @@ final class DictationController: ObservableObject {
 
     private func normalizedHUDText(_ raw: String?) -> String {
         repairLiveCaptionBoundaries(raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func rawLivePreviewTextForCorrection() -> String {
+        let rawStoreText = normalizedHUDText(hudTranscriptStore.rawText)
+        if !rawStoreText.isEmpty { return rawStoreText }
+        for candidate in [enginePreviewPartialText, livePartialText, liveDisplayTranscript] {
+            let normalized = normalizedHUDText(candidate)
+            if !normalized.isEmpty { return normalized }
+        }
+        return ""
     }
 
     private func repairLiveCaptionBoundaries(_ raw: String) -> String {
@@ -3579,6 +3834,12 @@ final class DictationController: ObservableObject {
         // value BEFORE the paste so we can verify a real change AFTER.
         let verifyEnabled = (UserDefaults.standard.object(forKey: "JunoPasteVerificationEnabled") as? Bool) ?? true
         let before = verifyEnabled ? JunoLocalCapability.focusedValueSignature() : nil
+        // Record whether this target's AX value is trustworthy for read-back so
+        // the async textmon containment check (verifyPasteLandedIfNeeded) can
+        // skip its disproof on placeholder surfaces (web/Electron/Terminal),
+        // where the scraped value never contains the literal pasted text even
+        // on a perfect paste.
+        lastPasteTargetReadbackReliable = before?.readable ?? false
         let posted = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
         // Couldn't even post the keystroke → definite failure.
@@ -3782,6 +4043,16 @@ final class DictationController: ObservableObject {
             // first PCM buffer as early as the recorder does.
             beginEnginePreviewStreaming(uid: pendingUtteranceId)
         }
+        // Screen-context OCR harvesting is tied to the dictation SESSION, not to
+        // the live-preview toggle: the final-transcription capability snapshot
+        // (JunoLocalCapability) consumes screen terms even when live captions
+        // are off, so gating activation on hudLiveTranscriptionsEnabled silently
+        // killed screen context for that configuration. Teardown is covered by
+        // end/cancelEnginePreviewStreaming (both deactivate the harvester) and
+        // the capability hard-block above.
+        if JunoScreenContextAccess.isEnabledAndGranted {
+            JunoScreenTermHarvester.shared.activate()
+        }
         isPartialMode = false
         accumulatedText = ""
         partialInsertFailed = false
@@ -3871,6 +4142,15 @@ final class DictationController: ObservableObject {
                         self.promptAccessibilityPermission()
                     }
                     self.cancelNoSpeechWatchdogIfNeeded()
+                    // Tear down the live-preview lane AND the screen-term OCR
+                    // harvester on any hard block. Critical for ``secure_field``:
+                    // the final-context path suppresses screen terms on secure
+                    // focus, but the live-preview lane had no secure gate, so
+                    // without this it kept OCRing the whole screen and streaming
+                    // on-screen terms (and audio) to the broker during password
+                    // entry. cancelEnginePreviewStreaming deactivates the
+                    // harvester too, so this also stops further screen capture.
+                    self.cancelEnginePreviewStreaming(reason: cap.reason)
                     self.teardownRecognition()
                     _ = self.recorder.stop()
                     self.state = "blocked:\(cap.reason)"
@@ -4235,18 +4515,22 @@ final class DictationController: ObservableObject {
         lastLiveAudioCheckpointRequestedAt = 0
         lastLiveAudioCheckpointPCMBytes = 0
         liveAudioCheckpointBackpressureUntil = 0
-        if JunoScreenContextAccess.isEnabledAndGranted {
-            JunoScreenTermHarvester.shared.activate()
-        }
+        // Harvester activation now happens once in the common dictation-start
+        // path (independent of this live-preview lane) so screen context also
+        // works when live captions are off.
         previewStreamer.start(utteranceId: uid)
         previewStreamer.visibleTextHint = { [weak self] in
             guard let self else { return "" }
-            return self.normalizedHUDText(
-                self.liveDisplayTranscript.isEmpty ? self.livePartialText : self.liveDisplayTranscript
-            )
+            return self.rawLivePreviewTextForCorrection()
         }
         previewStreamer.candidateEntities = { [weak self] in
             guard let self else { return [] }
+            // Mirror the final-context path (JunoLocalCapability): once the
+            // focused field is secure, ship neither AX recognition hints nor
+            // OCR-harvested screen terms. Defends the window before the
+            // capability hard-block tears the preview lane down, since the
+            // in-process AX snapshot can latch lastSecureFlag earlier.
+            guard !self.lastSecureFlag else { return [] }
             var hints = self.surfaceRecognitionHints
             var seen = Set(hints.map { $0.lowercased() })
             if JunoScreenContextAccess.isEnabledAndGranted {
@@ -4606,7 +4890,7 @@ final class DictationController: ObservableObject {
             return
         }
 
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         let words = visible.split { $0.isWhitespace || $0.isNewline }.count
         let chars = visible.count
@@ -4667,7 +4951,7 @@ final class DictationController: ObservableObject {
         guard now - sessionStartTime >= Self.liveAudioCheckpointMinAudioSeconds else { return }
         guard lastSpeechEnergyAt > sessionStartTime else { return }
 
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         let lastVisibleChangeAt = lastLiveHUDTextChangeAt > sessionStartTime
             ? lastLiveHUDTextChangeAt
@@ -4814,7 +5098,7 @@ final class DictationController: ObservableObject {
 
     private func fireLiveAdjudicationSnapshot(reason: String) {
         let now = Date().timeIntervalSinceReferenceDate
-        let visible = normalizedHUDText(liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+        let visible = rawLivePreviewTextForCorrection()
         guard !visible.isEmpty else { return }
         guard visible != lastLiveAdjudicationVisibleText else { return }
         let snapshot = LiveAdjudicationSnapshot(
@@ -4994,7 +5278,7 @@ final class DictationController: ObservableObject {
         markUtteranceTimeline("final_broker_request_sent_ms", at: brokerRequestSentMs)
         let shellTimeline = utteranceTimelinePayload()
         let finalTranscriptHintCandidates = [
-            hudTranscriptStore.text,
+            hudTranscriptStore.rawText,
             liveDisplayTranscript,
             livePartialText,
             engineSessionPartialText,
@@ -5181,26 +5465,39 @@ final class DictationController: ObservableObject {
                 }
                 // Continue into the normal insertion path below.
             } else {
-                // The engine made an explicit action/no-paste decision, but
-                // the concrete action payload was missing or could not be
-                // decoded. Still suppress the literal command text; pasting
-                // "Juno take a note..." is worse than a quiet failed action.
-                liveSpeechHint = "Juno action could not run."
+                // The engine matched the Juno wake word + an action verb but
+                // could not build a valid action (validator / required fields
+                // failed) — an action turn with no executable action. Rather
+                // than dropping the user's words to a copy-only notice, fall
+                // back to pasting them into the focused surface exactly like
+                // ordinary dictation: hide the HUD on a successful paste, copy
+                // overlay when there's no field or the paste misses. The wake
+                // phrase is already stripped server-side (recoverable_transcript
+                // = post-wake text), so the destination gets "set an alarm to
+                // publish the changelog", not "Hey Juno set an alarm...".
                 let recovered = (response.recoverableTranscript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !recovered.isEmpty {
+                    return pasteRejectedActionTextAsDictation(
+                        recovered,
+                        isFinal: isFinal,
+                        snapshotPCMByteCount: snapshotPCMByteCount,
+                        snapshotSpeechAt: snapshotSpeechAt
+                    )
+                }
+                // No recoverable words (e.g. an action payload was present but
+                // its utterance id was missing): keep the quiet failed-action
+                // notice instead of pasting nothing.
+                liveSpeechHint = "Juno action could not run."
                 showTransientActionHUD(
                     title: "Action could not run",
-                    subtitle: recovered.isEmpty
-                        ? "Try again from the Actions page after checking setup."
-                        : "Your words are kept — tap to copy, or see History.",
+                    subtitle: "Try again from the Actions page after checking setup.",
                     symbolName: "exclamationmark.triangle.fill",
                     isFailure: true
                 )
                 lastPastedFromBroker = ""
                 accumulatedText = ""
                 pendingRevisionFullTranscript = nil
-                // Never erase the user's words: rejected actions keep the
-                // spoken text recoverable from the copy surface + History.
-                copyableTranscript = recovered.isEmpty ? nil : recovered
+                copyableTranscript = nil
                 syncLiveDisplayTranscript()
                 if !isFinal {
                     resetForNextPauseUtterance(
@@ -5448,6 +5745,95 @@ final class DictationController: ObservableObject {
         }
     }
 
+    /// Issue-2 fallback: the engine flagged a Juno wake-word action turn but
+    /// could not build a valid action, so there is nothing to execute. Paste
+    /// the spoken text — already wake-stripped server-side — into the focused
+    /// surface like ordinary dictation instead of dropping it to a copy-only
+    /// notice. Mirrors ``commitPauseTranscript``'s paste flow: hide the HUD on
+    /// a successful paste, fall back to the copy overlay when there's no field
+    /// or the paste misses. Returns true so the caller treats the utterance as
+    /// consumed.
+    @discardableResult
+    private func pasteRejectedActionTextAsDictation(
+        _ recovered: String,
+        isFinal: Bool,
+        snapshotPCMByteCount: Int,
+        snapshotSpeechAt: TimeInterval
+    ) -> Bool {
+        lastPastedFromBroker = ""
+        accumulatedText = ""
+        pendingRevisionFullTranscript = nil
+
+        let textToPaste = textWithInsertionBoundary(recovered)
+        // Honour wherever the caret is now, never where it was when the hotkey
+        // fired (the user may have clicked into a different field).
+        refreshPasteTargetFromCurrentFocus()
+
+        var pasteSucceeded = false
+        var pasteKind = "insert"
+        var pasteFailureReason: String? = nil
+        var pasteAttempted = false
+        if likelyPasteDestination {
+            activateTargetForPasteIfNeeded()
+            pasteAttempted = true
+            pasteSucceeded = observedUndoSafePaste(textToPaste)
+            if pasteSucceeded {
+                partialInsertFailed = false
+                hasInsertedTextThisDictation = true
+                lastPastedFromBroker = textToPaste
+                accumulatedText = textToPaste
+                copyableTranscript = nil
+                let crossed = JunoLifetimeWords.recordWords(from: recovered)
+                JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
+                if isFinal {
+                    presentFinalTextReveal(for: textToPaste)
+                } else {
+                    triggerDraftFlash()
+                }
+            } else {
+                partialInsertFailed = true
+                pendingRevisionFullTranscript = textToPaste
+                copyableTranscript = recovered
+                liveSpeechHint = "Text ready — paste failed, use Copy if needed."
+                pasteKind = "none"
+                pasteFailureReason = "undo_safe_paste_failed"
+            }
+        } else {
+            partialInsertFailed = true
+            pendingRevisionFullTranscript = textToPaste
+            Clipboard.writeString(textToPaste)
+            copyableTranscript = recovered
+            liveSpeechHint = "Text copied — no active text field."
+            pasteKind = "none"
+            pasteFailureReason = "no_active_text_field"
+        }
+
+        NSLog(
+            "Juno: rejected-action paste fallback ok=%@ transcript_len=%d paste_kind=%@",
+            pasteSucceeded ? "true" : "false",
+            recovered.count,
+            pasteKind
+        )
+        postInsertionCommitted(
+            transcript: textToPaste,
+            ok: pasteSucceeded,
+            pasteKind: pasteKind,
+            failureReason: pasteFailureReason,
+            pasteAttempted: pasteAttempted
+        )
+        if pasteSucceeded {
+            startCorrectionMonitor(expectedText: textToPaste, pasteKind: pasteKind)
+        }
+        syncLiveDisplayTranscript()
+        if !isFinal {
+            resetForNextPauseUtterance(
+                snapshotPCMByteCount: snapshotPCMByteCount,
+                snapshotSpeechAt: snapshotSpeechAt
+            )
+        }
+        return true
+    }
+
     private func resetForNextPauseUtterance(
         snapshotPCMByteCount: Int,
         snapshotSpeechAt: TimeInterval
@@ -5644,7 +6030,17 @@ final class DictationController: ObservableObject {
         // caption draft, surface it via the copy overlay so the user
         // doesn't lose what they said.
         if finalText.isEmpty && brokerSnapshotFailedThisSession {
-            let fallback = livePartialText.trimmingCharacters(in: .whitespaces)
+            // Resolve spoken "new line"/"new paragraph" cues to real breaks and
+            // drop the literal cue words: the HUD keeps them visible during live
+            // preview, but this copy-overlay fallback must not paste literal
+            // "new line" text. Use the raw transcript (rawText), not the
+            // already-smoothed livePartialText, to avoid double line breaks.
+            let rawSource = hudTranscriptStore.rawText.isEmpty
+                ? livePartialText
+                : hudTranscriptStore.rawText
+            let fallback = HUDTranscriptStore
+                .transcriptWithSpokenBreakCuesResolved(rawSource)
+                .trimmingCharacters(in: .whitespaces)
             if !fallback.isEmpty {
                 copyableTranscript = fallback
             } else {
@@ -6300,15 +6696,20 @@ final class DictationController: ObservableObject {
     private func verifyPasteLandedIfNeeded(fieldSnapshot: String, pasted: String) {
         let p = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty else { return }
-        if fieldSnapshot.contains(p) { return }
-        // Terminals and rich editors re-wrap pasted text inside their AX
-        // value (hard newlines at column width, NBSP), so verbatim
-        // containment false-flags any paste longer than one visual line.
-        // That reopened the HUD as copy-ready after a successful paste —
-        // which also suppressed the dictation hotkey until the user pressed
-        // Esc (production 2026-06-11). Collapse all whitespace on both sides
-        // before declaring the paste missing.
-        if Self.whitespaceCollapsed(fieldSnapshot).contains(Self.whitespaceCollapsed(p)) { return }
+        // ``observedUndoSafePaste`` is the authoritative landing gate: for
+        // read-back-reliable targets it already verified the field VALUE
+        // changed, so never let this async backstop override a confirmed
+        // success. Literal containment is the wrong test anyway — Claude Code /
+        // Codex / Terminal render pasted text as a placeholder ("[Pasted text
+        // #3]") instead of the dictated text, so a perfectly good paste never
+        // "contains" it. That false-failure is what kept the HUD in copy-ready
+        // after a confirmed-good paste (production 2026-06-21: traces showed
+        // ok=insert while the HUD stayed up). Keep the backstop only for
+        // targets read-back had to ASSUME success on, and only when the field
+        // came back genuinely EMPTY (nothing landed) — never merely "doesn't
+        // contain the literal text".
+        if lastPasteTargetReadbackReliable { return }
+        guard fieldSnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {
@@ -6344,6 +6745,7 @@ final class DictationController: ObservableObject {
 
 final class HotkeyBridge {
     private var task: Process?
+    private var stdoutHandle: FileHandle?
     private let onDown: () -> Void
     private let onUp: () -> Void
     private let onEscape: () -> Void
@@ -6383,12 +6785,16 @@ final class HotkeyBridge {
         }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
+        task.arguments = JunoFnGlobeKeyPolicy.hotkeyLaunchArguments(
+            consumeFn: JunoShortcutPreference.stored == .fn
+        )
 
         let stdout = Pipe()
+        let stdoutHandle = stdout.fileHandleForReading
         task.standardOutput = stdout
         task.standardError = Pipe()
 
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdoutHandle.readabilityHandler = { [weak self] handle in
             guard let self else { return }
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
@@ -6464,6 +6870,7 @@ final class HotkeyBridge {
         do {
             try task.run()
             self.task = task
+            self.stdoutHandle = stdoutHandle
             NSLog("Juno: hotkey bridge started shortcut=%@", JunoShortcutPreference.stored.rawValue)
             // Register a stop closure with the runtime singleton so
             // applicationWillTerminate can reach back into this bridge
@@ -6474,14 +6881,27 @@ final class HotkeyBridge {
                 self?.stop()
             }
         } catch {
+            stdoutHandle.readabilityHandler = nil
             NSLog("Juno: hotkey bridge launch failed: \(error.localizedDescription)")
         }
     }
 
     func stop() {
-        task?.terminationHandler = nil
-        task?.terminate()
+        stdoutHandle?.readabilityHandler = nil
+        stdoutHandle = nil
+        if let task {
+            task.terminationHandler = nil
+            if task.isRunning {
+                task.terminate()
+                task.waitUntilExit()
+            }
+        }
         task = nil
+    }
+
+    func restart() {
+        stop()
+        start()
     }
 
     private func isDownEvent(_ line: String, shortcut: JunoShortcutPreference) -> Bool {
@@ -6554,10 +6974,10 @@ struct JunoShellApp: App {
     private let hotkey: HotkeyBridge
 
     init() {
-        // Hard OS floor must run before app-owned helpers, polling, overlays,
+        // Hard launch requirements must run before app-owned helpers, polling, overlays,
         // or update checks start. `applicationDidFinishLaunching` keeps a
         // no-op safety check, but this is the real preflight gate.
-        JunoSystemRequirements.enforceMinimumOSOrTerminate()
+        JunoSystemRequirements.enforceMinimumRequirementsOrTerminate()
         // **Run BEFORE legacy-defaults migration.** If the install was
         // re-run (TCC wiped) but the prefs plist still says
         // ``JunoOnboardingCompleted=true``, we reset the onboarding flag
@@ -6567,6 +6987,7 @@ struct JunoShellApp: App {
         JunoFreshInstallGuard.runOnce()
         JunoLegacyDefaultsMigration.runOnce()
         JunoUserDefaults.migrateWhisperPreviewDefaults()
+        JunoFnGlobeSystemActionPreference.apply(shortcut: JunoShortcutPreference.stored)
         JunoLocalAppLogTee.installIfEnabled()
         JunoSingleInstance.exitIfAlreadyRunning()
         JunoTargetApplicationTracker.shared.start()
@@ -6614,6 +7035,9 @@ struct JunoShellApp: App {
         let hotkeyBridge = self.hotkey
         JunoShellRuntime.shared.startHotkeyBridge = {
             hotkeyBridge.start()
+        }
+        JunoShellRuntime.shared.restartHotkeyBridge = {
+            hotkeyBridge.restart()
         }
         if JunoUserDefaults.onboardingCompleted {
             hotkeyBridge.start()
@@ -7372,6 +7796,8 @@ final class JunoShellRuntime {
     /// Keeping them out of the first-run text-entry flow prevents app-level
     /// key monitors from sitting in front of the onboarding name field.
     var startHotkeyBridge: () -> Void = {}
+    /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
+    var restartHotkeyBridge: () -> Void = {}
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).
@@ -7467,7 +7893,7 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Defensive no-op on supported systems. The real preflight gate runs
         // in `JunoShellApp.init` before helpers / polling / onboarding start.
-        JunoSystemRequirements.enforceMinimumOSOrTerminate()
+        JunoSystemRequirements.enforceMinimumRequirementsOrTerminate()
         registerOpenWindowNotificationsIfNeeded()
         JunoDockVisibility.applyCurrent()
         if JunoClickDeliveryProbe.isRequested {

@@ -2,19 +2,19 @@ import Foundation
 
 /// Hardware gate for the live HUD transcription preview.
 ///
-/// Preview support follows Juno's hard OS requirement (see
+/// Preview support follows Juno's hard launch requirements (see
 /// ``JunoSystemRequirements``): any Mac that can run Juno gets preview on by
-/// default. Memory remains a warning-only signal because dictation itself still
-/// works below the recommended floor.
+/// default.
 enum JunoPreviewEligibility {
     struct Snapshot: Equatable {
         let osMajorVersion: Int
         let memoryGB: Int
         let chipName: String
 
-        /// Eligible exactly when the Mac meets Juno's hard OS requirement.
+        /// Eligible exactly when the Mac meets Juno's hard launch requirements.
         var isEligible: Bool {
             osMajorVersion >= JunoSystemRequirements.minimumMacOSMajorVersion
+                && memoryGB >= JunoSystemRequirements.minimumMemoryGB
         }
 
         /// Perf caveat shown for eligible Macs near the memory floor. Above
@@ -24,7 +24,7 @@ enum JunoPreviewEligibility {
             return "Live preview can slow final transcription on \(memoryGB) GB Macs."
         }
 
-        /// Why preview is unavailable. The OS floor is enforced as a hard block
+        /// Why preview is unavailable. Requirements are enforced as a hard block
         /// elsewhere, so this is only expected in tests or unusual launch paths.
         var unavailableMessage: String? {
             guard !isEligible else { return nil }

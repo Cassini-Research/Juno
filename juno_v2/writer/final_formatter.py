@@ -8,6 +8,7 @@ from juno_v2.code_grammar import CodeGrammarEngine, CodeGrammarMode
 from juno_v2.context.compiler import FormattingPacket
 from juno_v2.contracts.writer import WriterMode, WriterTransformRequest, WriterTransformResult
 from juno_v2.meeting_grammar import MeetingGrammarEngine, MeetingGrammarMode
+from juno_v2.memory.bias import screen_term_prompt_worthy
 from juno_v2.writer.backends.base import WriterBackend
 from juno_v2.writer.deterministic import (
     normalize_dictation_orthography,
@@ -382,6 +383,8 @@ def _required_terms_for_packet(packet: FormattingPacket) -> list[str]:
             term = str(item or "").strip()
             if not term:
                 continue
+            if key in {"candidate_entities", "recent_screen_terms"} and not screen_term_prompt_worthy(term):
+                continue
             if not _high_value_term(term):
                 continue
             if not _term_present_in_text(term, packet.corrected_text):
@@ -524,6 +527,8 @@ def _context_terms_for_packet(packet: FormattingPacket) -> list[str]:
         value = metadata.get(key)
         if isinstance(value, (list, tuple)):
             for item in value[:40]:
+                if key in {"candidate_entities", "recent_screen_terms"} and not screen_term_prompt_worthy(str(item or "")):
+                    continue
                 add(item)
     return terms[:40]
 

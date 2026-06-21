@@ -18,7 +18,7 @@ import Foundation
 // first open from the DMG ends as a proper, stable, auto-started install.
 enum JunoAppLocation {
     /// True when the running bundle is executing from an App Translocation
-    /// (Gatekeeper randomized) path rather than its real on-disk location.
+    /// (quarantine randomized) path rather than its real on-disk location.
     static var isTranslocated: Bool {
         Bundle.main.bundlePath.contains("/AppTranslocation/")
     }

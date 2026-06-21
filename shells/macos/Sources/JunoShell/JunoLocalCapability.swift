@@ -101,6 +101,10 @@ enum JunoLocalCapability {
         } else {
             return (false, "")
         }
+        let focusedRole = axString(focused, kAXRoleAttribute as CFString) ?? ""
+        guard pasteReadbackReliableRoles.contains(focusedRole) else {
+            return (false, "")
+        }
         if let v = axString(focused, kAXValueAttribute as CFString) {
             return (true, v)
         }
@@ -144,7 +148,13 @@ enum JunoLocalCapability {
         let focusedWindow = axElement(appElement, kAXFocusedWindowAttribute as CFString)
         let mainWindow = axElement(appElement, kAXMainWindowAttribute as CFString)
         if let focusedWindow {
+            // The window title is sent to the engine and tokenized into
+            // candidate_entities, so it needs the same bidi/format-mark strip
+            // as the visible-body text (appendVisibleChunk). Telegram titles
+            // like "‎⁨Padel in Danube⁩ @ ‎⁨Paresh Dudhat⁩" otherwise leak
+            // "\u{200E}\u{2068}Padel" back into the bias terms.
             out["window_title"] = axString(focusedWindow, kAXTitleAttribute as CFString)
+                .map { strippedOfInvisibleFormatMarks($0) }
             if let doc = axString(focusedWindow, kAXDocumentAttribute as CFString), !doc.isEmpty {
                 out["focused_document_path"] = clip(doc)
             }
@@ -152,6 +162,7 @@ enum JunoLocalCapability {
         if out["window_title"] == nil,
            let mainWindow {
             out["window_title"] = axString(mainWindow, kAXTitleAttribute as CFString)
+                .map { strippedOfInvisibleFormatMarks($0) }
             if out["focused_document_path"] == nil,
                let doc = axString(mainWindow, kAXDocumentAttribute as CFString), !doc.isEmpty {
                 out["focused_document_path"] = clip(doc)
@@ -306,6 +317,13 @@ enum JunoLocalCapability {
         "AXWebArea",
     ]
 
+    private static let pasteReadbackReliableRoles: Set<String> = [
+        "AXTextField",
+        "AXTextArea",
+        "AXComboBox",
+        "AXSearchField",
+    ]
+
     private struct PasteCandidate {
         let element: AXUIElement
     }
@@ -385,7 +403,7 @@ enum JunoLocalCapability {
         return CFGetTypeID(v) == AXValueGetTypeID()
     }
 
-    private static func knownPasteCentricAppAllowsFallback(bundleId: String?, role: String?) -> Bool {
+    static func knownPasteCentricAppAllowsFallback(bundleId: String?, role: String?) -> Bool {
         guard let bundleId = bundleId?.lowercased(), knownPasteCentricBundleIds.contains(bundleId) else {
             return false
         }
@@ -396,8 +414,12 @@ enum JunoLocalCapability {
     }
 
     private static let knownPasteCentricBundleIds: Set<String> = [
+        "com.apple.terminal",
         "com.apple.notes",
         "com.apple.textedit",
+        "com.googlecode.iterm2",
+        "com.mitchellh.ghostty",
+        "dev.warp.warp-stable",
     ]
 
     private struct PasteboardItemSnapshot {
@@ -685,13 +707,30 @@ enum JunoLocalCapability {
         }
     }
 
+    /// Strip invisible Unicode *format* characters — bidi marks (LRM/RLM),
+    /// directional isolates (FSI/PDI, U+2066–U+2069) and zero-width joiners —
+    /// that bidi-aware apps (Telegram, browsers with RTL content) wrap message
+    /// text in. Left in AX-derived screen context they corrupt
+    /// ``candidate_entities``: "Padel" arrives as "\u{200E}\u{2068}Padel",
+    /// which never matches the spoken word as a recognition-bias hint, so an
+    /// uncommon term gets mis-transcribed ("pedal") even though it was on
+    /// screen. These are Unicode category ``.format`` (invisible); real
+    /// whitespace is category ``.control`` and is preserved for the collapse.
+    static func strippedOfInvisibleFormatMarks(_ value: String) -> String {
+        guard value.unicodeScalars.contains(where: { $0.properties.generalCategory == .format })
+        else { return value }
+        return String(String.UnicodeScalarView(
+            value.unicodeScalars.filter { $0.properties.generalCategory != .format }
+        ))
+    }
+
     private static func appendVisibleChunk(
         _ value: String,
         role: String,
         into chunks: inout [String],
         seen: inout Set<String>
     ) {
-        let collapsed = value
+        let collapsed = strippedOfInvisibleFormatMarks(value)
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\t", with: " ")
             .components(separatedBy: .whitespacesAndNewlines)
@@ -745,7 +784,7 @@ enum JunoLocalCapability {
         func flushPhrase() {
             defer { phrase.removeAll(keepingCapacity: true) }
             guard !phrase.isEmpty else { return }
-            if phrase.count >= 2 {
+            if (2...3).contains(phrase.count) {
                 let phraseValue = phrase.joined(separator: " ")
                 if phrase.contains(where: { isSingleScreenCandidateToken($0) }) {
                     add(phraseValue)
@@ -792,36 +831,64 @@ enum JunoLocalCapability {
     ]
 
     private static func isTitleOrMixedCaseToken(_ token: String) -> Bool {
-        guard token.rangeOfCharacter(from: .letters) != nil else { return false }
-        let letters = token.filter { $0.isLetter }
-        guard !letters.isEmpty else { return false }
-        if let first = letters.first, first.isUppercase { return true }
-        return letters.dropFirst().contains { $0.isUppercase }
+        isSingleScreenCandidateToken(token)
     }
 
     private static func isSingleScreenCandidateToken(_ token: String) -> Bool {
         guard token.count >= 4 else { return false }
         guard !commonScreenCandidateWords.contains(token) else { return false }
         guard token.rangeOfCharacter(from: .letters) != nil else { return false }
+        guard !isLikelyScreenCandidateOCRJunk(token) else { return false }
         let letters = token.filter { $0.isLetter }
         guard !letters.isEmpty else { return false }
-        if letters.dropFirst().contains(where: { $0.isUppercase }) { return true }
         if letters.allSatisfy({ $0.isUppercase }) && (2...10).contains(letters.count) { return true }
-        return letters.first?.isUppercase == true
+        let letterString = String(letters)
+        if isSimpleCapitalizedToken(letterString) { return true }
+        if isTwoPartCamelOrAcronymToken(letterString) { return true }
+        return false
     }
 
     private static func isTechnicalScreenCandidateToken(_ token: String) -> Bool {
         let clean = token.trimmingCharacters(in: candidateTrimCharacters)
         guard (4...80).contains(clean.count) else { return false }
-        if clean.contains("_") || clean.contains("-") {
-            return clean.rangeOfCharacter(from: .letters) != nil
+        let patterns = [
+            "^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+(?:\\.[a-z0-9]{1,8})?$",
+            "^[a-z][a-z0-9]*(?:\\.[a-z0-9]{1,8})$",
+            "^[A-Z]{2,}\\d{1,6}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(clean.startIndex..., in: clean)
+            return regex.firstMatch(in: clean, range: range) != nil
         }
-        if clean.contains(".") {
-            let ext = clean.split(separator: ".").last.map(String.init)?.lowercased() ?? ""
-            return ["py", "swift", "ts", "tsx", "js", "jsx", "json", "md", "yml", "yaml"].contains(ext)
-        }
+    }
+
+    private static func isLikelyScreenCandidateOCRJunk(_ token: String) -> Bool {
+        let clean = token.trimmingCharacters(in: candidateTrimCharacters)
         let hasLetter = clean.contains { $0.isLetter }
         let hasDigit = clean.contains { $0.isNumber }
-        return hasLetter && hasDigit
+        let hasIdentifierSeparator = clean.contains("_") || clean.contains(".") || clean.contains("/") || clean.contains("-")
+        if hasLetter && hasDigit && !hasIdentifierSeparator {
+            return true
+        }
+        return false
+    }
+
+    private static func isSimpleCapitalizedToken(_ letters: String) -> Bool {
+        guard let first = letters.first, first.isUppercase else { return false }
+        let rest = letters.dropFirst()
+        return letters.count >= 3 && rest.allSatisfy { $0.isLowercase }
+    }
+
+    private static func isTwoPartCamelOrAcronymToken(_ letters: String) -> Bool {
+        let patterns = [
+            "^[A-Z][a-z]{2,}[A-Z][a-z]{2,}$",
+            "^[A-Z][a-z]{2,}[A-Z]{2,4}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(letters.startIndex..., in: letters)
+            return regex.firstMatch(in: letters, range: range) != nil
+        }
     }
 }

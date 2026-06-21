@@ -155,6 +155,8 @@ final class JunoScreenTermHarvester {
         "page", "tab", "enter", "return", "shift", "control", "option",
         "command", "escape", "online", "offline", "notifications", "profile",
         "account", "login", "logout", "signin", "signout", "yes", "no",
+        "accessibility", "onboarding", "permission", "permissions", "reminder",
+        "reminders",
     ]
 
     private static let commonWords: Set<String> = [
@@ -182,6 +184,7 @@ final class JunoScreenTermHarvester {
         func add(_ term: String, weight: Int) {
             let trimmed = term.trimmingCharacters(in: CharacterSet(charactersIn: " .,;:!?()[]{}<>\"'`"))
             guard trimmed.count >= 2, trimmed.count <= 40 else { return }
+            guard !isLikelyOCRJunk(trimmed) else { return }
             let key = trimmed.lowercased()
             guard !uiChrome.contains(key), !commonWords.contains(key) else { return }
             // Pure numbers carry no recognition value.
@@ -202,13 +205,13 @@ final class JunoScreenTermHarvester {
                 let hasDigit = token.rangeOfCharacter(from: .decimalDigits) != nil
                 let hasUnderscoreOrPath = token.contains("_") || token.contains("/") || token.contains(".")
                 let isAllCaps = token.count >= 2 && token.count <= 10 && token == token.uppercased() && !hasDigit
-                let body = String(token.dropFirst())
-                let isCamel = body.rangeOfCharacter(from: .uppercaseLetters) != nil && body.rangeOfCharacter(from: .lowercaseLetters) != nil
-                let isCapitalized = token.first.map { $0.isUppercase } == true && token.dropFirst().allSatisfy { $0.isLowercase }
+                let isCamel = Self.isTwoPartCamelOrAcronymToken(token)
+                let isCapitalized = Self.isSimpleCapitalizedToken(token)
 
-                if hasDigit && token.rangeOfCharacter(from: .letters) != nil {
-                    add(token, weight: 3)
-                } else if isCamel || hasUnderscoreOrPath {
+                if hasDigit && token.rangeOfCharacter(from: .letters) != nil && !hasUnderscoreOrPath {
+                    previousCapWord = isCapitalized ? token : nil
+                    continue
+                } else if isCamel || (hasUnderscoreOrPath && Self.isTechnicalScreenIdentifier(token)) {
                     add(token, weight: 3)
                 } else if isAllCaps {
                     add(token, weight: 2)
@@ -226,5 +229,113 @@ final class JunoScreenTermHarvester {
             .sorted { $0.score > $1.score || ($0.score == $1.score && $0.display < $1.display) }
             .prefix(40)
             .map { $0.display }
+    }
+
+    private static func isLikelyOCRJunk(_ token: String) -> Bool {
+        let hasLetter = token.rangeOfCharacter(from: .letters) != nil
+        let hasDigit = token.rangeOfCharacter(from: .decimalDigits) != nil
+        let hasIdentifierSeparator = token.rangeOfCharacter(from: CharacterSet(charactersIn: "_./-#")) != nil
+        if hasLetter && hasDigit && !hasIdentifierSeparator {
+            return true
+        }
+        let letters = token.filter { $0.isLetter }
+        if token.count <= 4,
+           !letters.isEmpty,
+           token != token.uppercased(),
+           token != token.lowercased(),
+           token != token.capitalized {
+            return true
+        }
+        let normalized = ocrNoiseKey(token)
+        if uiChrome.contains(normalized) || commonWords.contains(normalized) {
+            return true
+        }
+        if isNearOCRNoiseWord(normalized) {
+            return true
+        }
+        return false
+    }
+
+    private static func ocrNoiseKey(_ token: String) -> String {
+        let map: [Character: Character] = [
+            "0": "o",
+            "1": "l",
+            "3": "e",
+            "4": "a",
+            "5": "s",
+            "7": "t",
+            "8": "b",
+            "9": "g",
+        ]
+        return String(token.lowercased().map { map[$0] ?? $0 })
+    }
+
+    private static func isNearOCRNoiseWord(_ normalized: String) -> Bool {
+        guard normalized.count >= 6 else { return false }
+        for word in uiChrome.union(commonWords) {
+            guard word.count >= 6 else { continue }
+            guard abs(normalized.count - word.count) <= 2 else { continue }
+            if editDistance(normalized, word, maxDistance: 2) <= 2 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func editDistance(_ lhs: String, _ rhs: String, maxDistance: Int) -> Int {
+        let a = Array(lhs)
+        let b = Array(rhs)
+        if abs(a.count - b.count) > maxDistance { return maxDistance + 1 }
+        var previous = Array(0...b.count)
+        for i in 1...a.count {
+            var current = [i]
+            var rowMin = i
+            for j in 1...b.count {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                let value = min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + cost
+                )
+                current.append(value)
+                rowMin = min(rowMin, value)
+            }
+            if rowMin > maxDistance { return maxDistance + 1 }
+            previous = current
+        }
+        return previous.last ?? maxDistance + 1
+    }
+
+    private static func isSimpleCapitalizedToken(_ token: String) -> Bool {
+        let letters = token.filter { $0.isLetter }
+        guard letters.count >= 3, let first = letters.first, first.isUppercase else { return false }
+        return letters.dropFirst().allSatisfy { $0.isLowercase }
+    }
+
+    private static func isTwoPartCamelOrAcronymToken(_ token: String) -> Bool {
+        let letters = String(token.filter { $0.isLetter })
+        let patterns = [
+            "^[A-Z][a-z]{2,}[A-Z][a-z]{2,}$",
+            "^[A-Z][a-z]{2,}[A-Z]{2,4}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(letters.startIndex..., in: letters)
+            return regex.firstMatch(in: letters, range: range) != nil
+        }
+    }
+
+    private static func isTechnicalScreenIdentifier(_ token: String) -> Bool {
+        let clean = token.trimmingCharacters(in: CharacterSet(charactersIn: " .,;:!?()[]{}<>\"'`"))
+        let patterns = [
+            "^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+(?:\\.[a-z0-9]{1,8})?$",
+            "^[a-z][a-z0-9]*(?:\\.[a-z0-9]{1,8})$",
+            "^[A-Z]{2,}\\d{1,6}$",
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+            let range = NSRange(clean.startIndex..., in: clean)
+            return regex.firstMatch(in: clean, range: range) != nil
+        }
     }
 }
