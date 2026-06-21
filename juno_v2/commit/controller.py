@@ -9,6 +9,8 @@ from juno_v2.contracts.preview import PreviewEmission
 from juno_v2.contracts.tracing import TraceKind
 from juno_v2.memory.hallucination import (
     looks_like_silence_hallucination,
+    strip_adjacent_low_signal_word_duplicates,
+    strip_repeated_stock_hallucination_tail,
     strip_trailing_silence_hallucination,
 )
 from juno_v2.memory.store import _looks_like_hallucination
@@ -242,16 +244,46 @@ class CommitController:
             session.final_text = cleaned
             if self._current_utterance_id == utterance_id:
                 self.store.set_final_candidate(FinalCandidateRequest(text=cleaned))
-        # Pass the ASR's avg_logprob through so the guard can skip the
-        # word-repetition heuristic when the transcript is confident.
-        # Real speech saying "Hello hello hello hello hello" has
-        # avg_logprob ~ -0.3 to -0.5 on mlx_whisper; hallucinated
-        # repetition on silence has avg_logprob < -1.5.
+        cleaned = strip_repeated_stock_hallucination_tail(session.final_text)
+        if cleaned and cleaned != session.final_text:
+            self.recorder.record(
+                TraceKind.COMMIT,
+                "repeated_stock_hallucination_tail_stripped",
+                {
+                    "utterance_id": utterance_id,
+                    "before_text": session.final_text,
+                    "after_text": cleaned,
+                },
+            )
+            session.final_text = cleaned
+            if self._current_utterance_id == utterance_id:
+                self.store.set_final_candidate(FinalCandidateRequest(text=cleaned))
+        # Resolve the ASR's avg_logprob up front: the adjacent-duplicate
+        # stripper and the repetition/hallucination guards below all skip when
+        # the transcript is confident. Real speech saying "Hello hello hello" —
+        # or the band "The The" — has avg_logprob ~ -0.3 to -0.5 on mlx_whisper;
+        # hallucinated repetition on silence sits well below -1.0.
         avg_logprob = session.final_metadata.get("avg_logprob")
         try:
             confidence = float(avg_logprob) if avg_logprob is not None else None
         except (TypeError, ValueError):
             confidence = None
+        cleaned = strip_adjacent_low_signal_word_duplicates(
+            session.final_text, confidence=confidence
+        )
+        if cleaned and cleaned != session.final_text:
+            self.recorder.record(
+                TraceKind.COMMIT,
+                "adjacent_low_signal_duplicate_words_stripped",
+                {
+                    "utterance_id": utterance_id,
+                    "before_text": session.final_text,
+                    "after_text": cleaned,
+                },
+            )
+            session.final_text = cleaned
+            if self._current_utterance_id == utterance_id:
+                self.store.set_final_candidate(FinalCandidateRequest(text=cleaned))
         # Silence-phrase guard: catches whisper-on-silence one-shots like
         # "Thank you." that pass the structural checks because they're
         # linguistically clean. Requires audio-side corroboration

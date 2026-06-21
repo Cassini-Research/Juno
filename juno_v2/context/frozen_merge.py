@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from juno_v2.context.app_classifier import classify_app_category
 from juno_v2.context.redaction import ContextRedactor
 from juno_v2.contracts.context import TypedContextBundle
+from juno_v2.memory.bias import screen_term_prompt_worthy
 
 
 def merge_frozen_capability_into_bundle(
@@ -102,6 +103,8 @@ def merge_frozen_capability_into_bundle(
         for raw in raw_entities[:24]:
             value = _clip(str(raw or "").strip())
             if not value:
+                continue
+            if not screen_term_prompt_worthy(value):
                 continue
             key = value.casefold()
             if key in seen:

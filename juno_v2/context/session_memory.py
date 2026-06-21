@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from juno_v2.contracts.context import TypedContextBundle
+from juno_v2.memory.bias import screen_term_prompt_worthy
 from juno_v2.memory.store import _looks_like_hallucination
 
 _TITLE_OR_ACRONYM_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9_./-]{1,}|[A-Z]{2,})\b")
@@ -69,6 +70,8 @@ class SessionContextMemory:
         for term, source in sources:
             clean = _clean_term(term)
             if not clean:
+                continue
+            if source == "candidate_entities" and not screen_term_prompt_worthy(clean):
                 continue
             key = clean.casefold()
             item = self._items.pop(key, None)

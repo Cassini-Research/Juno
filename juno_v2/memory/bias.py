@@ -500,7 +500,7 @@ class RecognitionBiasEngine:
             add(stem)
             add(base)
         for candidate in context.candidate_entities:
-            if self.is_session_entity_candidate(candidate):
+            if is_biasable_runtime_context_candidate(candidate):
                 add(candidate)
         for term in packet.lexicon_terms:
             if _is_low_signal_phrase(term):
@@ -557,7 +557,7 @@ class RecognitionBiasEngine:
         # Only terms that pass the low-signal entity filter are safe to
         # canonicalize here.
         for candidate in plan.context.candidate_entities:
-            if _context_candidate_can_canonicalize(candidate) and self.is_session_entity_candidate(candidate):
+            if is_biasable_runtime_context_candidate(candidate):
                 canonical_map.append((candidate, candidate, 'context_candidate'))
         if plan.context.selected_text:
             canonical_map.append((plan.context.selected_text, plan.context.selected_text, 'selected_text'))
@@ -690,7 +690,15 @@ def _is_session_entity_candidate(value: str) -> bool:
 
 
 def is_biasable_runtime_context_candidate(value: str) -> bool:
-    return _is_session_entity_candidate(value) and _context_candidate_can_canonicalize(value)
+    v = (value or "").strip()
+    return (
+        bool(v)
+        and learned_term_allowed(v)
+        and not _looks_like_hallucination(v)
+        and (session_entity_allowed(v) or bool(_SCREEN_TECH_IDENTIFIER_RE.match(v)))
+        and _context_candidate_can_canonicalize(v)
+        and _runtime_context_candidate_prompt_worthy(v)
+    )
 
 
 def is_low_signal_lexicon_pair(term: str, canonical: str) -> bool:
@@ -767,8 +775,159 @@ def _phrase_pattern(phrase: str) -> str:
 # a capitalized word or an acronym, letters only. Harvested screen text is
 # full of OCR junk ("lTr", "Mwrk5pace"), UI chrome with digits ("Adi41"),
 # and truncations — none of which belong in a Whisper prompt.
-_SCREEN_TERM_TOKEN_RE = re.compile(r"^(?:[A-Z][a-zA-Z]{1,23}|[A-Z]{2,8})$")
+_SCREEN_SIMPLE_NAME_RE = re.compile(r"^[A-Z][a-z]{1,23}$")
+_SCREEN_ACRONYM_RE = re.compile(r"^[A-Z]{2,8}$")
+_SCREEN_CAMEL_NAME_RE = re.compile(r"^(?:[A-Z][a-z]{2,})(?:[A-Z][a-z]{2,}|[A-Z]{2,4})$")
 _SCREEN_TERM_MAX_WORDS = 3
+_SCREEN_TECH_IDENTIFIER_RE = re.compile(
+    r"^(?:[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+(?:\.[a-z0-9]{1,8})?|"
+    r"[a-z][a-z0-9]*(?:\.[a-z0-9]{1,8})|"
+    r"[A-Z]{2,}\d{1,6})$"
+)
+_SCREEN_OCR_NOISE_WORDS = {
+    "accessibility",
+    "onboarding",
+    "permission",
+    "permissions",
+    "reminder",
+    "reminders",
+}
+_SCREEN_SINGLE_WORD_BLOCKLIST = {
+    "about",
+    "account",
+    "back",
+    "bookmarks",
+    "cancel",
+    "close",
+    "copy",
+    "done",
+    "edit",
+    "file",
+    "forward",
+    "help",
+    "high",
+    "home",
+    "inbox",
+    "loading",
+    "login",
+    "logout",
+    "menu",
+    "new",
+    "next",
+    "open",
+    "preferences",
+    "profile",
+    "reload",
+    "save",
+    "saved",
+    "search",
+    "settings",
+    "show",
+    "submit",
+    "tab",
+    "today",
+    "tools",
+    "update",
+    "view",
+    "window",
+    # Common email / chat / app action chrome. These are ordinary English
+    # words (so common_english_single_word admits them), title-cased on screen
+    # as buttons/labels, and harvested in volume — feeding them into the
+    # Whisper bias prompt floods it and degrades recognition. Deliberately
+    # excludes words that double as common first names (Mark, Grace, River,
+    # Star, Pin, Flag) so dictated contact names still bias correctly.
+    "add",
+    "apply",
+    "archive",
+    "archived",
+    "attach",
+    "attachments",
+    "block",
+    "calls",
+    "chats",
+    "comments",
+    "compose",
+    "confirm",
+    "contacts",
+    "continue",
+    "delete",
+    "deleted",
+    "discard",
+    "download",
+    "downloads",
+    "draft",
+    "drafts",
+    "export",
+    "favorites",
+    "filter",
+    "filters",
+    "finish",
+    "folder",
+    "folders",
+    "follow",
+    "import",
+    "junk",
+    "library",
+    "mentions",
+    "message",
+    "messages",
+    "move",
+    "mute",
+    "notifications",
+    "options",
+    "paste",
+    "photos",
+    "post",
+    "print",
+    "redo",
+    "refresh",
+    "remove",
+    "rename",
+    "replies",
+    "reply",
+    "report",
+    "reset",
+    "retry",
+    "select",
+    "send",
+    "share",
+    "skip",
+    "snooze",
+    "sort",
+    "spam",
+    "subscribe",
+    "sync",
+    "trash",
+    "undo",
+    "unread",
+    "upload",
+    "uploads",
+    "videos",
+}
+_SCREEN_TERM_ALLOWLIST = {"codex"}
+_OCR_CONFUSABLES = str.maketrans({
+    "0": "o",
+    "1": "l",
+    "3": "e",
+    "4": "a",
+    "5": "s",
+    "7": "t",
+    "8": "b",
+    "9": "g",
+})
+
+
+def screen_term_prompt_worthy(text: str) -> bool:
+    return _screen_term_prompt_worthy(text)
+
+
+def _runtime_context_candidate_prompt_worthy(text: str) -> bool:
+    value = (text or "").strip()
+    if not value:
+        return False
+    if _screen_term_prompt_worthy(value):
+        return True
+    return bool(_SCREEN_TECH_IDENTIFIER_RE.match(value)) and not _looks_like_screen_ocr_junk(value)
 
 
 def _screen_term_prompt_worthy(text: str) -> bool:
@@ -786,19 +945,89 @@ def _screen_term_prompt_worthy(text: str) -> bool:
     words = (text or "").split()
     if not words or len(words) > _SCREEN_TERM_MAX_WORDS:
         return False
+    if _looks_like_screen_ocr_junk(" ".join(words)):
+        return False
     from juno_v2.memory.entity_policy import common_english_single_word
 
     if len(words) == 1:
         token = words[0]
-        if not _SCREEN_TERM_TOKEN_RE.match(token):
+        if token.casefold() in _SCREEN_TERM_ALLOWLIST:
+            return True
+        if not (
+            _SCREEN_SIMPLE_NAME_RE.match(token)
+            or _SCREEN_ACRONYM_RE.match(token)
+            or _SCREEN_CAMEL_NAME_RE.match(token)
+        ):
             return False
-        return not common_english_single_word(token)
+        return token.casefold() not in _SCREEN_SINGLE_WORD_BLOCKLIST
     # Multi-word: every token must be word-shaped, and at least one must be
     # a non-common word — "Privacy Settings" is UI chrome, "Cassini
     # Research" is a name worth biasing toward.
     if not all(re.match(r"^[A-Za-z][A-Za-z'\-]{0,23}$", w) for w in words):
         return False
     return any(not common_english_single_word(w) for w in words)
+
+
+def _looks_like_screen_ocr_junk(text: str) -> bool:
+    value = (text or "").strip()
+    if not value:
+        return True
+    if len(value.split()) > 1:
+        return any(_looks_like_screen_ocr_junk(part) for part in value.split())
+    token = value.strip(" \t\r\n,.;:!?()[]{}<>\"'`")
+    if not token:
+        return True
+    has_letter = any(ch.isalpha() for ch in token)
+    has_digit = any(ch.isdigit() for ch in token)
+    has_identifier_separator = any(ch in token for ch in "_./-#")
+    if has_letter and has_digit and not has_identifier_separator:
+        return True
+    if (
+        len(token) <= 4
+        and token != token.upper()
+        and token != token.casefold()
+        and token != token.capitalize()
+    ):
+        return True
+    normalized = token.casefold().translate(_OCR_CONFUSABLES)
+    if normalized in _SCREEN_OCR_NOISE_WORDS:
+        return True
+    if _near_screen_noise_word(normalized):
+        return True
+    return False
+
+
+def _near_screen_noise_word(normalized: str) -> bool:
+    if len(normalized) < 6:
+        return False
+    for word in _SCREEN_OCR_NOISE_WORDS:
+        if abs(len(normalized) - len(word)) > 2:
+            continue
+        if _edit_distance_at_most(normalized, word, 2):
+            return True
+    return False
+
+
+def _edit_distance_at_most(a: str, b: str, max_edits: int) -> bool:
+    if abs(len(a) - len(b)) > max_edits:
+        return False
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        current = [i]
+        row_min = i
+        for j, cb in enumerate(b, start=1):
+            cost = 0 if ca == cb else 1
+            value = min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + cost,
+            )
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > max_edits:
+            return False
+        previous = current
+    return previous[-1] <= max_edits
 
 
 def _diversify_bias_phrases(
@@ -834,7 +1063,7 @@ def _diversify_bias_phrases(
         family_counts[family] = family_counts.get(family, 0) + 1
         out.append(text)
 
-    for term in screen_terms[:16]:
+    for term in screen_terms[:48]:
         text = str(term).strip() if not isinstance(term, dict) else str(term.get("text") or "").strip()
         if not _screen_term_prompt_worthy(text):
             continue

@@ -2560,7 +2560,10 @@ private struct HistoryDetailPane: View {
         // refocus a target app if Juno's window is forward. Paste at
         // cursor handles the focus drift diagnostic itself.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
-            let ok = Clipboard.pasteAtCursor()
+            // verifyLanded: confirm the paste actually landed (AX read-back)
+            // so a no-op paste into a read-only / focus-drifted target reports
+            // the honest "paste manually" message instead of false success.
+            let ok = Clipboard.pasteAtCursor(verifyLanded: true)
             DispatchQueue.main.async {
                 if ok {
                     insertAgainError = nil

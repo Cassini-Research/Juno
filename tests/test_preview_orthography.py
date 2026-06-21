@@ -64,6 +64,44 @@ def test_tail_internal_sentence_boundary_not_trusted_in_preview() -> None:
     assert tail == "more. then more"
 
 
+def test_spoken_punctuation_cues_are_counted_without_mutating_backend_text() -> None:
+    committed, tail, meta = normalize_preview_orthography(
+        "hello comma world period this is next",
+        "",
+    )
+
+    assert committed == "Hello comma world period this is next"
+    assert tail == ""
+    assert meta["preview_spoken_punctuation_cues"] == 2
+
+
+def test_spoken_new_paragraph_cue_is_counted_without_touching_literal_mentions() -> None:
+    committed, _, meta = normalize_preview_orthography(
+        "hello new paragraph next point",
+        "",
+    )
+
+    assert committed == "Hello new paragraph next point"
+    assert meta["preview_spoken_punctuation_cues"] == 1
+
+    literal, _, literal_meta = normalize_preview_orthography(
+        "the new paragraph is short and a comma goes here",
+        "",
+    )
+    assert literal == "The new paragraph is short and a comma goes here"
+    assert literal_meta["preview_spoken_punctuation_cues"] == 0
+
+
+def test_spoken_terminal_mark_cues_are_counted_without_mutating_backend_text() -> None:
+    committed, _, meta = normalize_preview_orthography(
+        "are we ready question mark yes exclamation point",
+        "",
+    )
+
+    assert committed == "Are we ready question mark yes exclamation point"
+    assert meta["preview_spoken_punctuation_cues"] == 2
+
+
 def test_empty_inputs() -> None:
     committed, tail, meta = normalize_preview_orthography("", "")
     assert committed == ""
@@ -72,6 +110,7 @@ def test_empty_inputs() -> None:
         "preview_orthography_applied": 0,
         "preview_orthography_committed_changed": False,
         "preview_orthography_tail_changed": False,
+        "preview_spoken_punctuation_cues": 0,
     }
 
 
