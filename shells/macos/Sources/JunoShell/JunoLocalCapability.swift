@@ -148,7 +148,13 @@ enum JunoLocalCapability {
         let focusedWindow = axElement(appElement, kAXFocusedWindowAttribute as CFString)
         let mainWindow = axElement(appElement, kAXMainWindowAttribute as CFString)
         if let focusedWindow {
+            // The window title is sent to the engine and tokenized into
+            // candidate_entities, so it needs the same bidi/format-mark strip
+            // as the visible-body text (appendVisibleChunk). Telegram titles
+            // like "‎⁨Padel in Danube⁩ @ ‎⁨Paresh Dudhat⁩" otherwise leak
+            // "\u{200E}\u{2068}Padel" back into the bias terms.
             out["window_title"] = axString(focusedWindow, kAXTitleAttribute as CFString)
+                .map { strippedOfInvisibleFormatMarks($0) }
             if let doc = axString(focusedWindow, kAXDocumentAttribute as CFString), !doc.isEmpty {
                 out["focused_document_path"] = clip(doc)
             }
@@ -156,6 +162,7 @@ enum JunoLocalCapability {
         if out["window_title"] == nil,
            let mainWindow {
             out["window_title"] = axString(mainWindow, kAXTitleAttribute as CFString)
+                .map { strippedOfInvisibleFormatMarks($0) }
             if out["focused_document_path"] == nil,
                let doc = axString(mainWindow, kAXDocumentAttribute as CFString), !doc.isEmpty {
                 out["focused_document_path"] = clip(doc)
@@ -700,13 +707,30 @@ enum JunoLocalCapability {
         }
     }
 
+    /// Strip invisible Unicode *format* characters — bidi marks (LRM/RLM),
+    /// directional isolates (FSI/PDI, U+2066–U+2069) and zero-width joiners —
+    /// that bidi-aware apps (Telegram, browsers with RTL content) wrap message
+    /// text in. Left in AX-derived screen context they corrupt
+    /// ``candidate_entities``: "Padel" arrives as "\u{200E}\u{2068}Padel",
+    /// which never matches the spoken word as a recognition-bias hint, so an
+    /// uncommon term gets mis-transcribed ("pedal") even though it was on
+    /// screen. These are Unicode category ``.format`` (invisible); real
+    /// whitespace is category ``.control`` and is preserved for the collapse.
+    static func strippedOfInvisibleFormatMarks(_ value: String) -> String {
+        guard value.unicodeScalars.contains(where: { $0.properties.generalCategory == .format })
+        else { return value }
+        return String(String.UnicodeScalarView(
+            value.unicodeScalars.filter { $0.properties.generalCategory != .format }
+        ))
+    }
+
     private static func appendVisibleChunk(
         _ value: String,
         role: String,
         into chunks: inout [String],
         seen: inout Set<String>
     ) {
-        let collapsed = value
+        let collapsed = strippedOfInvisibleFormatMarks(value)
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\t", with: " ")
             .components(separatedBy: .whitespacesAndNewlines)

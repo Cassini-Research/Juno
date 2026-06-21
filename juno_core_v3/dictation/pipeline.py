@@ -2746,11 +2746,14 @@ class OneShotDictationPipeline:
             if key in seen_snapshot_keys:
                 continue
             seen_snapshot_keys.add(key)
-            chunks.extend([app, title, selected, before, after, field_excerpt, doc])
+            chunks.extend([
+                _strip_format_marks(x)
+                for x in (app, title, selected, before, after, field_excerpt, doc)
+            ])
             raw_candidates = item.get("candidate_entities") or item.get("candidate_terms")
             if isinstance(raw_candidates, list):
                 for raw in raw_candidates[:24]:
-                    value = _bounded_text(raw, 80)
+                    value = _strip_format_marks(_bounded_text(raw, 80))
                     if value and (_context_candidate_allowed is None or _context_candidate_allowed(value)):
                         explicit_terms.append(value)
 
@@ -4736,6 +4739,26 @@ def _bounded_text(value: Any, max_chars: int) -> str:
     if max_chars <= 0:
         return ""
     return text[:max_chars]
+
+
+def _strip_format_marks(value: Any) -> str:
+    """Drop invisible Unicode *format* characters (Cf: bidi marks/isolates,
+    zero-width joiners) before screen-context text becomes candidate_entities.
+
+    Bidi-aware apps (Telegram, browsers with RTL content) wrap titles and
+    message text in these marks, so a window title "‎⁨Padel in Danube⁩" makes
+    the recognizer see "‎⁨Padel" — an unmatchable bias term — and an
+    uncommon on-screen word is mis-transcribed ("pedal") even though it was
+    visible. The macOS shell strips these at the AX source; this is the
+    engine-side backstop for every screen-context field (title, selected text,
+    surrounding text), not just the window body.
+    """
+    import unicodedata
+
+    text = str(value or "")
+    if not text or not any(unicodedata.category(ch) == "Cf" for ch in text):
+        return text
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
 
 
 def _text_debug_payload(value: Any, *, max_preview_chars: int = 240) -> dict[str, Any]:

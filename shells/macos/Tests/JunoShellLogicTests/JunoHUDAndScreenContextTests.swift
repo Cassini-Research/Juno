@@ -62,6 +62,24 @@ final class JunoHUDAndScreenContextTests: XCTestCase {
         XCTAssertEqual(store.rawText, "the new line")
     }
 
+    func testVisibleContextStripsBidiFormatMarks() {
+        // Telegram wraps message text in bidi isolates (LRM + First-Strong-
+        // Isolate … Pop-Directional-Isolate). Left in, "Padel" arrives as an
+        // unmatchable bias token and the spoken word is mis-transcribed
+        // ("pedal"), while common words like "Danube" still come out right.
+        XCTAssertEqual(
+            JunoLocalCapability.strippedOfInvisibleFormatMarks("\u{200E}\u{2068}Padel\u{2069}"),
+            "Padel"
+        )
+        XCTAssertEqual(
+            JunoLocalCapability.strippedOfInvisibleFormatMarks("\u{200E}\u{2068}Paresh Dudhat\u{2069}"),
+            "Paresh Dudhat"
+        )
+        // Plain text and ordinary whitespace are untouched.
+        XCTAssertEqual(JunoLocalCapability.strippedOfInvisibleFormatMarks("Danube"), "Danube")
+        XCTAssertEqual(JunoLocalCapability.strippedOfInvisibleFormatMarks("hello world"), "hello world")
+    }
+
     func testScreenTermHarvesterDropsOCRJunkBeforeBiasing() {
         let terms = JunoScreenTermHarvester.distillTerms(from: [
             "onboardin9 Acces5ibility Rerninders rn0 coM JuDo NOvaD SettiThJs CityXyoTer bhlS.py atlons/Junty.app",
