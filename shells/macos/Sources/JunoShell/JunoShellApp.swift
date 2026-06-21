@@ -3506,6 +3506,12 @@ final class DictationController: ObservableObject {
             self.firstAudioFrameAt = 0
             self.lastSpeechEnergyAt = 0
             self.stopWorkbenchStatePolling(clear: true)
+            // Screen-term OCR harvesting is session-scoped; guarantee teardown
+            // on every idle transition — including capability-blocked and
+            // "stop ignored" early returns that bypass end/cancelEnginePreview
+            // Streaming — so the decoupled activation in the start path can
+            // never leave the 6s capture timer running after a session ends.
+            JunoScreenTermHarvester.shared.deactivate()
             self.lastPartialSnapshotSpeechAt = 0
             self.speechDetectedLoggedThisSession = false
             self.state = "idle"
@@ -4037,6 +4043,16 @@ final class DictationController: ObservableObject {
             // first PCM buffer as early as the recorder does.
             beginEnginePreviewStreaming(uid: pendingUtteranceId)
         }
+        // Screen-context OCR harvesting is tied to the dictation SESSION, not to
+        // the live-preview toggle: the final-transcription capability snapshot
+        // (JunoLocalCapability) consumes screen terms even when live captions
+        // are off, so gating activation on hudLiveTranscriptionsEnabled silently
+        // killed screen context for that configuration. Teardown is covered by
+        // end/cancelEnginePreviewStreaming (both deactivate the harvester) and
+        // the capability hard-block above.
+        if JunoScreenContextAccess.isEnabledAndGranted {
+            JunoScreenTermHarvester.shared.activate()
+        }
         isPartialMode = false
         accumulatedText = ""
         partialInsertFailed = false
@@ -4126,6 +4142,15 @@ final class DictationController: ObservableObject {
                         self.promptAccessibilityPermission()
                     }
                     self.cancelNoSpeechWatchdogIfNeeded()
+                    // Tear down the live-preview lane AND the screen-term OCR
+                    // harvester on any hard block. Critical for ``secure_field``:
+                    // the final-context path suppresses screen terms on secure
+                    // focus, but the live-preview lane had no secure gate, so
+                    // without this it kept OCRing the whole screen and streaming
+                    // on-screen terms (and audio) to the broker during password
+                    // entry. cancelEnginePreviewStreaming deactivates the
+                    // harvester too, so this also stops further screen capture.
+                    self.cancelEnginePreviewStreaming(reason: cap.reason)
                     self.teardownRecognition()
                     _ = self.recorder.stop()
                     self.state = "blocked:\(cap.reason)"
@@ -4490,9 +4515,9 @@ final class DictationController: ObservableObject {
         lastLiveAudioCheckpointRequestedAt = 0
         lastLiveAudioCheckpointPCMBytes = 0
         liveAudioCheckpointBackpressureUntil = 0
-        if JunoScreenContextAccess.isEnabledAndGranted {
-            JunoScreenTermHarvester.shared.activate()
-        }
+        // Harvester activation now happens once in the common dictation-start
+        // path (independent of this live-preview lane) so screen context also
+        // works when live captions are off.
         previewStreamer.start(utteranceId: uid)
         previewStreamer.visibleTextHint = { [weak self] in
             guard let self else { return "" }
@@ -4500,6 +4525,12 @@ final class DictationController: ObservableObject {
         }
         previewStreamer.candidateEntities = { [weak self] in
             guard let self else { return [] }
+            // Mirror the final-context path (JunoLocalCapability): once the
+            // focused field is secure, ship neither AX recognition hints nor
+            // OCR-harvested screen terms. Defends the window before the
+            // capability hard-block tears the preview lane down, since the
+            // in-process AX snapshot can latch lastSecureFlag earlier.
+            guard !self.lastSecureFlag else { return [] }
             var hints = self.surfaceRecognitionHints
             var seen = Set(hints.map { $0.lowercased() })
             if JunoScreenContextAccess.isEnabledAndGranted {
@@ -6665,24 +6696,20 @@ final class DictationController: ObservableObject {
     private func verifyPasteLandedIfNeeded(fieldSnapshot: String, pasted: String) {
         let p = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty else { return }
-        if fieldSnapshot.contains(p) { return }
-        // Terminals and rich editors re-wrap pasted text inside their AX
-        // value (hard newlines at column width, NBSP), so verbatim
-        // containment false-flags any paste longer than one visual line.
-        // That reopened the HUD as copy-ready after a successful paste —
-        // which also suppressed the dictation hotkey until the user pressed
-        // Esc (production 2026-06-11). Collapse all whitespace on both sides
-        // before declaring the paste missing.
-        if Self.whitespaceCollapsed(fieldSnapshot).contains(Self.whitespaceCollapsed(p)) { return }
-        // The literal text isn't in the field value. That's only trustworthy
-        // evidence of a missed paste when the surface exposes a reliable AX
-        // value. Web/Electron/Terminal editors (Codex, Claude, Claude Code)
-        // render placeholders like "[Pasted text #1]" instead of the pasted
-        // text, so containment ALWAYS fails there even on a perfect paste —
-        // the false "Text may not have landed" the user reported.
-        // ``observedUndoSafePaste`` already assumes success on those surfaces;
-        // mirror that here instead of second-guessing with an unreliable value.
-        guard lastPasteTargetReadbackReliable else { return }
+        // ``observedUndoSafePaste`` is the authoritative landing gate: for
+        // read-back-reliable targets it already verified the field VALUE
+        // changed, so never let this async backstop override a confirmed
+        // success. Literal containment is the wrong test anyway — Claude Code /
+        // Codex / Terminal render pasted text as a placeholder ("[Pasted text
+        // #3]") instead of the dictated text, so a perfectly good paste never
+        // "contains" it. That false-failure is what kept the HUD in copy-ready
+        // after a confirmed-good paste (production 2026-06-21: traces showed
+        // ok=insert while the HUD stayed up). Keep the backstop only for
+        // targets read-back had to ASSUME success on, and only when the field
+        // came back genuinely EMPTY (nothing landed) — never merely "doesn't
+        // contain the literal text".
+        if lastPasteTargetReadbackReliable { return }
+        guard fieldSnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {
