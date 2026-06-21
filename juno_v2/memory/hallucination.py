@@ -442,9 +442,13 @@ _LOW_SIGNAL_ADJACENT_DUPLICATE_WORDS = frozenset(
 # a comma or line break between the copies marks a clause/list boundary where
 # the second word is a real word ("I know that, that was the plan"), not a
 # doubled token, and must be preserved.
+# The ``(?<![-'])`` / ``(?![-'])`` guards keep a glue word that is actually
+# part of a hyphenated or apostrophe compound from being read as a duplicate:
+# "I want a a-frame" must stay intact (the second "a" begins "a-frame", it is
+# not a doubled article), and likewise "it it's" / "x-a a".
 _LOW_SIGNAL_ADJACENT_DUPLICATE_RE = re.compile(
-    r"\b(?P<word>a|an|and|are|but|it|just|like|so|the|was|were)\b"
-    r"(?P<repeat>(?:[^\S\n]+(?P=word)\b)+)",
+    r"(?<![-'])\b(?P<word>a|an|and|are|but|it|just|like|so|the|was|were)\b"
+    r"(?P<repeat>(?:[^\S\n]+(?P=word)\b(?![-']))+)",
     re.IGNORECASE,
 )
 
@@ -663,15 +667,27 @@ def strip_repeated_stock_hallucination_tail(
     return cleaned or text
 
 
-def strip_adjacent_low_signal_word_duplicates(text: str) -> str:
+def strip_adjacent_low_signal_word_duplicates(
+    text: str, *, confidence: float | None = None
+) -> str:
     """Collapse adjacent duplicate filler/connective words in final text.
 
     This is intentionally narrower than a general repetition cleaner. It only
     targets low-information glue words that ASR/writer cleanup can accidentally
     double ("just just", "that that") and leaves meaningful repetition such as
     names, numbers, commands, "very very", and code-like tokens alone.
+
+    ``confidence`` is the ASR's ``avg_logprob``. When the decode is internally
+    confident (``confidence >= HALLUCINATION_CONFIDENCE_FLOOR``) an adjacent
+    glue-word repeat is almost always something the user actually said — a
+    stutter, the band name "The The", "and and then" — not an ASR doubling
+    artifact, so we leave it untouched. Only low-confidence (or
+    unknown-confidence) decodes are collapsed, mirroring the repetition guard
+    the commit controller runs immediately after this.
     """
     if not text or not text.strip():
+        return text
+    if confidence is not None and confidence >= HALLUCINATION_CONFIDENCE_FLOOR:
         return text
 
     def repl(match: re.Match[str]) -> str:

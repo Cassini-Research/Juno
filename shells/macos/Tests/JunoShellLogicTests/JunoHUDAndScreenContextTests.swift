@@ -38,6 +38,30 @@ final class JunoHUDAndScreenContextTests: XCTestCase {
         XCTAssertEqual(literal, "the new line is short")
     }
 
+    func testCommittedShrinkAcceptsUnambiguousPunctuationCueSuffix() {
+        let store = HUDTranscriptStore()
+        _ = store.applyPreviewRevision(committed: "hello world comma", tail: "")
+        XCTAssertEqual(store.rawText, "hello world comma")
+
+        // A re-anchor that drops a trailing spoken punctuation cue ("comma")
+        // is allowed to shrink the committed HUD.
+        let changed = store.applyPreviewRevision(committed: "hello world", tail: "")
+        XCTAssertTrue(changed)
+        XCTAssertEqual(store.rawText, "hello world")
+    }
+
+    func testCommittedShrinkRefusesDeterminerProtectedCuePhrase() {
+        let store = HUDTranscriptStore()
+        _ = store.applyPreviewRevision(committed: "the new line", tail: "")
+        XCTAssertEqual(store.rawText, "the new line")
+
+        // "the new line" is real dictated prose (determiner guard), not a
+        // spoken cue — a shorter re-anchor must NOT shrink those words away.
+        let changed = store.applyPreviewRevision(committed: "the", tail: "")
+        XCTAssertFalse(changed)
+        XCTAssertEqual(store.rawText, "the new line")
+    }
+
     func testScreenTermHarvesterDropsOCRJunkBeforeBiasing() {
         let terms = JunoScreenTermHarvester.distillTerms(from: [
             "onboardin9 Acces5ibility Rerninders rn0 coM JuDo NOvaD SettiThJs CityXyoTer bhlS.py atlons/Junty.app",

@@ -354,6 +354,14 @@ final class HUDTranscriptStore: ObservableObject {
         return common >= required
     }
 
+    /// Determiners that keep a following "new line"/"new paragraph"/"full stop"
+    /// etc. as literal prose ("the new line is short") rather than a spoken
+    /// cue. Shared by ``smoothForDisplay``, ``transcriptWithSpokenBreakCuesResolved``
+    /// and the committed-shrink gate so the three cannot drift apart.
+    private static let spokenBreakCueDeterminers: Set<String> = [
+        "the", "a", "an", "this", "that", "each", "every", "my", "your", "our",
+    ]
+
     private static func acceptsSpokenPunctuationCueRevision(current: String, incoming: String) -> Bool {
         let currentTokens = previewRevisionTokens(current)
         let incomingTokens = previewRevisionTokens(incoming)
@@ -361,6 +369,14 @@ final class HUDTranscriptStore: ObservableObject {
         guard currentTokens.prefix(incomingTokens.count).elementsEqual(incomingTokens) else { return false }
         let dropped = Array(currentTokens.dropFirst(incomingTokens.count))
         guard !dropped.isEmpty, dropped.count <= 2 else { return false }
+        // Determiner guard (mirrors smoothForDisplay / transcriptWithSpokenBreakCuesResolved):
+        // "...the new line", "...a full stop" is real dictated prose, not a
+        // spoken punctuation cue — never shrink those words off the committed
+        // HUD. The cue must not be immediately preceded by a determiner.
+        if let preceding = incomingTokens.last,
+           spokenBreakCueDeterminers.contains(preceding) {
+            return false
+        }
         return isSpokenPunctuationCueSuffix(dropped)
     }
 
@@ -487,7 +503,7 @@ final class HUDTranscriptStore: ObservableObject {
                     $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
                 } ?? ""
                 result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-                if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
+                if spokenBreakCueDeterminers.contains(prevWord) {
                     result += ns.substring(with: match.range)
                 } else {
                     let cueText = ns.substring(with: match.range)
@@ -528,7 +544,7 @@ final class HUDTranscriptStore: ObservableObject {
                 $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:")).lowercased()
             } ?? ""
             result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-            if ["the", "a", "an", "this", "that", "each", "every", "my", "your", "our"].contains(prevWord) {
+            if spokenBreakCueDeterminers.contains(prevWord) {
                 result += ns.substring(with: match.range)
             } else {
                 let cueText = ns.substring(with: match.range)

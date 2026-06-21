@@ -258,7 +258,19 @@ class CommitController:
             session.final_text = cleaned
             if self._current_utterance_id == utterance_id:
                 self.store.set_final_candidate(FinalCandidateRequest(text=cleaned))
-        cleaned = strip_adjacent_low_signal_word_duplicates(session.final_text)
+        # Resolve the ASR's avg_logprob up front: the adjacent-duplicate
+        # stripper and the repetition/hallucination guards below all skip when
+        # the transcript is confident. Real speech saying "Hello hello hello" —
+        # or the band "The The" — has avg_logprob ~ -0.3 to -0.5 on mlx_whisper;
+        # hallucinated repetition on silence sits well below -1.0.
+        avg_logprob = session.final_metadata.get("avg_logprob")
+        try:
+            confidence = float(avg_logprob) if avg_logprob is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+        cleaned = strip_adjacent_low_signal_word_duplicates(
+            session.final_text, confidence=confidence
+        )
         if cleaned and cleaned != session.final_text:
             self.recorder.record(
                 TraceKind.COMMIT,
@@ -272,16 +284,6 @@ class CommitController:
             session.final_text = cleaned
             if self._current_utterance_id == utterance_id:
                 self.store.set_final_candidate(FinalCandidateRequest(text=cleaned))
-        # Pass the ASR's avg_logprob through so the guard can skip the
-        # word-repetition heuristic when the transcript is confident.
-        # Real speech saying "Hello hello hello hello hello" has
-        # avg_logprob ~ -0.3 to -0.5 on mlx_whisper; hallucinated
-        # repetition on silence has avg_logprob < -1.5.
-        avg_logprob = session.final_metadata.get("avg_logprob")
-        try:
-            confidence = float(avg_logprob) if avg_logprob is not None else None
-        except (TypeError, ValueError):
-            confidence = None
         # Silence-phrase guard: catches whisper-on-silence one-shots like
         # "Thank you." that pass the structural checks because they're
         # linguistically clean. Requires audio-side corroboration

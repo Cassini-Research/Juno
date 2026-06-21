@@ -495,6 +495,40 @@ def test_strip_adjacent_low_signal_word_duplicates_keeps_valid_double_that_and_i
         assert strip_adjacent_low_signal_word_duplicates(text) == text, text
 
 
+def test_strip_adjacent_low_signal_word_duplicates_keeps_hyphen_and_apostrophe_compounds() -> None:
+    # A glue word followed by whitespace and a hyphenated/apostrophe compound
+    # that begins with the same word is NOT a doubled token — the second
+    # occurrence is the start of a real word ("a-frame", "it's").
+    for text in (
+        "I want a a-frame for the tent",
+        "it it's cold outside",
+        "we are are-you-sure about this",
+    ):
+        assert strip_adjacent_low_signal_word_duplicates(text) == text, text
+
+
+def test_strip_adjacent_low_signal_word_duplicates_skips_when_confident() -> None:
+    # When the ASR is internally confident, an adjacent glue-word repeat is
+    # almost always real speech (a stutter, the band name "The The", an
+    # emphatic "and and then") and must be preserved. Only low-confidence /
+    # unknown-confidence decodes are collapsed.
+    confident = "We saw the the band live"
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident, confidence=-0.4)
+        == confident
+    )
+    # Low confidence -> ASR doubling artifact -> collapse.
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident, confidence=-2.0)
+        == "We saw the band live"
+    )
+    # Unknown confidence keeps the historical (collapse) behaviour.
+    assert (
+        strip_adjacent_low_signal_word_duplicates(confident)
+        == "We saw the band live"
+    )
+
+
 # --------------------------------------------------------------------- #
 # diff_pasted_segment
 # --------------------------------------------------------------------- #
