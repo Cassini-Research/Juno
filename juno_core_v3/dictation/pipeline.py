@@ -2177,7 +2177,13 @@ class OneShotDictationPipeline:
             paste_kind = "none"
             noop_reason = "action_rejected"
             writer_text = ""
-            recoverable_transcript = (adjudicated_text or "").strip()
+            # Strip the Juno wake phrase so the shell can paste the user's
+            # actual words (e.g. "set an alarm to publish the changelog") into
+            # the focused surface instead of dropping them — the wake word was
+            # only the address, not content the user wants written.
+            # ``_post_wake_from_adjudicated`` falls back to the full text when
+            # no wake phrase is found, so this never loses words.
+            recoverable_transcript = _post_wake_from_adjudicated(adjudicated_text)
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "action_extraction_rejected",

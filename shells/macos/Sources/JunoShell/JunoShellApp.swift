@@ -3370,6 +3370,14 @@ final class DictationController: ObservableObject {
     private var pendingTextMonExpectedPaste: String = ""
     /// Focused-field value observed immediately after paste, when AX exposes it.
     private var textMonInitialSnapshot: String?
+    /// Whether the most recent paste target exposed a trustworthy AX value
+    /// (one of ``pasteReadbackReliableRoles``). Captured per paste in
+    /// ``observedUndoSafePaste``. The async ``juno-textmon`` containment check
+    /// (``verifyPasteLandedIfNeeded``) reads this so it never declares a real
+    /// paste "may not have landed" on web/Electron/Terminal surfaces (Codex,
+    /// Claude, Claude Code) that render placeholders like "[Pasted text #1]"
+    /// instead of the literal pasted text.
+    private var lastPasteTargetReadbackReliable: Bool = false
     /// From capability probe: focused AX role looks like a text insertion target.
     private var likelyPasteDestination: Bool = true
     /// TOCTOU pin for ``JunoSecureFieldPolicy``. Captured at dictation
@@ -3820,6 +3828,12 @@ final class DictationController: ObservableObject {
         // value BEFORE the paste so we can verify a real change AFTER.
         let verifyEnabled = (UserDefaults.standard.object(forKey: "JunoPasteVerificationEnabled") as? Bool) ?? true
         let before = verifyEnabled ? JunoLocalCapability.focusedValueSignature() : nil
+        // Record whether this target's AX value is trustworthy for read-back so
+        // the async textmon containment check (verifyPasteLandedIfNeeded) can
+        // skip its disproof on placeholder surfaces (web/Electron/Terminal),
+        // where the scraped value never contains the literal pasted text even
+        // on a perfect paste.
+        lastPasteTargetReadbackReliable = before?.readable ?? false
         let posted = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
         // Couldn't even post the keystroke → definite failure.
@@ -5420,26 +5434,39 @@ final class DictationController: ObservableObject {
                 }
                 // Continue into the normal insertion path below.
             } else {
-                // The engine made an explicit action/no-paste decision, but
-                // the concrete action payload was missing or could not be
-                // decoded. Still suppress the literal command text; pasting
-                // "Juno take a note..." is worse than a quiet failed action.
-                liveSpeechHint = "Juno action could not run."
+                // The engine matched the Juno wake word + an action verb but
+                // could not build a valid action (validator / required fields
+                // failed) — an action turn with no executable action. Rather
+                // than dropping the user's words to a copy-only notice, fall
+                // back to pasting them into the focused surface exactly like
+                // ordinary dictation: hide the HUD on a successful paste, copy
+                // overlay when there's no field or the paste misses. The wake
+                // phrase is already stripped server-side (recoverable_transcript
+                // = post-wake text), so the destination gets "set an alarm to
+                // publish the changelog", not "Hey Juno set an alarm...".
                 let recovered = (response.recoverableTranscript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !recovered.isEmpty {
+                    return pasteRejectedActionTextAsDictation(
+                        recovered,
+                        isFinal: isFinal,
+                        snapshotPCMByteCount: snapshotPCMByteCount,
+                        snapshotSpeechAt: snapshotSpeechAt
+                    )
+                }
+                // No recoverable words (e.g. an action payload was present but
+                // its utterance id was missing): keep the quiet failed-action
+                // notice instead of pasting nothing.
+                liveSpeechHint = "Juno action could not run."
                 showTransientActionHUD(
                     title: "Action could not run",
-                    subtitle: recovered.isEmpty
-                        ? "Try again from the Actions page after checking setup."
-                        : "Your words are kept — tap to copy, or see History.",
+                    subtitle: "Try again from the Actions page after checking setup.",
                     symbolName: "exclamationmark.triangle.fill",
                     isFailure: true
                 )
                 lastPastedFromBroker = ""
                 accumulatedText = ""
                 pendingRevisionFullTranscript = nil
-                // Never erase the user's words: rejected actions keep the
-                // spoken text recoverable from the copy surface + History.
-                copyableTranscript = recovered.isEmpty ? nil : recovered
+                copyableTranscript = nil
                 syncLiveDisplayTranscript()
                 if !isFinal {
                     resetForNextPauseUtterance(
@@ -5685,6 +5712,95 @@ final class DictationController: ObservableObject {
         } else {
             syncLiveDisplayTranscript()
         }
+    }
+
+    /// Issue-2 fallback: the engine flagged a Juno wake-word action turn but
+    /// could not build a valid action, so there is nothing to execute. Paste
+    /// the spoken text — already wake-stripped server-side — into the focused
+    /// surface like ordinary dictation instead of dropping it to a copy-only
+    /// notice. Mirrors ``commitPauseTranscript``'s paste flow: hide the HUD on
+    /// a successful paste, fall back to the copy overlay when there's no field
+    /// or the paste misses. Returns true so the caller treats the utterance as
+    /// consumed.
+    @discardableResult
+    private func pasteRejectedActionTextAsDictation(
+        _ recovered: String,
+        isFinal: Bool,
+        snapshotPCMByteCount: Int,
+        snapshotSpeechAt: TimeInterval
+    ) -> Bool {
+        lastPastedFromBroker = ""
+        accumulatedText = ""
+        pendingRevisionFullTranscript = nil
+
+        let textToPaste = textWithInsertionBoundary(recovered)
+        // Honour wherever the caret is now, never where it was when the hotkey
+        // fired (the user may have clicked into a different field).
+        refreshPasteTargetFromCurrentFocus()
+
+        var pasteSucceeded = false
+        var pasteKind = "insert"
+        var pasteFailureReason: String? = nil
+        var pasteAttempted = false
+        if likelyPasteDestination {
+            activateTargetForPasteIfNeeded()
+            pasteAttempted = true
+            pasteSucceeded = observedUndoSafePaste(textToPaste)
+            if pasteSucceeded {
+                partialInsertFailed = false
+                hasInsertedTextThisDictation = true
+                lastPastedFromBroker = textToPaste
+                accumulatedText = textToPaste
+                copyableTranscript = nil
+                let crossed = JunoLifetimeWords.recordWords(from: recovered)
+                JunoMilestoneNotifier.shared.notifyIfMilestone(crossed: crossed, useFullLockup: false)
+                if isFinal {
+                    presentFinalTextReveal(for: textToPaste)
+                } else {
+                    triggerDraftFlash()
+                }
+            } else {
+                partialInsertFailed = true
+                pendingRevisionFullTranscript = textToPaste
+                copyableTranscript = recovered
+                liveSpeechHint = "Text ready — paste failed, use Copy if needed."
+                pasteKind = "none"
+                pasteFailureReason = "undo_safe_paste_failed"
+            }
+        } else {
+            partialInsertFailed = true
+            pendingRevisionFullTranscript = textToPaste
+            Clipboard.writeString(textToPaste)
+            copyableTranscript = recovered
+            liveSpeechHint = "Text copied — no active text field."
+            pasteKind = "none"
+            pasteFailureReason = "no_active_text_field"
+        }
+
+        NSLog(
+            "Juno: rejected-action paste fallback ok=%@ transcript_len=%d paste_kind=%@",
+            pasteSucceeded ? "true" : "false",
+            recovered.count,
+            pasteKind
+        )
+        postInsertionCommitted(
+            transcript: textToPaste,
+            ok: pasteSucceeded,
+            pasteKind: pasteKind,
+            failureReason: pasteFailureReason,
+            pasteAttempted: pasteAttempted
+        )
+        if pasteSucceeded {
+            startCorrectionMonitor(expectedText: textToPaste, pasteKind: pasteKind)
+        }
+        syncLiveDisplayTranscript()
+        if !isFinal {
+            resetForNextPauseUtterance(
+                snapshotPCMByteCount: snapshotPCMByteCount,
+                snapshotSpeechAt: snapshotSpeechAt
+            )
+        }
+        return true
     }
 
     private func resetForNextPauseUtterance(
@@ -6558,6 +6674,15 @@ final class DictationController: ObservableObject {
         // Esc (production 2026-06-11). Collapse all whitespace on both sides
         // before declaring the paste missing.
         if Self.whitespaceCollapsed(fieldSnapshot).contains(Self.whitespaceCollapsed(p)) { return }
+        // The literal text isn't in the field value. That's only trustworthy
+        // evidence of a missed paste when the surface exposes a reliable AX
+        // value. Web/Electron/Terminal editors (Codex, Claude, Claude Code)
+        // render placeholders like "[Pasted text #1]" instead of the pasted
+        // text, so containment ALWAYS fails there even on a perfect paste —
+        // the false "Text may not have landed" the user reported.
+        // ``observedUndoSafePaste`` already assumes success on those surfaces;
+        // mirror that here instead of second-guessing with an unreliable value.
+        guard lastPasteTargetReadbackReliable else { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {

@@ -748,3 +748,9 @@ def test_rejected_action_response_carries_recoverable_transcript() -> None:
     assert result.transcript == ""
     assert "publish the changelog" in result.recoverable_transcript
     assert result.to_dict().get("recoverable_transcript")
+    # Issue-2: the recoverable transcript is wake-stripped so the shell pastes
+    # the user's actual words ("set an alarm to publish the changelog") into the
+    # focused surface, not "juno set an alarm ...". The wake word was only the
+    # address, never content.
+    assert "juno" not in result.recoverable_transcript.lower().split()
+    assert result.recoverable_transcript.lower().startswith("set an alarm")
