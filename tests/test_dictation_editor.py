@@ -507,6 +507,32 @@ def test_delete_without_evidence_is_skipped() -> None:
     assert applied["skipped"] == 1
 
 
+def test_content_compressing_edit_without_evidence_is_skipped() -> None:
+    # Production: the editor compressed the opening "make if there is no" to
+    # "if no", making the committed text look like the first words were lost.
+    src = "Thank you to make if there is no new repo exists and make a new repo"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "make if there is no" => "if no"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_content_compressing_edit_with_correction_marker_still_applies() -> None:
+    src = "I told him we got the budget approved, I mean, so we can hire."
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "the budget approved, I mean" => "the headcount approved"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "I told him we got the headcount approved, so we can hire."
+    assert applied["edits"] == 1
+
+
 def test_delete_with_marker_or_restart_still_applies() -> None:
     src = "I told him we got the budget approved, I mean the headcount approved, so we can hire."
     script = parse_edit_script('VERDICT: edited\nDELETE: "the budget approved, I mean"')

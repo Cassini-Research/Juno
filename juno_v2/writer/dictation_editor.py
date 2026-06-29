@@ -220,6 +220,9 @@ def apply_edit_script(
         if loc is None or len(replacement) > max(24, 3 * len(phrase)):
             applied["skipped"] += 1
             continue
+        if _edit_drops_content_without_evidence(text, loc[0], loc[1], phrase, replacement):
+            applied["skipped"] += 1
+            continue
         if _case_only_edit_without_evidence(
             text,
             loc[0],
@@ -314,6 +317,30 @@ def apply_edit_script(
     if not text.strip():
         return None
     return text, applied
+
+
+def _edit_drops_content_without_evidence(
+    text: str,
+    start: int,
+    end: int,
+    phrase: str,
+    replacement: str,
+) -> bool:
+    """Reject model EDITs that silently compress meaningful spoken content."""
+    old_tokens = _norm_tokens(phrase)
+    new_tokens = _norm_tokens(replacement)
+    if len(old_tokens) < 4:
+        return False
+    # Single-token contractions are often harmless article/filler cleanup.
+    if len(new_tokens) >= len(old_tokens) - 1:
+        return False
+    # Keep evidenced retakes available even when the model emits EDIT rather
+    # than DELETE for the abandoned phrase.
+    if _DELETE_MARKER_RE.search(phrase):
+        return False
+    if _delete_is_evidenced(text, start, end, first_item_start=None):
+        return False
+    return True
 
 
 def _case_only_edit_without_evidence(
