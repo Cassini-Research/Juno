@@ -1529,7 +1529,11 @@ enum JunoLocalBrokerBootstrap {
         guard mismatchedContract || !engineProcessExists(pid: identity.pid) else { return }
 
         NSLog("Juno: terminating stale engine pid=%d instance=%@ bundle=%@", identity.pid, identity.instanceId, identity.bundleId)
-        _ = Darwin.kill(pid_t(identity.pid), SIGTERM)
+        JunoProcessTreeTerminator.terminate(
+            rootPid: pid_t(identity.pid),
+            reason: "stale_engine_identity",
+            graceSeconds: 2.0
+        )
         waitForEngineExit(pid: identity.pid, socketPath: JunoBroker.engineSocketPath)
     }
 
@@ -1880,15 +1884,23 @@ final class JunoEngineSupervisor {
 
     private func forceRespawn() {
         if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
-            // Engine still has a process but isn't answering — nuke it so
-            // the terminationHandler fires and we can respawn cleanly.
-            proc.terminate()
-            // Give it a moment, then SIGKILL if it didn't exit.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
-                if proc.isRunning {
-                    kill(proc.processIdentifier, SIGKILL)
+            // Engine still has a process but isn't answering. Terminate the
+            // whole run_engine.sh tree so a hung Python child or preview
+            // helper cannot keep the UDS socket/microphone resources alive
+            // after the wrapper is gone.
+            let rootPid = proc.processIdentifier
+            JunoShellRuntime.shared.brokerProcess = nil
+            DispatchQueue.global(qos: .utility).async {
+                JunoProcessTreeTerminator.terminate(
+                    rootPid: rootPid,
+                    reason: "supervisor_force_respawn",
+                    graceSeconds: 1.5
+                )
+                DispatchQueue.main.async { [weak self] in
+                    self?.scheduleRespawn(immediate: true)
                 }
             }
+            return
         }
         JunoShellRuntime.shared.brokerProcess = nil
         scheduleRespawn(immediate: true)
@@ -3227,6 +3239,8 @@ final class DictationController: ObservableObject {
         // user can find it later in History → Issues. Fire-and-forget.
         persistHudCancelDraftIfNeeded()
         teardownRecognition()
+        _ = recorder.stop()
+        recorderStopped = true
         micWatchdog?.cancel()
         micWatchdog = nil
         noSpeechWatchdog?.cancel()
@@ -3954,6 +3968,12 @@ final class DictationController: ObservableObject {
             endPushToTalkAndDictate()
         case .checkingCapability:
             // User cancelled before recording even started.
+            capabilityCheckInFlight = false
+            cancelMicWatchdogIfNeeded()
+            cancelNoSpeechWatchdogIfNeeded()
+            cancelEnginePreviewStreaming(reason: "user_cancel_checking_capability")
+            _ = recorder.stop()
+            recorderStopped = true
             teardownRecognition()
             goIdleOnMain()
         default:
@@ -4373,8 +4393,11 @@ final class DictationController: ObservableObject {
         capabilityCheckInFlight = false
         cancelNoSpeechWatchdogIfNeeded()
         if hudState == .checkingCapability || hudState.isErrorOrBlocked {
-            goIdleOnMain()
             teardownRecognition()
+            cancelEnginePreviewStreaming(reason: "stop_before_ready")
+            _ = recorder.stop()
+            recorderStopped = true
+            goIdleOnMain()
             return
         }
         // Accept active capture states (user may stop while still priming the mic).
@@ -7957,7 +7980,11 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
         // ``Timer.invalidate()`` is safe to call here.
         JunoEngineSupervisor.shared.stop()
         if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
-            proc.terminate()
+            JunoProcessTreeTerminator.terminate(
+                process: proc,
+                reason: "application_terminate",
+                graceSeconds: 3.0
+            )
         }
         JunoShellRuntime.shared.terminateHotkeyBridge()
     }
