@@ -520,6 +520,41 @@ def test_content_compressing_edit_without_evidence_is_skipped() -> None:
     assert applied["skipped"] == 1
 
 
+def test_one_token_content_drop_without_evidence_is_skipped() -> None:
+    src = "Thank you to make if there is no new repo exists and make a new repo"
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "make if there is no" => "if there is no"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_short_content_compressing_edit_without_evidence_is_skipped() -> None:
+    src = "Please create new repo and push it"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "create new repo" => "create"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_stutter_collapse_edit_still_applies() -> None:
+    src = "Please create create new repo and push it"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "create create" => "create"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "Please create new repo and push it"
+    assert applied["edits"] == 1
+
+
 def test_content_compressing_edit_with_correction_marker_still_applies() -> None:
     src = "I told him we got the budget approved, I mean, so we can hire."
     script = parse_edit_script(
