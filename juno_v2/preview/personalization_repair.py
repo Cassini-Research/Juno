@@ -53,6 +53,13 @@ _SCREEN_PHRASE_REPAIR_SOURCES = {
     "selection",
 }
 _SCREEN_TERM_GATE_SOURCES = {"candidate_entity", "preview_context", "recent_screen_term"}
+_SEED_STRUCTURED_PREVIEW_PACKS = {
+    "memory_lexicon",
+    "memory_correction",
+    "personal_entities",
+}
+_SEED_HARDWARE_PREVIEW_PACKS = {"core_names"}
+_SEED_HARDWARE_PREVIEW_TAGS = {"device", "hardware", "product"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +167,8 @@ def preview_personalization_terms_from_plan(plan: Any) -> list[dict[str, Any]]:
             if not isinstance(row, dict):
                 continue
             pack_name = str(row.get("pack_name") or "")
-            if pack_name not in {"memory_lexicon", "memory_correction", "personal_entities"}:
+            tags = tuple(str(tag) for tag in row.get("tags") or ())
+            if not _seed_structured_term_allowed_for_preview_repair(pack_name, tags):
                 continue
             canonical = row.get("canonical")
             bias_strings = row.get("bias_strings") or ()
@@ -392,6 +400,18 @@ def _span_matches_explicit_screen_phrase(
 
 def _preview_fuzzy_repair_enabled(term: PreviewPersonalizationTerm) -> bool:
     return term.source in {"preview_debug_fuzzy"}
+
+
+def _seed_structured_term_allowed_for_preview_repair(
+    pack_name: str,
+    tags: tuple[str, ...],
+) -> bool:
+    if pack_name in _SEED_STRUCTURED_PREVIEW_PACKS:
+        return True
+    if pack_name not in _SEED_HARDWARE_PREVIEW_PACKS:
+        return False
+    normalized_tags = {tag.casefold() for tag in tags}
+    return bool(normalized_tags & _SEED_HARDWARE_PREVIEW_TAGS)
 
 
 def _embedded_term_replacement(span_text: str, term: PreviewPersonalizationTerm) -> str | None:
