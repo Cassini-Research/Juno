@@ -3399,6 +3399,7 @@ final class DictationController: ObservableObject {
     private var lastSpeechEnergyAt: TimeInterval = 0
     private var lastPartialSnapshotSpeechAt: TimeInterval = 0
     private var hasEverDetectedSpeech: Bool = false
+    private var startupHotkeyDebounceUntil: TimeInterval = 0
     private var writerWarmRequestedThisSession: Bool = false
     private var speechDetectedLoggedThisSession: Bool = false
     private var ambientNoiseRMS: Float = 0.004
@@ -3515,6 +3516,7 @@ final class DictationController: ObservableObject {
             self.lastPartialSnapshotSpeechAt = 0
             self.speechDetectedLoggedThisSession = false
             self.state = "idle"
+            self.startupHotkeyDebounceUntil = 0
             self.dictationStartedAt = nil
             self.refiningStartedAt = nil
             self.utteranceFrozenContext = nil
@@ -3945,31 +3947,40 @@ final class DictationController: ObservableObject {
     // MARK: - Tap-to-toggle entry point
 
     /// Single public entry point for the hotkey bridge.
-    /// First tap → start; second tap → stop; tap while checking → cancel.
+    /// First tap starts; later taps stop. Duplicate startup taps are ignored
+    /// briefly so impatient repeats cannot cancel the opening transition.
     func toggleDictation() {
-        switch hudState {
-        case .idle:
+        let action = JunoDictationHotkeyPolicy.action(
+            for: hudState,
+            now: Date.timeIntervalSinceReferenceDate,
+            startupDebounceUntil: startupHotkeyDebounceUntil
+        )
+        switch action {
+        case .begin:
             beginPushToTalk()
-        case .listening, .partialCommit, .checkingMic, .waitingSpeech:
+        case .stop:
             endPushToTalkAndDictate()
-        case .checkingCapability:
+        case .cancelOpening:
             // User cancelled before recording even started.
             teardownRecognition()
             goIdleOnMain()
-        default:
+        case .resetTerminal:
             // If stuck in error or blocked state, next tap resets to idle
             // so the tap after that can start a fresh recording session.
-            if hudState.isErrorOrBlocked {
-                micWatchdog?.cancel()
-                micWatchdog = nil
-                state = "idle"
-                dictationStartedAt = nil
-                refiningStartedAt = nil
-                currentRMS = 0
-                currentModeLabel = nil
-                targetApp = nil
-            }
+            micWatchdog?.cancel()
+            micWatchdog = nil
+            startupHotkeyDebounceUntil = 0
+            state = "idle"
+            dictationStartedAt = nil
+            refiningStartedAt = nil
+            currentRMS = 0
+            currentModeLabel = nil
+            targetApp = nil
+        case .ignoreStartupRepeat:
+            NSLog("Juno: repeated startup hotkey ignored state=%@", state)
+        case .ignore:
             // refining — ignore (let broker call finish)
+            break
         }
     }
 
@@ -3995,6 +4006,9 @@ final class DictationController: ObservableObject {
             return
         }
         NSLog("Juno: dictation start requested")
+        startupHotkeyDebounceUntil = JunoDictationHotkeyPolicy.startupDebounceUntil(
+            startedAt: Date.timeIntervalSinceReferenceDate
+        )
         playHUDOpenSound()
         syncLiveCaptionSettingToBroker()
         let generation = beginNewDictationGeneration()
@@ -4120,6 +4134,7 @@ final class DictationController: ObservableObject {
         capabilityCheckInFlight = true
         if !startRecorderSession(generation: generation) {
             capabilityCheckInFlight = false
+            startupHotkeyDebounceUntil = 0
             return
         }
         scheduleNoSpeechWatchdog(generation: generation)
@@ -4730,6 +4745,7 @@ final class DictationController: ObservableObject {
                 }
                 if hudState == .waitingSpeech || hudState == .checkingMic {
                     state = "listening"
+                    startupHotkeyDebounceUntil = 0
                 }
                 let warmGeneration = dictationSessionGeneration
                 let warmDelay: TimeInterval = JunoUserDefaults.hudLiveTranscriptionsEnabled ? 0.75 : 0.0
