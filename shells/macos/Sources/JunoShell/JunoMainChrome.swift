@@ -4520,7 +4520,7 @@ private final class JunoMainWindowCloseDelegate: NSObject, NSWindowDelegate {
         // if the user has Show-in-Dock disabled. Window activation may have
         // promoted us to .regular; on close we should fall back to menu-bar-
         // only so the Dock tile doesn't linger after the window is gone.
-        if !JunoUserDefaults.showInDock {
+        if JunoUserDefaults.menuBarOnlyModeEnabled {
             NSApp.setActivationPolicy(.accessory)
         }
     }

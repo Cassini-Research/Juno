@@ -111,6 +111,7 @@ private struct JunoBrokerHelpRootView: View {
 
 enum JunoBrokerHelpWindow {
     private static var windowController: NSWindowController?
+    private static var closeDelegate: JunoActivationRestoringWindowDelegate?
 
     @MainActor
     static func show() {
@@ -119,6 +120,7 @@ enum JunoBrokerHelpWindow {
             return
         }
         windowController = nil
+        closeDelegate = nil
         let hosting = NSHostingController(rootView: JunoBrokerHelpRootView())
         let window = NSWindow(contentViewController: hosting)
         window.title = JunoEngineHelpCopy.helpWindowTitle
@@ -127,6 +129,12 @@ enum JunoBrokerHelpWindow {
         window.standardWindowButton(.zoomButton)?.isHidden = true
         window.center()
         window.isReleasedWhenClosed = false
+        let del = JunoActivationRestoringWindowDelegate {
+            windowController = nil
+            closeDelegate = nil
+        }
+        closeDelegate = del
+        window.delegate = del
         let wc = NSWindowController(window: window)
         windowController = wc
         wc.showWindow(nil)
