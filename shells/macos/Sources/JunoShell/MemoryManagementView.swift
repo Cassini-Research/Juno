@@ -927,6 +927,31 @@ private struct MemoryCategoryDetail: View {
     }
 }
 
+struct MemoryListRowModel: Identifiable {
+    let id: String
+    let key: String
+    let entry: [String: Any]
+}
+
+enum MemoryListRows {
+    static func make(
+        entries: [[String: Any]],
+        keyForEntry: ([String: Any]) -> String
+    ) -> [MemoryListRowModel] {
+        var seen: [String: Int] = [:]
+        return entries.map { entry in
+            let key = keyForEntry(entry)
+            let count = (seen[key] ?? 0) + 1
+            seen[key] = count
+            return MemoryListRowModel(
+                id: count == 1 ? key : "\(key)#\(count)",
+                key: key,
+                entry: entry
+            )
+        }
+    }
+}
+
 private struct MemoryListDetail<RowContent: View, DetailContent: View>: View {
     let entries: [[String: Any]]
     @Binding var selectedKey: String?
@@ -939,16 +964,21 @@ private struct MemoryListDetail<RowContent: View, DetailContent: View>: View {
     var canDelete: (([String: Any]) -> Bool)? = nil
     @Environment(\.colorScheme) private var scheme
 
+    private var rows: [MemoryListRowModel] {
+        MemoryListRows.make(entries: entries, keyForEntry: keyForEntry)
+    }
+
     private var selectedEntry: [String: Any]? {
         guard let k = selectedKey else { return nil }
-        return entries.first(where: { keyForEntry($0) == k })
+        return rows.first(where: { $0.key == k })?.entry
     }
 
     var body: some View {
+        let rowModels = rows
         HStack(spacing: 0) {
             // Left: stable width (reuse secondary list column tokens — avoids nested `NavigationSplitView` jump).
             Group {
-                if entries.isEmpty {
+                if rowModels.isEmpty {
                     JunoChromeEmptyState(
                         title: emptyTitle,
                         message: emptyMessage,
@@ -967,9 +997,9 @@ private struct MemoryListDetail<RowContent: View, DetailContent: View>: View {
                     // colors. Plain List still supports swipeActions,
                     // so swipe-to-delete keeps working.
                     List {
-                        ForEach(entries.indices, id: \.self) { i in
-                            let entry = entries[i]
-                            let key = keyForEntry(entry)
+                        ForEach(rowModels) { item in
+                            let entry = item.entry
+                            let key = item.key
                             let isSelected = selectedKey == key
                             let deletable = onDelete != nil && (canDelete?(entry) ?? true)
                             Button {
