@@ -356,6 +356,7 @@ struct JunoBrandIslandStack: View {
                 if controller.dictationStartedAt != nil {
                     listeningTimer
                 }
+                stopControl
             }
         }
     }
@@ -570,6 +571,30 @@ struct JunoBrandIslandStack: View {
         .help("Copy to clipboard")
     }
 
+    private var stopControl: some View {
+        Button {
+            controller.toggleDictation()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 8.5, weight: .bold))
+                Text("Stop")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Capsule(style: .continuous).fill(JunoDesignTokens.danger.opacity(0.82)))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Stop dictation")
+        .accessibilityLabel("Stop dictation")
+    }
+
     // MARK: - Commands reference popover
 
     private var hudCommandsPopover: some View {
@@ -703,7 +728,7 @@ struct JunoBrandIslandStack: View {
         case .listening:
             HStack(spacing: 10) {
                 let stop = stopHintLabels()
-                JunoShortcutHint(label: stop.label, keycap: stop.keycap)
+                JunoShortcutHint(label: stop.label, keycap: stop.keycap, onTap: { controller.toggleDictation() })
                 JunoShortcutHint(label: "Cancel", keycap: "esc", onTap: { controller.cancelDictation() })
             }
         case .refining:

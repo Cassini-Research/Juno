@@ -14,9 +14,13 @@ from juno_v2.personalization.seed.models import BiasBundleTerm, SeedBiasAttachme
 from juno_v2.personalization.seed.promotion import PromotionCoordinator
 from juno_v2.personalization.seed.runtime import JunoSeedPersonalizationRuntime
 
-
+from juno_v2.preview.personalization_repair import (
+    preview_personalization_terms_from_plan,
+    repair_preview_word_dicts,
+)
 def _seed_data_root() -> Path:
     return Path(__file__).resolve().parents[1] / "seed_data"
+
 
 
 def test_initial_promotion_keeps_default_packs_out_of_durable_memory(tmp_path: Path) -> None:
@@ -140,3 +144,76 @@ def test_seed_extra_bias_phrases_do_not_compile_as_memory_terms() -> None:
     asr_terms = {term.text for term in compiled.asr_bias_packet().terms}
     assert "Gemma" not in terms
     assert "Gemma" not in asr_terms
+
+
+def test_seed_device_alias_canonicalizes_macbook_misrecognition(tmp_path: Path) -> None:
+    seed = load_seed_bundle(Path(__file__).resolve().parents[1] / "seed_data")
+    memory = JsonMemoryStore(tmp_path / "memory")
+    runtime = JunoSeedPersonalizationRuntime(seed, memory_store=memory)
+    engine = RecognitionBiasEngine()
+    snapshot = MemorySnapshot(schema_version=1)
+    context = TypedContextBundle(app_name="TextEdit", app_category="notes")
+    attachment = runtime.build_seed_attachment(
+        snapshot=snapshot,
+        context=context,
+        context_plane_suppression=None,
+    )
+    plan = engine.build_plan(
+        utterance_id="utt-seed-macbook",
+        snapshot=snapshot,
+        context=context,
+        memory_packet=engine.build_serving_packet(snapshot=snapshot),
+        seed_attachment=attachment,
+    )
+
+    normalized = engine.normalize_transcript(
+        "I opened the mic book before the call.",
+        snapshot=snapshot,
+        plan=plan,
+        scope="oneshot",
+    )
+
+    assert normalized.normalized_text == "I opened the MacBook before the call."
+    assert any(
+        change.kind == "seed_canonicalization"
+        and change.source == "seed_bias:core_names"
+        and change.before == "mic book"
+        and change.after == "MacBook"
+        for change in normalized.applied
+    )
+
+
+def test_seed_hardware_aliases_feed_preview_repair_without_app_aliases(tmp_path: Path) -> None:
+    seed = load_seed_bundle(Path(__file__).resolve().parents[1] / "seed_data")
+    memory = JsonMemoryStore(tmp_path / "memory")
+    runtime = JunoSeedPersonalizationRuntime(seed, memory_store=memory)
+    engine = RecognitionBiasEngine()
+    snapshot = MemorySnapshot(schema_version=1)
+    context = TypedContextBundle(app_name="TextEdit", app_category="notes")
+    attachment = runtime.build_seed_attachment(
+        snapshot=snapshot,
+        context=context,
+        context_plane_suppression=None,
+    )
+    plan = engine.build_plan(
+        utterance_id="utt-seed-preview-macbook",
+        snapshot=snapshot,
+        context=context,
+        memory_packet=engine.build_serving_packet(snapshot=snapshot),
+        seed_attachment=attachment,
+    )
+
+    terms = preview_personalization_terms_from_plan(plan)
+    macbook = next(row for row in terms if row["text"] == "MacBook")
+    repaired, meta = repair_preview_word_dicts(
+        [
+            {"word": "mic", "start": 0.0, "end": 0.1},
+            {"word": "book", "start": 0.1, "end": 0.2},
+        ],
+        context_payload={"preview_personalization_terms": terms},
+    )
+
+    assert "mic book" in macbook["aliases"]
+    assert all(row["text"] != "Google Docs" for row in terms)
+    assert [w["word"] for w in repaired] == ["MacBook", ""]
+    assert meta["preview_repair_applied"] == 1

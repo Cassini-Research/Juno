@@ -55,6 +55,94 @@
     "notes": ""
   },
   {
+    "canonical": "AirPods",
+    "kind": "product_name",
+    "aliases": [
+      "air pods"
+    ],
+    "spoken_forms": [
+      "airpods"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "AirTag",
+    "kind": "product_name",
+    "aliases": [
+      "air tag"
+    ],
+    "spoken_forms": [
+      "airtag"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Apple Pencil",
+    "kind": "product_name",
+    "aliases": [
+      "applepencil"
+    ],
+    "spoken_forms": [
+      "apple pencil"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Apple Watch",
+    "kind": "product_name",
+    "aliases": [
+      "applewatch"
+    ],
+    "spoken_forms": [
+      "apple watch"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
     "canonical": "Arc",
     "kind": "app_name",
     "aliases": [],
@@ -471,6 +559,94 @@
     "notes": ""
   },
   {
+    "canonical": "HomePod",
+    "kind": "product_name",
+    "aliases": [
+      "home pod"
+    ],
+    "spoken_forms": [
+      "homepod"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iMac",
+    "kind": "product_name",
+    "aliases": [
+      "i mac"
+    ],
+    "spoken_forms": [
+      "imac"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iPad",
+    "kind": "product_name",
+    "aliases": [
+      "i pad"
+    ],
+    "spoken_forms": [
+      "ipad"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "iPhone",
+    "kind": "product_name",
+    "aliases": [
+      "i phone"
+    ],
+    "spoken_forms": [
+      "iphone"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
     "canonical": "MacBook",
     "kind": "platform_term",
     "aliases": [
@@ -482,7 +658,54 @@
     ],
     "tags": [
       "apple",
-      "hardware"
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MacBook Air",
+    "kind": "product_name",
+    "aliases": [
+      "mac book air",
+      "mic book air"
+    ],
+    "spoken_forms": [
+      "macbook air"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "MacBook Pro",
+    "kind": "product_name",
+    "aliases": [
+      "mac book pro",
+      "mic book pro"
+    ],
+    "spoken_forms": [
+      "macbook pro"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
     ],
     "locale": "en",
     "scope_defaults": [
@@ -504,6 +727,116 @@
     "tags": [
       "apple",
       "platform"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mac mini",
+    "kind": "product_name",
+    "aliases": [
+      "macmini"
+    ],
+    "spoken_forms": [
+      "mac mini"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mac Pro",
+    "kind": "product_name",
+    "aliases": [
+      "macpro"
+    ],
+    "spoken_forms": [
+      "mac pro"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Mac Studio",
+    "kind": "product_name",
+    "aliases": [
+      "macstudio"
+    ],
+    "spoken_forms": [
+      "mac studio"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Magic Keyboard",
+    "kind": "product_name",
+    "aliases": [
+      "magickeyboard"
+    ],
+    "spoken_forms": [
+      "magic keyboard"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Magic Mouse",
+    "kind": "product_name",
+    "aliases": [
+      "magicmouse"
+    ],
+    "spoken_forms": [
+      "magic mouse"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
     ],
     "locale": "en",
     "scope_defaults": [
@@ -891,6 +1224,28 @@
     "tags": [
       "coding",
       "editor"
+    ],
+    "locale": "en",
+    "scope_defaults": [
+      "global"
+    ],
+    "source": "manual_seed",
+    "confidence": 1.0,
+    "notes": ""
+  },
+  {
+    "canonical": "Vision Pro",
+    "kind": "product_name",
+    "aliases": [
+      "visionpro"
+    ],
+    "spoken_forms": [
+      "vision pro"
+    ],
+    "tags": [
+      "apple",
+      "hardware",
+      "device"
     ],
     "locale": "en",
     "scope_defaults": [
