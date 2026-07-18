@@ -7942,8 +7942,12 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
                 JunoShellRuntime.shared.startHotkeyBridge()
                 JunoEngineLifecycle.shared.boot()
             }
-            // Menu-bar app: show main chrome when launched from Finder/Dock.
-            showMainWindowEventually()
+            if JunoLaunchPresentationPolicy.shouldOpenMainWindowAutomatically(
+                onboardingCompleted: JunoUserDefaults.onboardingCompleted,
+                menuBarOnlyModeEnabled: JunoUserDefaults.menuBarOnlyModeEnabled
+            ) {
+                showMainWindowEventually()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                 Task { @MainActor in
                     JunoLaunchHealthAudit.run()
@@ -8097,6 +8101,7 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
 
 enum MemoryManagementWindow {
     private static var windowController: NSWindowController?
+    private static var closeDelegate: JunoActivationRestoringWindowDelegate?
 
     @MainActor
     static func show() {
@@ -8104,6 +8109,8 @@ enum MemoryManagementWindow {
             JunoWindowActivation.bringToFront(w)
             return
         }
+        windowController = nil
+        closeDelegate = nil
         let content = MemoryManagementView()
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hosting)
@@ -8112,6 +8119,12 @@ enum MemoryManagementWindow {
         window.setContentSize(NSSize(width: 720, height: 480))
         window.center()
         window.isReleasedWhenClosed = false
+        let del = JunoActivationRestoringWindowDelegate {
+            windowController = nil
+            closeDelegate = nil
+        }
+        closeDelegate = del
+        window.delegate = del
         let controller = NSWindowController(window: window)
         windowController = controller
         controller.showWindow(nil)
