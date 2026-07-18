@@ -294,6 +294,7 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
         XCTAssertTrue(JunoUserDefaults.showInDock)
         XCTAssertTrue(JunoUserDefaults.actionsNotesSignatureEnabled)
         // OFF by default
+        XCTAssertFalse(JunoUserDefaults.menuBarOnlyModeEnabled)
         XCTAssertFalse(JunoUserDefaults.micVoiceProcessingEnabled)
         XCTAssertFalse(JunoUserDefaults.liveAdjudicationEnabled)
         XCTAssertFalse(JunoUserDefaults.actionsEnabled)
@@ -314,8 +315,19 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
         XCTAssertFalse(JunoUserDefaults.hudShowDoneRowEnabled)
         JunoUserDefaults.showInDock = false
         XCTAssertFalse(JunoUserDefaults.showInDock)
+        XCTAssertTrue(JunoUserDefaults.menuBarOnlyModeEnabled)
         JunoUserDefaults.actionsNotesSignatureEnabled = false
         XCTAssertFalse(JunoUserDefaults.actionsNotesSignatureEnabled)
+    }
+
+    func testMenuBarOnlyModeInvertsShowInDockPreference() {
+        JunoUserDefaults.menuBarOnlyModeEnabled = true
+        XCTAssertFalse(JunoUserDefaults.showInDock)
+        XCTAssertTrue(JunoUserDefaults.menuBarOnlyModeEnabled)
+
+        JunoUserDefaults.menuBarOnlyModeEnabled = false
+        XCTAssertTrue(JunoUserDefaults.showInDock)
+        XCTAssertFalse(JunoUserDefaults.menuBarOnlyModeEnabled)
     }
 
     func testOffByDefaultTogglesCanBeTurnedOn() {
@@ -349,6 +361,31 @@ final class BooleanToggleDefaultTests: JunoDefaultsRestoringTestCase {
         )
         JunoUserDefaults.hudLiveTranscriptionsEnabled = false
         XCTAssertFalse(JunoUserDefaults.hudLiveTranscriptionsEnabled)
+    }
+}
+
+// MARK: - Launch presentation policy
+
+final class LaunchPresentationPolicyTests: XCTestCase {
+    func testCompletedDockAppOpensMainWindowAutomatically() {
+        XCTAssertTrue(JunoLaunchPresentationPolicy.shouldOpenMainWindowAutomatically(
+            onboardingCompleted: true,
+            menuBarOnlyModeEnabled: false
+        ))
+    }
+
+    func testMenuBarOnlyModeSuppressesAutomaticMainWindow() {
+        XCTAssertFalse(JunoLaunchPresentationPolicy.shouldOpenMainWindowAutomatically(
+            onboardingCompleted: true,
+            menuBarOnlyModeEnabled: true
+        ))
+    }
+
+    func testIncompleteOnboardingDoesNotAutoOpenMainWindow() {
+        XCTAssertFalse(JunoLaunchPresentationPolicy.shouldOpenMainWindowAutomatically(
+            onboardingCompleted: false,
+            menuBarOnlyModeEnabled: false
+        ))
     }
 }
 

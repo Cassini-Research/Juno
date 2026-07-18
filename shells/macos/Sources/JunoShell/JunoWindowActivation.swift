@@ -122,3 +122,18 @@ enum JunoWindowActivation {
         _activateLegacy()
     }
 }
+
+final class JunoActivationRestoringWindowDelegate: NSObject, NSWindowDelegate {
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
+        if JunoUserDefaults.menuBarOnlyModeEnabled {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}

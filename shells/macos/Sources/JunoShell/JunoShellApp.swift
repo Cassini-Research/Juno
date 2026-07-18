@@ -1529,7 +1529,11 @@ enum JunoLocalBrokerBootstrap {
         guard mismatchedContract || !engineProcessExists(pid: identity.pid) else { return }
 
         NSLog("Juno: terminating stale engine pid=%d instance=%@ bundle=%@", identity.pid, identity.instanceId, identity.bundleId)
-        _ = Darwin.kill(pid_t(identity.pid), SIGTERM)
+        JunoProcessTreeTerminator.terminate(
+            rootPid: pid_t(identity.pid),
+            reason: "stale_engine_identity",
+            graceSeconds: 2.0
+        )
         waitForEngineExit(pid: identity.pid, socketPath: JunoBroker.engineSocketPath)
     }
 
@@ -1892,31 +1896,34 @@ final class JunoEngineSupervisor {
     private func forceRespawn() {
         guard !stopping else { return }
         if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
-            // Engine still has a process but isn't answering. Terminate it
-            // first and let Process.terminationHandler drive the respawn.
-            // Clearing brokerProcess and spawning immediately can overlap two
-            // ML engine trees and can unlink/rebind the UDS socket while the
-            // old process is still shutting down.
-            let pid = proc.processIdentifier
-            if terminatingForRespawnPID == pid { return }
-            terminatingForRespawnPID = pid
-            proc.terminate()
-            // Give it a moment, then SIGKILL if it didn't exit.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
-                if proc.isRunning {
-                    kill(proc.processIdentifier, SIGKILL)
+            // Engine still has a process but isn't answering. Terminate the
+            // whole run_engine.sh tree so a hung Python child or preview
+            // helper cannot keep the UDS socket/microphone resources alive
+            // after the wrapper is gone. Keep ``brokerProcess`` set until the
+            // tree is confirmed dead — clearing it and spawning immediately
+            // can overlap two ML engine trees and can unlink/rebind the UDS
+            // socket while the old process is still shutting down. Normally
+            // ``Process.terminationHandler`` (recordEngineExit) drives the
+            // respawn and clears ``terminatingForRespawnPID``; the completion
+            // below is the fallback for a missed termination callback.
+            let rootPid = proc.processIdentifier
+            if terminatingForRespawnPID == rootPid { return }
+            terminatingForRespawnPID = rootPid
+            DispatchQueue.global(qos: .utility).async {
+                JunoProcessTreeTerminator.terminate(
+                    rootPid: rootPid,
+                    reason: "supervisor_force_respawn",
+                    graceSeconds: 1.5
+                )
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !self.stopping else { return }
+                    guard self.terminatingForRespawnPID == rootPid else { return }
+                    self.terminatingForRespawnPID = nil
+                    if JunoShellRuntime.shared.brokerProcess?.processIdentifier == rootPid {
+                        JunoShellRuntime.shared.brokerProcess = nil
+                    }
+                    self.scheduleRespawn(immediate: true)
                 }
-            }
-            // Fallback for the unlikely case where Foundation misses the
-            // termination callback. Only spawn after the old process is gone.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self, weak proc] in
-                guard let self, !self.stopping, self.terminatingForRespawnPID == pid else { return }
-                guard proc?.isRunning != true else { return }
-                self.terminatingForRespawnPID = nil
-                if JunoShellRuntime.shared.brokerProcess?.processIdentifier == pid {
-                    JunoShellRuntime.shared.brokerProcess = nil
-                }
-                self.scheduleRespawn(immediate: true)
             }
             return
         }
@@ -3262,6 +3269,8 @@ final class DictationController: ObservableObject {
         // user can find it later in History → Issues. Fire-and-forget.
         persistHudCancelDraftIfNeeded()
         teardownRecognition()
+        _ = recorder.stop()
+        recorderStopped = true
         micWatchdog?.cancel()
         micWatchdog = nil
         noSpeechWatchdog?.cancel()
@@ -3434,6 +3443,7 @@ final class DictationController: ObservableObject {
     private var lastSpeechEnergyAt: TimeInterval = 0
     private var lastPartialSnapshotSpeechAt: TimeInterval = 0
     private var hasEverDetectedSpeech: Bool = false
+    private var startupHotkeyDebounceUntil: TimeInterval = 0
     private var writerWarmRequestedThisSession: Bool = false
     private var speechDetectedLoggedThisSession: Bool = false
     private var ambientNoiseRMS: Float = 0.004
@@ -3550,6 +3560,7 @@ final class DictationController: ObservableObject {
             self.lastPartialSnapshotSpeechAt = 0
             self.speechDetectedLoggedThisSession = false
             self.state = "idle"
+            self.startupHotkeyDebounceUntil = 0
             self.dictationStartedAt = nil
             self.refiningStartedAt = nil
             self.utteranceFrozenContext = nil
@@ -3980,31 +3991,46 @@ final class DictationController: ObservableObject {
     // MARK: - Tap-to-toggle entry point
 
     /// Single public entry point for the hotkey bridge.
-    /// First tap → start; second tap → stop; tap while checking → cancel.
+    /// First tap starts; later taps stop. Duplicate startup taps are ignored
+    /// briefly so impatient repeats cannot cancel the opening transition.
     func toggleDictation() {
-        switch hudState {
-        case .idle:
+        let action = JunoDictationHotkeyPolicy.action(
+            for: hudState,
+            now: Date.timeIntervalSinceReferenceDate,
+            startupDebounceUntil: startupHotkeyDebounceUntil
+        )
+        switch action {
+        case .begin:
             beginPushToTalk()
-        case .listening, .partialCommit, .checkingMic, .waitingSpeech:
+        case .stop:
             endPushToTalkAndDictate()
-        case .checkingCapability:
+        case .cancelOpening:
             // User cancelled before recording even started.
+            capabilityCheckInFlight = false
+            cancelMicWatchdogIfNeeded()
+            cancelNoSpeechWatchdogIfNeeded()
+            cancelEnginePreviewStreaming(reason: "user_cancel_checking_capability")
+            _ = recorder.stop()
+            recorderStopped = true
             teardownRecognition()
             goIdleOnMain()
-        default:
+        case .resetTerminal:
             // If stuck in error or blocked state, next tap resets to idle
             // so the tap after that can start a fresh recording session.
-            if hudState.isErrorOrBlocked {
-                micWatchdog?.cancel()
-                micWatchdog = nil
-                state = "idle"
-                dictationStartedAt = nil
-                refiningStartedAt = nil
-                currentRMS = 0
-                currentModeLabel = nil
-                targetApp = nil
-            }
+            micWatchdog?.cancel()
+            micWatchdog = nil
+            startupHotkeyDebounceUntil = 0
+            state = "idle"
+            dictationStartedAt = nil
+            refiningStartedAt = nil
+            currentRMS = 0
+            currentModeLabel = nil
+            targetApp = nil
+        case .ignoreStartupRepeat:
+            NSLog("Juno: repeated startup hotkey ignored state=%@", state)
+        case .ignore:
             // refining — ignore (let broker call finish)
+            break
         }
     }
 
@@ -4030,6 +4056,9 @@ final class DictationController: ObservableObject {
             return
         }
         NSLog("Juno: dictation start requested")
+        startupHotkeyDebounceUntil = JunoDictationHotkeyPolicy.startupDebounceUntil(
+            startedAt: Date.timeIntervalSinceReferenceDate
+        )
         playHUDOpenSound()
         syncLiveCaptionSettingToBroker()
         let generation = beginNewDictationGeneration()
@@ -4155,6 +4184,7 @@ final class DictationController: ObservableObject {
         capabilityCheckInFlight = true
         if !startRecorderSession(generation: generation) {
             capabilityCheckInFlight = false
+            startupHotkeyDebounceUntil = 0
             return
         }
         scheduleNoSpeechWatchdog(generation: generation)
@@ -4408,8 +4438,11 @@ final class DictationController: ObservableObject {
         capabilityCheckInFlight = false
         cancelNoSpeechWatchdogIfNeeded()
         if hudState == .checkingCapability || hudState.isErrorOrBlocked {
-            goIdleOnMain()
             teardownRecognition()
+            cancelEnginePreviewStreaming(reason: "stop_before_ready")
+            _ = recorder.stop()
+            recorderStopped = true
+            goIdleOnMain()
             return
         }
         // Accept active capture states (user may stop while still priming the mic).
@@ -4765,6 +4798,7 @@ final class DictationController: ObservableObject {
                 }
                 if hudState == .waitingSpeech || hudState == .checkingMic {
                     state = "listening"
+                    startupHotkeyDebounceUntil = 0
                 }
                 let warmGeneration = dictationSessionGeneration
                 let warmDelay: TimeInterval = JunoUserDefaults.hudLiveTranscriptionsEnabled ? 0.75 : 0.0
@@ -7833,6 +7867,13 @@ final class JunoShellRuntime {
     var startHotkeyBridge: () -> Void = {}
     /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
     var restartHotkeyBridge: () -> Void = {}
+
+    func startHotkeyBridgeIfOnboardingCompleted(
+        onboardingCompleted: Bool = JunoUserDefaults.onboardingCompleted
+    ) {
+        guard onboardingCompleted else { return }
+        startHotkeyBridge()
+    }
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).
@@ -7844,6 +7885,7 @@ enum JunoShellWindowOpener {
             JunoWindowActivation.activateApp()
             return
         }
+        JunoShellRuntime.shared.startHotkeyBridgeIfOnboardingCompleted()
         guard let surface = JunoShellRuntime.shared.surface else {
             junoOnboardingLog.error("showMainWindow skipped: Juno surface (runtime) is nil")
             return
@@ -7954,8 +7996,12 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
                 JunoShellRuntime.shared.startHotkeyBridge()
                 JunoEngineLifecycle.shared.boot()
             }
-            // Menu-bar app: show main chrome when launched from Finder/Dock.
-            showMainWindowEventually()
+            if JunoLaunchPresentationPolicy.shouldOpenMainWindowAutomatically(
+                onboardingCompleted: JunoUserDefaults.onboardingCompleted,
+                menuBarOnlyModeEnabled: JunoUserDefaults.menuBarOnlyModeEnabled
+            ) {
+                showMainWindowEventually()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                 Task { @MainActor in
                     JunoLaunchHealthAudit.run()
@@ -7992,7 +8038,11 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
         // ``Timer.invalidate()`` is safe to call here.
         JunoEngineSupervisor.shared.stop()
         if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
-            proc.terminate()
+            JunoProcessTreeTerminator.terminate(
+                process: proc,
+                reason: "application_terminate",
+                graceSeconds: 3.0
+            )
         }
         JunoShellRuntime.shared.terminateHotkeyBridge()
     }
@@ -8105,6 +8155,7 @@ final class JunoShellAppDelegate: NSObject, NSApplicationDelegate {
 
 enum MemoryManagementWindow {
     private static var windowController: NSWindowController?
+    private static var closeDelegate: JunoActivationRestoringWindowDelegate?
 
     @MainActor
     static func show() {
@@ -8112,6 +8163,8 @@ enum MemoryManagementWindow {
             JunoWindowActivation.bringToFront(w)
             return
         }
+        windowController = nil
+        closeDelegate = nil
         let content = MemoryManagementView()
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hosting)
@@ -8120,6 +8173,12 @@ enum MemoryManagementWindow {
         window.setContentSize(NSSize(width: 720, height: 480))
         window.center()
         window.isReleasedWhenClosed = false
+        let del = JunoActivationRestoringWindowDelegate {
+            windowController = nil
+            closeDelegate = nil
+        }
+        closeDelegate = del
+        window.delegate = del
         let controller = NSWindowController(window: window)
         windowController = controller
         controller.showWindow(nil)

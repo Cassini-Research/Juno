@@ -1969,6 +1969,8 @@ private struct OnboardingVoiceActionsStep: View {
 // MARK: - Step 6: Ready
 
 private struct OnboardingReadyStep: View {
+    let onReadyForFirstUse: () -> Void
+
     @State private var shown = false
     @State private var phase: HUDDemoPhase = .idle
     @State private var typedCount: Int = 0
@@ -2032,6 +2034,7 @@ private struct OnboardingReadyStep: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            onReadyForFirstUse()
             shown = true
             if reduceMotion {
                 phase = .settled
@@ -2346,6 +2349,7 @@ private struct JunoOnboardingView: View {
     @ObservedObject private var perms = JunoPermissionMonitor.shared
     @State private var step = 0
     @State private var preferredNameDraft: String = JunoUserDefaults.preferredDisplayName ?? ""
+    @State private var didPrepareFirstUseRuntime = false
     // @AppStorage so step 4's gate flips reactively the moment the actions
     // flow finishes — UserDefaults reads from a computed property won't
     // trigger SwiftUI updates on their own.
@@ -2390,7 +2394,7 @@ private struct JunoOnboardingView: View {
                         focusPrimaryIfAppropriate()
                     })
                 case 5:
-                    OnboardingReadyStep()
+                    OnboardingReadyStep(onReadyForFirstUse: prepareFirstUseRuntime)
                 default:
                     EmptyView()
                 }
@@ -2479,19 +2483,7 @@ private struct JunoOnboardingView: View {
             } else {
                 Button("Open Juno") {
                     JunoMilestoneNotifier.shared.playOnboardingHeroIfNeeded()
-                    JunoOnboardingDefaults.isCompleted = true
-                    // Voice Actions is now an explicit opt-in on the
-                    // "Juno can do things too" step (#4). If the user
-                    // got that far without making a decision (e.g. they
-                    // pressed Back to skip), treat it as deferred so
-                    // the post-onboarding nudge can fire after a few
-                    // dictations.
-                    if !JunoUserDefaults.actionsOnboardingDecisionMade {
-                        JunoUserDefaults.actionsOnboardingDecisionMade = true
-                    }
-                    JunoShellRuntime.shared.startHotkeyBridge()
-                    JunoEngineLifecycle.shared.boot()
-                    syncOnboardingPersonalizationToBroker()
+                    prepareFirstUseRuntime()
                     NotificationCenter.default.post(name: .junoOpenMainWindow, object: nil)
                     JunoShellWindowOpener.showMainWindow(section: .home)
                     DispatchQueue.main.async {
@@ -2692,6 +2684,28 @@ private struct JunoOnboardingView: View {
     private func startRuntimeAfterIntro() {
         Task { @MainActor in
             JunoEngineLifecycle.shared.boot()
+        }
+    }
+
+    private func prepareFirstUseRuntime() {
+        guard !didPrepareFirstUseRuntime else { return }
+        didPrepareFirstUseRuntime = true
+
+        let wasCompleted = JunoOnboardingDefaults.isCompleted
+        JunoOnboardingDefaults.isCompleted = true
+        // Voice Actions is now an explicit opt-in on the
+        // "Juno can do things too" step (#4). If the user
+        // got that far without making a decision (e.g. they
+        // pressed Back to skip), treat it as deferred so
+        // the post-onboarding nudge can fire after a few
+        // dictations.
+        if !JunoUserDefaults.actionsOnboardingDecisionMade {
+            JunoUserDefaults.actionsOnboardingDecisionMade = true
+        }
+        JunoShellRuntime.shared.startHotkeyBridgeIfOnboardingCompleted()
+        JunoEngineLifecycle.shared.boot()
+        if !wasCompleted {
+            syncOnboardingPersonalizationToBroker()
         }
     }
 

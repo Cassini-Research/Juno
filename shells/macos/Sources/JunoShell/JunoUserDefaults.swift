@@ -262,7 +262,8 @@ enum JunoUserDefaults {
         set { UserDefaults.standard.set(newValue, forKey: hudOpenSoundEnabledKey) }
     }
 
-    /// Menu-bar-first. Defaults to showing a Dock icon (regular macOS app).
+    /// Backing preference for the app presence mode. Defaults to showing a
+    /// Dock icon (regular macOS app) for backwards compatibility.
     static var showInDock: Bool {
         get {
             let ud = UserDefaults.standard
@@ -272,6 +273,14 @@ enum JunoUserDefaults {
         set {
             UserDefaults.standard.set(newValue, forKey: showInDockKey)
         }
+    }
+
+    /// User-facing inverse of ``showInDock``. When enabled, Juno stays in the
+    /// menu bar and leaves the Dock / app switcher except while a window is
+    /// explicitly open.
+    static var menuBarOnlyModeEnabled: Bool {
+        get { !showInDock }
+        set { showInDock = !newValue }
     }
 
     /// Toggle AVAudioEngine's voice processing (noise suppression / AGC).
@@ -448,5 +457,14 @@ enum JunoUserDefaults {
         ud.removeObject(forKey: dictationCompletedCountKey)
         ud.removeObject(forKey: screenContextNudgeDismissedAtKey)
         ud.synchronize()
+    }
+}
+
+enum JunoLaunchPresentationPolicy {
+    static func shouldOpenMainWindowAutomatically(
+        onboardingCompleted: Bool,
+        menuBarOnlyModeEnabled: Bool
+    ) -> Bool {
+        onboardingCompleted && !menuBarOnlyModeEnabled
     }
 }
