@@ -13,14 +13,18 @@ from juno_v2.personalization.seed.load_bundle import load_seed_bundle
 from juno_v2.personalization.seed.models import BiasBundleTerm, SeedBiasAttachment, StructuredBiasBundle
 from juno_v2.personalization.seed.promotion import PromotionCoordinator
 from juno_v2.personalization.seed.runtime import JunoSeedPersonalizationRuntime
+
 from juno_v2.preview.personalization_repair import (
     preview_personalization_terms_from_plan,
     repair_preview_word_dicts,
 )
+def _seed_data_root() -> Path:
+    return Path(__file__).resolve().parents[1] / "seed_data"
+
 
 
 def test_initial_promotion_keeps_default_packs_out_of_durable_memory(tmp_path: Path) -> None:
-    seed = load_seed_bundle(Path(__file__).resolve().parents[1] / "seed_data")
+    seed = load_seed_bundle(_seed_data_root())
     memory = JsonMemoryStore(tmp_path / "memory")
 
     result = PromotionCoordinator(
@@ -39,6 +43,61 @@ def test_initial_promotion_keeps_default_packs_out_of_durable_memory(tmp_path: P
     assert "Qwen" in canonicals
     assert len(canonicals) > 50
     assert "Gemma" in canonicals
+
+
+def test_core_device_seed_includes_macbook_mishearing() -> None:
+    seed = load_seed_bundle(_seed_data_root())
+    runtime = JunoSeedPersonalizationRuntime(seed, memory_store=None)
+
+    attachment = runtime.build_seed_attachment(
+        snapshot=MemorySnapshot(schema_version=1),
+        context=TypedContextBundle(app_name="TextEdit", app_category="notes"),
+        context_plane_suppression=None,
+    )
+
+    assert attachment.structured_bundle is not None
+    macbook_terms = [
+        term for term in attachment.structured_bundle.terms if term.canonical == "MacBook"
+    ]
+    assert len(macbook_terms) == 1
+    bias_strings = set(macbook_terms[0].bias_strings)
+    assert {"MacBook", "mac book", "mic book"} <= bias_strings
+    assert "mic book" in attachment.extra_bias_phrases
+    assert ("mic book", "MacBook", "seed_bias:core_names") in attachment.canonicalization_tuples
+
+
+def test_seed_canonicalization_repairs_macbook_mishearing() -> None:
+    seed = load_seed_bundle(_seed_data_root())
+    runtime = JunoSeedPersonalizationRuntime(seed, memory_store=None)
+    engine = RecognitionBiasEngine()
+    snapshot = MemorySnapshot(schema_version=1)
+    context = TypedContextBundle(app_name="TextEdit", app_category="notes")
+    attachment = runtime.build_seed_attachment(
+        snapshot=snapshot,
+        context=context,
+        context_plane_suppression=None,
+    )
+    plan = engine.build_plan(
+        utterance_id="utt-macbook",
+        snapshot=snapshot,
+        context=context,
+        seed_attachment=attachment,
+    )
+
+    result = engine.normalize_transcript(
+        "I am using the mic book today.",
+        snapshot=snapshot,
+        plan=plan,
+        scope="final",
+    )
+
+    assert result.normalized_text == "I am using the MacBook today."
+    assert any(
+        change.kind == "seed_canonicalization"
+        and change.before == "mic book"
+        and change.after == "MacBook"
+        for change in result.applied
+    )
 
 
 def test_seed_extra_bias_phrases_do_not_compile_as_memory_terms() -> None:
