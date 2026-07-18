@@ -1757,6 +1757,8 @@ final class JunoEngineSupervisor {
     private var consecutiveFailures = 0
     private var nextRespawnDelaySeconds: TimeInterval = 0
     private var respawnInFlight = false
+    private var stopping = false
+    private var terminatingForRespawnPID: Int32?
     private var lastSpawnAt: Date?
     private var attemptCount = 0
     private let pingIntervalSeconds: TimeInterval = 3.0
@@ -1771,6 +1773,7 @@ final class JunoEngineSupervisor {
 
     func start() {
         guard pingTimer == nil else { return }
+        stopping = false
         pingTimer = Timer.scheduledTimer(withTimeInterval: pingIntervalSeconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -1784,6 +1787,9 @@ final class JunoEngineSupervisor {
     /// teardown, opening one last UDS socket against an engine that
     /// was about to be SIGTERM'd. Safe to call multiple times.
     func stop() {
+        stopping = true
+        respawnInFlight = false
+        terminatingForRespawnPID = nil
         pingTimer?.invalidate()
         pingTimer = nil
     }
@@ -1797,6 +1803,7 @@ final class JunoEngineSupervisor {
         lastSpawnAt = Date()
         attemptCount += 1
         respawnInFlight = false
+        terminatingForRespawnPID = nil
         if case .online = state {
             // already healthy — nothing to advertise
         } else {
@@ -1805,11 +1812,13 @@ final class JunoEngineSupervisor {
     }
 
     func recordEngineExit(reason: String, status: Int, bootstrapLog: URL) {
+        JunoShellRuntime.shared.brokerProcess = nil
+        terminatingForRespawnPID = nil
+        guard !stopping else { return }
         // Snapshot the tail of the engine log so the next dictation regression
         // has a concrete trace to read instead of a buried needle in the
         // 4 000-line steady-state log.
         snapshotCrashLog(reason: reason, status: status, bootstrapLog: bootstrapLog)
-        JunoShellRuntime.shared.brokerProcess = nil
         if case .restarting = state {
             // already mid-respawn
         } else {
@@ -1819,11 +1828,13 @@ final class JunoEngineSupervisor {
     }
 
     func recordSpawnFailed(reason: String) {
+        guard !stopping else { return }
         state = .offline(reason: "spawn_failed:\(reason)")
         scheduleRespawn(immediate: false)
     }
 
     private func tick() {
+        guard !stopping else { return }
         // The process slot can legitimately be nil — at app launch we
         // attach to an externally-running engine (e.g. an orphan from a
         // prior Juno session that we successfully reaped, or a dev
@@ -1883,13 +1894,21 @@ final class JunoEngineSupervisor {
     }
 
     private func forceRespawn() {
+        guard !stopping else { return }
         if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
             // Engine still has a process but isn't answering. Terminate the
             // whole run_engine.sh tree so a hung Python child or preview
             // helper cannot keep the UDS socket/microphone resources alive
-            // after the wrapper is gone.
+            // after the wrapper is gone. Keep ``brokerProcess`` set until the
+            // tree is confirmed dead — clearing it and spawning immediately
+            // can overlap two ML engine trees and can unlink/rebind the UDS
+            // socket while the old process is still shutting down. Normally
+            // ``Process.terminationHandler`` (recordEngineExit) drives the
+            // respawn and clears ``terminatingForRespawnPID``; the completion
+            // below is the fallback for a missed termination callback.
             let rootPid = proc.processIdentifier
-            JunoShellRuntime.shared.brokerProcess = nil
+            if terminatingForRespawnPID == rootPid { return }
+            terminatingForRespawnPID = rootPid
             DispatchQueue.global(qos: .utility).async {
                 JunoProcessTreeTerminator.terminate(
                     rootPid: rootPid,
@@ -1897,7 +1916,13 @@ final class JunoEngineSupervisor {
                     graceSeconds: 1.5
                 )
                 DispatchQueue.main.async { [weak self] in
-                    self?.scheduleRespawn(immediate: true)
+                    guard let self, !self.stopping else { return }
+                    guard self.terminatingForRespawnPID == rootPid else { return }
+                    self.terminatingForRespawnPID = nil
+                    if JunoShellRuntime.shared.brokerProcess?.processIdentifier == rootPid {
+                        JunoShellRuntime.shared.brokerProcess = nil
+                    }
+                    self.scheduleRespawn(immediate: true)
                 }
             }
             return
@@ -1907,6 +1932,7 @@ final class JunoEngineSupervisor {
     }
 
     private func scheduleRespawn(immediate: Bool) {
+        guard !stopping else { return }
         guard !respawnInFlight else { return }
         respawnInFlight = true
         let delay = immediate ? max(0.2, min(nextRespawnDelaySeconds, 1.0)) : nextRespawnDelaySeconds
@@ -1915,6 +1941,10 @@ final class JunoEngineSupervisor {
         nextRespawnDelaySeconds = min(maxBackoffSeconds, max(2.0, nextRespawnDelaySeconds * 2))
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
+            guard !self.stopping else {
+                self.respawnInFlight = false
+                return
+            }
             // Reap stale socket if it's still on disk.
             let socketPath = JunoBroker.engineSocketPath
             if FileManager.default.fileExists(atPath: socketPath),
