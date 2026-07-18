@@ -7837,6 +7837,13 @@ final class JunoShellRuntime {
     var startHotkeyBridge: () -> Void = {}
     /// Restarts ``juno-hotkey`` so Fn consume mode tracks shortcut changes.
     var restartHotkeyBridge: () -> Void = {}
+
+    func startHotkeyBridgeIfOnboardingCompleted(
+        onboardingCompleted: Bool = JunoUserDefaults.onboardingCompleted
+    ) {
+        guard onboardingCompleted else { return }
+        startHotkeyBridge()
+    }
 }
 
 /// Opens the main shell window using the shared surface (menu-bar bootstrap runs in `App.init`, so this is safe before `MenuBarExtra` content mounts).
@@ -7848,6 +7855,7 @@ enum JunoShellWindowOpener {
             JunoWindowActivation.activateApp()
             return
         }
+        JunoShellRuntime.shared.startHotkeyBridgeIfOnboardingCompleted()
         guard let surface = JunoShellRuntime.shared.surface else {
             junoOnboardingLog.error("showMainWindow skipped: Juno surface (runtime) is nil")
             return
