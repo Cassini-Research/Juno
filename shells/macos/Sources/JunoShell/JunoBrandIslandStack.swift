@@ -580,6 +580,7 @@ struct JunoBrandIslandStack: View {
                     .font(.system(size: 8.5, weight: .bold))
                 Text("Stop")
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                JunoKeycap(label: stopHintLabels().keycap)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 9)
@@ -726,11 +727,9 @@ struct JunoBrandIslandStack: View {
     private var footerHints: some View {
         switch bodyKind {
         case .listening:
-            HStack(spacing: 10) {
-                let stop = stopHintLabels()
-                JunoShortcutHint(label: stop.label, keycap: stop.keycap, onTap: { controller.toggleDictation() })
-                JunoShortcutHint(label: "Cancel", keycap: "esc", onTap: { controller.cancelDictation() })
-            }
+            // The stop affordance lives on the stripe's Stop button (with its
+            // shortcut keycap); repeating it here read as two different actions.
+            JunoShortcutHint(label: "Cancel", keycap: "esc", onTap: { controller.cancelDictation() })
         case .refining:
             JunoShortcutHint(label: "Cancel", keycap: "esc", onTap: { controller.cancelDictation() })
         case .copyReady:
