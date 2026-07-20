@@ -224,7 +224,11 @@ final class JunoEngineLifecycle: ObservableObject {
     func reset() {
         Task { @MainActor in
             if let proc = JunoShellRuntime.shared.brokerProcess, proc.isRunning {
-                proc.terminate()
+                JunoProcessTreeTerminator.terminate(
+                    process: proc,
+                    reason: "lifecycle_reset",
+                    graceSeconds: 2.0
+                )
             }
             JunoShellRuntime.shared.brokerProcess = nil
             let socketPath = JunoBroker.engineSocketPath

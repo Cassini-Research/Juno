@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 enum JunoDiagnosticsWindow {
     private static var windowController: NSWindowController?
+    private static var closeDelegate: JunoActivationRestoringWindowDelegate?
 
     static func show() {
         if let existing = windowController, let w = existing.window {
@@ -22,6 +23,12 @@ enum JunoDiagnosticsWindow {
         window.setContentSize(NSSize(width: 760, height: 560))
         window.center()
         window.isReleasedWhenClosed = false
+        let del = JunoActivationRestoringWindowDelegate {
+            windowController = nil
+            closeDelegate = nil
+        }
+        closeDelegate = del
+        window.delegate = del
         let controller = NSWindowController(window: window)
         windowController = controller
         controller.showWindow(nil)

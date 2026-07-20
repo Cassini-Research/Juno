@@ -160,7 +160,8 @@ struct JunoBrandIslandCompact: View {
     /// pinched, narrow enough that the HUD stays out of the way.
     private var pillWidth: CGFloat {
         switch bodyKind {
-        case .listening, .refining, .error: return 168
+        case .listening:                    return 224
+        case .refining, .error:             return 168
         case .action:                       return 220
         case .actionWorking:                return 220
         case .copyReady:                    return 260
@@ -193,6 +194,7 @@ struct JunoBrandIslandCompact: View {
                     .animation(JunoBrandKitMotion.commaBeat, value: commaScale)
                 JunoBreathBars(active: controller.state == "listening", rms: controller.currentRMS)
                 Spacer(minLength: 0)
+                compactStopControl
             }
         case .refining:
             HStack(alignment: .center, spacing: 10) {
@@ -328,6 +330,30 @@ struct JunoBrandIslandCompact: View {
         }
         .buttonStyle(.plain)
         .help("Copy to clipboard")
+    }
+
+    private var compactStopControl: some View {
+        Button {
+            controller.toggleDictation()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 8, weight: .bold))
+                Text("Stop")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Capsule(style: .continuous).fill(JunoDesignTokens.danger.opacity(0.82)))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Stop dictation")
+        .accessibilityLabel("Stop dictation")
     }
 
     // MARK: - Animation triggers

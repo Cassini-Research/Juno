@@ -193,19 +193,79 @@ PY
   export JUNO_V2_PREVIEW_ENDPOINT="${PREVIEW_ENDPOINT}"
   PREVIEW_LOG="${LOG_ROOT}/preview-service.log"
   PREVIEW_SUPERVISOR_PID=""
+  PREVIEW_WARM_PID=""
   RUNTIME_PID=""
+  CLEANUP_STARTED=0
+  ENGINE_CHILD_TERM_GRACE_SECONDS="${JUNO_ENGINE_CHILD_TERM_GRACE_SECONDS:-5}"
+  PREVIEW_CHILD_TERM_GRACE_SECONDS="${JUNO_PREVIEW_CHILD_TERM_GRACE_SECONDS:-3}"
+
+  pid_exists() {
+    local pid="${1:-}"
+    [[ -n "${pid}" ]] || return 1
+    kill -0 "${pid}" 2>/dev/null || return 1
+    local stat
+    stat="$(ps -p "${pid}" -o stat= 2>/dev/null | tr -d '[:space:]' || true)"
+    [[ -z "${stat}" || "${stat}" != Z* ]]
+  }
+
+  signal_process_tree() {
+    local sig="$1"
+    local pid="$2"
+    local child
+    while read -r child; do
+      [[ -n "${child}" ]] || continue
+      signal_process_tree "${sig}" "${child}"
+    done < <(pgrep -P "${pid}" 2>/dev/null || true)
+    kill "-${sig}" "${pid}" 2>/dev/null || true
+  }
+
+  wait_for_pid_exit() {
+    local pid="$1"
+    local grace_seconds="$2"
+    local attempts=$(( grace_seconds * 10 ))
+    local i
+    for (( i = 0; i < attempts; i++ )); do
+      if ! pid_exists "${pid}"; then
+        return 0
+      fi
+      sleep 0.1
+    done
+    return 1
+  }
+
+  terminate_process_tree() {
+    local pid="${1:-}"
+    local label="$2"
+    local grace_seconds="$3"
+    [[ -n "${pid}" ]] || return 0
+    if ! pid_exists "${pid}"; then
+      wait "${pid}" 2>/dev/null || true
+      return 0
+    fi
+    signal_process_tree TERM "${pid}"
+    if ! wait_for_pid_exit "${pid}" "${grace_seconds}"; then
+      echo "[cleanup] $(date -u +%Y-%m-%dT%H:%M:%SZ) ${label} pid=${pid} ignored TERM after ${grace_seconds}s; sending KILL" >>"${WB_LOG}"
+      signal_process_tree KILL "${pid}"
+      wait_for_pid_exit "${pid}" 1 || true
+    fi
+    wait "${pid}" 2>/dev/null || true
+  }
 
   cleanup() {
-    if [[ -n "${RUNTIME_PID}" ]]; then
-      kill "${RUNTIME_PID}" 2>/dev/null || true
-      wait "${RUNTIME_PID}" 2>/dev/null || true
+    local reason="${1:-EXIT}"
+    if [[ "${CLEANUP_STARTED}" == "1" ]]; then
+      return 0
     fi
-    if [[ -n "${PREVIEW_SUPERVISOR_PID}" ]]; then
-      kill "${PREVIEW_SUPERVISOR_PID}" 2>/dev/null || true
-      wait "${PREVIEW_SUPERVISOR_PID}" 2>/dev/null || true
-    fi
+    CLEANUP_STARTED=1
+    trap - EXIT INT TERM
+    echo "[cleanup] $(date -u +%Y-%m-%dT%H:%M:%SZ) run_engine cleanup reason=${reason}" >>"${WB_LOG}"
+    terminate_process_tree "${RUNTIME_PID}" "runtime" "${ENGINE_CHILD_TERM_GRACE_SECONDS}"
+    terminate_process_tree "${PREVIEW_WARM_PID}" "preview-warm" "${PREVIEW_CHILD_TERM_GRACE_SECONDS}"
+    terminate_process_tree "${PREVIEW_SUPERVISOR_PID}" "preview-supervisor" "${PREVIEW_CHILD_TERM_GRACE_SECONDS}"
   }
-  trap cleanup EXIT INT TERM
+  trap 'cleanup TERM; exit 143' TERM
+  trap 'cleanup INT; exit 130' INT
+  trap 'cleanup EXIT' EXIT
 
   # >>> juno-preview-supervisor (extracted verbatim by tests/test_run_engine_preview_supervision.py)
   supervise_preview_service() {
@@ -218,7 +278,32 @@ PY
     # with bounded backoff so a boot-crash loop cannot peg the GPU, and log
     # every exit with status + uptime for post-mortem attribution.
     local child=""
-    trap 'if [[ -n "${child}" ]]; then kill "${child}" 2>/dev/null || true; fi; exit 0' TERM INT
+    preview_child_alive() {
+      local pid="${1:-}"
+      [[ -n "${pid}" ]] || return 1
+      kill -0 "${pid}" 2>/dev/null || return 1
+      local stat
+      stat="$(ps -p "${pid}" -o stat= 2>/dev/null | tr -d '[:space:]' || true)"
+      [[ -z "${stat}" || "${stat}" != Z* ]]
+    }
+    stop_preview_child() {
+      local pid="${child:-}"
+      [[ -n "${pid}" ]] || return 0
+      kill -TERM "${pid}" 2>/dev/null || true
+      local i
+      for (( i = 0; i < 30; i++ )); do
+        if ! preview_child_alive "${pid}"; then
+          wait "${pid}" 2>/dev/null || true
+          child=""
+          return 0
+        fi
+        sleep 0.1
+      done
+      kill -KILL "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+      child=""
+    }
+    trap 'stop_preview_child; exit 0' TERM INT
     local backoff=1
     while :; do
       local started_at
@@ -304,6 +389,7 @@ PY
       echo "[warm] $(date -u +%Y-%m-%dT%H:%M:%SZ) preview model cache incomplete; skipping proactive warm (will warm after onboarding download)" >>"${PREVIEW_LOG}"
     fi
   ) &
+  PREVIEW_WARM_PID="$!"
 
   ARGS=(
     -m juno_v2.runtime.service

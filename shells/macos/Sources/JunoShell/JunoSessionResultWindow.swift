@@ -245,7 +245,12 @@ private struct JunoSessionResultView: View {
 private final class JunoSessionResultCloseDelegate: NSObject, NSWindowDelegate {
     let onClose: () -> Void
     init(onClose: @escaping () -> Void) { self.onClose = onClose }
-    func windowWillClose(_ notification: Notification) { onClose() }
+    func windowWillClose(_ notification: Notification) {
+        onClose()
+        if JunoUserDefaults.menuBarOnlyModeEnabled {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
 }
 
 enum JunoSessionResultWindow {

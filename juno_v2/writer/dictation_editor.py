@@ -220,6 +220,9 @@ def apply_edit_script(
         if loc is None or len(replacement) > max(24, 3 * len(phrase)):
             applied["skipped"] += 1
             continue
+        if _edit_drops_content_without_evidence(text, loc[0], loc[1], phrase, replacement):
+            applied["skipped"] += 1
+            continue
         if _case_only_edit_without_evidence(
             text,
             loc[0],
@@ -314,6 +317,73 @@ def apply_edit_script(
     if not text.strip():
         return None
     return text, applied
+
+
+def _edit_drops_content_without_evidence(
+    text: str,
+    start: int,
+    end: int,
+    phrase: str,
+    replacement: str,
+) -> bool:
+    """Reject model EDITs that silently compress meaningful spoken content."""
+    old_tokens = _norm_tokens(phrase)
+    new_tokens = _norm_tokens(replacement)
+    if len(new_tokens) >= len(old_tokens):
+        return False
+    # Keep evidenced retakes/fillers available even when the model emits EDIT
+    # rather than DELETE for the abandoned phrase.
+    if _DELETE_MARKER_RE.search(phrase):
+        return False
+    if _edit_shrink_has_retake_evidence(text, start, end, old_tokens):
+        return False
+    # Collapsing a local stutter is content-preserving, even though it shrinks.
+    if _collapse_adjacent_duplicate_tokens(old_tokens) == new_tokens:
+        return False
+    # Pure subset edits are the common failure mode: the model keeps a few
+    # source words and silently drops the rest ("make a new" -> "new").
+    if _tokens_are_ordered_subset(new_tokens, old_tokens):
+        return True
+    # If the replacement also introduces new words, allow small corrections but
+    # reject broad compressions without deterministic retake evidence.
+    if len(old_tokens) >= 4 and len(new_tokens) <= len(old_tokens) - 2:
+        return True
+    return False
+
+
+def _tokens_are_ordered_subset(candidate: list[str], source: list[str]) -> bool:
+    if not candidate:
+        return bool(source)
+    pos = 0
+    for token in source:
+        if pos < len(candidate) and candidate[pos] == token:
+            pos += 1
+    return pos == len(candidate)
+
+
+def _collapse_adjacent_duplicate_tokens(tokens: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    for token in tokens:
+        if not collapsed or collapsed[-1] != token:
+            collapsed.append(token)
+    return collapsed
+
+
+def _edit_shrink_has_retake_evidence(
+    text: str,
+    start: int,
+    end: int,
+    tokens: list[str],
+) -> bool:
+    if len(tokens) < 2:
+        return False
+    following = _norm_tokens(text[end : end + 160])
+    if len(following) < 2:
+        return False
+    for offset in range(0, min(4, len(following) - 1)):
+        if following[offset : offset + 2] == tokens[:2]:
+            return True
+    return len(set(tokens[-3:]) & set(following[:6])) >= 2
 
 
 def _case_only_edit_without_evidence(

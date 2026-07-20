@@ -60,7 +60,7 @@ struct JunoSettingsView: View {
     @State private var displayNameDraft: String = JunoUserDefaults.preferredDisplayName ?? ""
 
     @State private var appearancePreference = JunoUserDefaults.appearancePreference
-    @State private var showInDock = JunoUserDefaults.showInDock
+    @State private var menuBarOnlyMode = JunoUserDefaults.menuBarOnlyModeEnabled
     @State private var micProcessing = JunoUserDefaults.micVoiceProcessingEnabled
     @State private var hudPosition = JunoUserDefaults.hudPosition
     @State private var hudLiveTranscriptions = JunoUserDefaults.hudLiveTranscriptionsEnabled
@@ -118,13 +118,13 @@ struct JunoSettingsView: View {
                             Divider().opacity(0.25)
 
                             settingsRow(
-                                title: "Show in Dock",
-                                subtitle: "Turn off to use Juno from the menu bar only — reopen the window from the Juno menu bar icon.",
+                                title: "Menu-bar-only mode",
+                                subtitle: "Keep Juno out of the Dock and app switcher. Use the menu bar icon to open windows and controls.",
                                 trailing: {
-                                    Toggle("", isOn: $showInDock)
+                                    Toggle("", isOn: $menuBarOnlyMode)
                                         .labelsHidden()
-                                        .onChange(of: showInDock) { newValue in
-                                            JunoUserDefaults.showInDock = newValue
+                                        .onChange(of: menuBarOnlyMode) { newValue in
+                                            JunoUserDefaults.menuBarOnlyModeEnabled = newValue
                                             Task { @MainActor in JunoDockVisibility.applyCurrent() }
                                         }
                                 }
