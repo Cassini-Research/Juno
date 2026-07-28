@@ -1,6 +1,7 @@
 import ApplicationServices
 import AppKit
 import Foundation
+import JunoObjCSupport
 
 /// In-process fallback for the short-lived `juno-capability` helper.
 ///
@@ -17,6 +18,36 @@ enum JunoLocalCapability {
 
     static func processHasAccessibilityTrust() -> Bool {
         AXIsProcessTrusted()
+    }
+
+    /// NSPasteboard is not thread-safe: AppKit rebuilds the pasteboard's
+    /// internal type cache without locking, so reading it on a background
+    /// queue while the main thread writes (copy actions, synthetic-copy
+    /// restore) intermittently crashes with NSRangeException in
+    /// -[NSPasteboard _updateTypeCacheIfNeeded]. All in-process writes
+    /// already happen on the main thread, so confining reads there closes
+    /// the race. `main.sync` from the main thread would deadlock, hence
+    /// the branch.
+    static func pasteboardStringConfinedToMain(
+        _ pasteboard: NSPasteboard = .general
+    ) -> String? {
+        func guardedRead() -> String? {
+            var value: String?
+            if let exception = JunoCatchNSException({
+                value = pasteboard.string(forType: .string)
+            }) {
+                NSLog("Juno: pasteboard read raised NSException, treating clipboard as empty: %@",
+                      exception.localizedDescription)
+                return nil
+            }
+            return value
+        }
+        if Thread.isMainThread {
+            return guardedRead()
+        }
+        return DispatchQueue.main.sync {
+            guardedRead()
+        }
     }
 
     static func shouldAttemptPasteboardSelectionGrab(
@@ -252,7 +283,7 @@ enum JunoLocalCapability {
         }
 
         if (out["focused_is_secure"] as? Bool) != true,
-           let clipText = NSPasteboard.general.string(forType: .string), !clipText.isEmpty {
+           let clipText = pasteboardStringConfinedToMain(), !clipText.isEmpty {
             out["clipboard_text"] = clip(clipText)
         }
         return out
