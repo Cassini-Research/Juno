@@ -24,7 +24,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from juno_v2.list_content import protect_list_render
+from juno_v2.list_content import (
+    ListPreservationMode,
+    SPOKEN_LIST_COUNT_NOUN_PATTERN,
+    SPOKEN_LIST_NUMBER_PATTERN,
+    SPOKEN_LIST_NUMBER_WORDS,
+    SPOKEN_LIST_ORDINAL_PATTERN,
+    SPOKEN_LIST_ORDINALS,
+    protect_list_render,
+)
 from juno_v2.memory.fold import fold_key, fold_match_pattern
 
 
@@ -71,22 +79,13 @@ _SPOKEN_BULLET_ITEM_RE = re.compile(
     re.IGNORECASE,
 )
 _NATURAL_LIST_COUNT_RE = re.compile(
-    r"\b(?P<count>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
-    r"nineteen|twenty)\s+"
-    r"(?P<noun>things?|points?|items?|steps?|reasons?|priorities|topics?|"
-    r"goals?|tasks?|takeaways?|focus\s+areas?)\b",
+    rf"\b(?P<count>{SPOKEN_LIST_NUMBER_PATTERN})\s+"
+    rf"(?P<noun>{SPOKEN_LIST_COUNT_NOUN_PATTERN})\b",
     re.IGNORECASE,
 )
 _NATURAL_LIST_MARKER_RE = re.compile(
     r"(?P<prefix>^|[.,:;!?]\s*|\b(?:and|then|plus)\s+)?"
-    r"(?P<marker>number\s+(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)|"
-    r"first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|"
-    r"fifth(?:ly)?|sixth(?:ly)?|seventh(?:ly)?|eighth(?:ly)?|ninth(?:ly)?|"
-    r"tenth(?:ly)?|eleventh|twelfth|thirteenth|fourteenth|fifteenth|"
-    r"sixteenth|seventeenth|eighteenth|nineteenth|twentieth|"
-    r"\d{1,2}(?:st|nd|rd|th)?)"
+    rf"(?P<marker>number\s+{SPOKEN_LIST_NUMBER_PATTERN}|{SPOKEN_LIST_ORDINAL_PATTERN})"
     r"(?:\s+(?:one|thing|point|item|step|reason|priority|topic|goal|task|takeaway|focus\s+area))?"
     r"\b[\s,.:;-]*",
     re.IGNORECASE,
@@ -103,69 +102,13 @@ _EXPLICIT_STRUCTURAL_LIST_COMMAND_RE = re.compile(
     r"\b(?:points?|items?|steps?|bullets?|bullet\s+points?|checklist|numbered\s+list|list)\b",
     re.IGNORECASE,
 )
-_NATURAL_LIST_NUMBER_WORDS = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12,
-    "thirteen": 13,
-    "fourteen": 14,
-    "fifteen": 15,
-    "sixteen": 16,
-    "seventeen": 17,
-    "eighteen": 18,
-    "nineteen": 19,
-    "twenty": 20,
-}
-_NATURAL_LIST_ORDINALS = {
-    "first": 1,
-    "firstly": 1,
-    "second": 2,
-    "secondly": 2,
-    "third": 3,
-    "thirdly": 3,
-    "fourth": 4,
-    "fourthly": 4,
-    "fifth": 5,
-    "fifthly": 5,
-    "sixth": 6,
-    "sixthly": 6,
-    "seventh": 7,
-    "seventhly": 7,
-    "eighth": 8,
-    "eighthly": 8,
-    "ninth": 9,
-    "ninthly": 9,
-    "tenth": 10,
-    "tenthly": 10,
-    "eleventh": 11,
-    "twelfth": 12,
-    "thirteenth": 13,
-    "fourteenth": 14,
-    "fifteenth": 15,
-    "sixteenth": 16,
-    "seventeenth": 17,
-    "eighteenth": 18,
-    "nineteenth": 19,
-    "twentieth": 20,
-}
-
-
 @dataclass(frozen=True, slots=True)
 class SpokenListRender:
     text: str
     claimed_item_count: int | None
     spoken_item_count: int
     pipeline: str
-    content_preservation: str = "list_rendered"
+    content_preservation: ListPreservationMode = "list_rendered"
 
 
 def render_explicit_bullet_list_command(text: str) -> str | None:
@@ -264,7 +207,7 @@ def _natural_list_count_value(raw: str) -> int | None:
     if value.isdigit():
         count = int(value)
     else:
-        count = _NATURAL_LIST_NUMBER_WORDS.get(value)
+        count = SPOKEN_LIST_NUMBER_WORDS.get(value)
     if count is None:
         return None
     return count if 1 <= count <= 50 else None
@@ -274,10 +217,10 @@ def _natural_list_marker_order(raw: str) -> int | None:
     value = str(raw or "").casefold().strip()
     if value.startswith("number "):
         value = value.removeprefix("number ").strip()
-    if value in _NATURAL_LIST_ORDINALS:
-        return _NATURAL_LIST_ORDINALS[value]
-    if value in _NATURAL_LIST_NUMBER_WORDS:
-        return _NATURAL_LIST_NUMBER_WORDS[value]
+    if value in SPOKEN_LIST_ORDINALS:
+        return SPOKEN_LIST_ORDINALS[value]
+    if value in SPOKEN_LIST_NUMBER_WORDS:
+        return SPOKEN_LIST_NUMBER_WORDS[value]
     match = re.match(r"^(\d{1,2})(?:st|nd|rd|th)?$", value)
     if match is None:
         return None

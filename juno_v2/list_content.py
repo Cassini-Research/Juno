@@ -10,20 +10,108 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Literal, TypeAlias
 
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?")
-_COUNT_RE = re.compile(
-    r"\b(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
-    r"nineteen|twenty)\s+"
+SPOKEN_LIST_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+}
+SPOKEN_LIST_ORDINALS = {
+    "first": 1,
+    "firstly": 1,
+    "second": 2,
+    "secondly": 2,
+    "third": 3,
+    "thirdly": 3,
+    "fourth": 4,
+    "fourthly": 4,
+    "fifth": 5,
+    "fifthly": 5,
+    "sixth": 6,
+    "sixthly": 6,
+    "seventh": 7,
+    "seventhly": 7,
+    "eighth": 8,
+    "eighthly": 8,
+    "ninth": 9,
+    "ninthly": 9,
+    "tenth": 10,
+    "tenthly": 10,
+    "eleventh": 11,
+    "twelfth": 12,
+    "thirteenth": 13,
+    "fourteenth": 14,
+    "fifteenth": 15,
+    "sixteenth": 16,
+    "seventeenth": 17,
+    "eighteenth": 18,
+    "nineteenth": 19,
+    "twentieth": 20,
+}
+SPOKEN_LIST_NUMBER_PATTERN = (
+    r"(?:\d{1,2}|" + "|".join(SPOKEN_LIST_NUMBER_WORDS) + r")"
+)
+SPOKEN_LIST_ORDINAL_PATTERN = (
+    r"(?:"
+    + "|".join(sorted(SPOKEN_LIST_ORDINALS, key=len, reverse=True))
+    + r"|\d{1,2}(?:st|nd|rd|th)?)"
+)
+SPOKEN_LIST_COUNT_NOUN_PATTERN = (
     r"(?:things?|points?|items?|steps?|reasons?|priorities|topics?|goals?|"
-    r"tasks?|takeaways?|focus\s+areas?|bullets?|bullet\s+points?)\b",
+    r"tasks?|takeaways?|focus\s+areas?)"
+)
+SPOKEN_LIST_ITEM_LABELS = (
+    ("thing",),
+    ("point",),
+    ("item",),
+    ("step",),
+    ("reason",),
+    ("priority",),
+    ("topic",),
+    ("goal",),
+    ("task",),
+    ("takeaway",),
+    ("focus", "area"),
+)
+
+ListPreservationMode: TypeAlias = Literal[
+    "list_rendered",
+    "substantive_prefix_preserved",
+    "complete_transcript_fallback",
+]
+
+
+# Python's Unicode-aware ``\w`` keeps multilingual dictation visible to the
+# preservation guard. Excluding underscore keeps identifiers tokenized like
+# ordinary words while retaining internal apostrophes.
+_TOKEN_RE = re.compile(r"[^\W_]+(?:['’][^\W_]+)?", re.UNICODE)
+_COUNT_RE = re.compile(
+    rf"\b{SPOKEN_LIST_NUMBER_PATTERN}\s+"
+    rf"(?:{SPOKEN_LIST_COUNT_NOUN_PATTERN}|bullets?|bullet\s+points?)\b",
     re.IGNORECASE,
 )
 _TRAILING_FIRST_MARKER_RE = re.compile(
     r"(?:^|[\s,.:;!?-]+)"
-    r"(?:number\s+(?:one|1)|first(?:ly)?|one|1(?:st)?|a[.)]?)"
+    r"(?P<marker>number\s+(?:one|1)|first(?:ly)?|one|1(?:st)?|a[.)]?)"
     r"(?:\s+(?:one|thing|point|item|step|reason|priority|topic|goal|task|"
     r"takeaway|focus\s+area))?"
     r"(?:\s+(?:is|are|was|were)(?:\s+(?:that|to))?|\s+(?:that|to))?"
@@ -31,10 +119,13 @@ _TRAILING_FIRST_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPLICIT_ANNOUNCEMENT_RE = re.compile(
-    r"\b(?:start|begin)\s+(?:a\s+)?(?:bullet\s+list|bullets?|bulleted\s+list)\b"
-    r"|\b(?:note\s+down|write\s+down|write|list|make|create|capture|give\s+me|"
+    r"\b(?:(?:please|(?:could|can|would)\s+you|i\s+(?:want|need)\s+you\s+to)\s+)?"
+    r"(?:"
+    r"(?:start|begin)\s+(?:a\s+)?(?:bullet\s+list|bullets?|bulleted\s+list)"
+    r"|(?:note\s+down|write\s+down|write|list|make|create|capture|give\s+me|"
     r"put\s+down)\b[^.!?;]{0,160}\b(?:things?|points?|items?|steps?|bullets?|"
-    r"bullet\s+points?|checklist|numbered\s+list|list)\b[^.!?;]{0,60}$",
+    r"bullet\s+points?|checklist|numbered\s+list|list)\b[^.!?;]{0,60}"
+    r")$",
     re.IGNORECASE,
 )
 _ANNOUNCEMENT_HEAD_RES = tuple(
@@ -64,83 +155,30 @@ _LIST_LINE_RE = re.compile(
     r"^\s*(?:[-*•]\s+(?:\[\s?\]\s+)?|\[\s?\]\s+|"
     r"\d{1,2}[.)]\s+|[A-Za-z][.)]\s+)(?P<body>.+?)\s*$"
 )
-_STRUCTURAL_GAP_WORDS = {
-    "and",
-    "also",
-    "then",
-    "plus",
-    "next",
-    "finally",
-    "lastly",
-    "number",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-    "twenty",
-    "first",
-    "firstly",
-    "second",
-    "secondly",
-    "third",
-    "thirdly",
-    "fourth",
-    "fourthly",
-    "fifth",
-    "fifthly",
-    "sixth",
-    "sixthly",
-    "seventh",
-    "seventhly",
-    "eighth",
-    "eighthly",
-    "ninth",
-    "ninthly",
-    "tenth",
-    "tenthly",
-    "eleventh",
-    "twelfth",
-    "thirteenth",
-    "fourteenth",
-    "fifteenth",
-    "sixteenth",
-    "seventeenth",
-    "eighteenth",
-    "nineteenth",
-    "twentieth",
-    "thing",
-    "point",
-    "item",
-    "step",
-    "reason",
-    "priority",
-    "topic",
-    "goal",
-    "task",
-    "takeaway",
-    "focus",
-    "area",
-    "is",
-    "are",
-    "was",
-    "were",
-    "that",
-    "to",
+_GAP_CONNECTORS = (
+    ("and", "then"),
+    ("and", "also"),
+    ("and",),
+    ("also",),
+    ("then",),
+    ("plus",),
+)
+_GAP_LINKS = {
+    (),
+    ("is",),
+    ("is", "that"),
+    ("is", "to"),
+    ("are",),
+    ("are", "that"),
+    ("are", "to"),
+    ("was",),
+    ("was", "that"),
+    ("was", "to"),
+    ("were",),
+    ("were", "that"),
+    ("were", "to"),
+    ("that",),
+    ("to",),
 }
 
 
@@ -154,7 +192,7 @@ class ListPrefixAnalysis:
 @dataclass(frozen=True, slots=True)
 class ListContentResult:
     text: str
-    mode: str
+    mode: ListPreservationMode
 
 
 def analyze_list_prefix(prefix: str) -> ListPrefixAnalysis:
@@ -172,7 +210,11 @@ def analyze_list_prefix(prefix: str) -> ListPrefixAnalysis:
     if not _tokens(core):
         return ListPrefixAnalysis(True, "", core_end)
 
-    explicit_matches = list(_EXPLICIT_ANNOUNCEMENT_RE.finditer(core))
+    explicit_matches = [
+        match
+        for match in _EXPLICIT_ANNOUNCEMENT_RE.finditer(core)
+        if _starts_clause(core, match.start())
+    ]
     if explicit_matches:
         announcement = explicit_matches[-1]
         if not _tokens(core[announcement.end() :]):
@@ -208,8 +250,8 @@ def analyze_list_prefix(prefix: str) -> ListPrefixAnalysis:
     if marker is not None:
         return ListPrefixAnalysis(
             True,
-            core.strip(" \t\r\n,;:-"),
-            marker.start(),
+            raw[: marker.start("marker")].strip(" \t\r\n,;:-"),
+            marker.start("marker"),
         )
     return ListPrefixAnalysis(False, raw.strip(), None)
 
@@ -247,11 +289,14 @@ def protect_list_render(source_text: str, rendered_text: str) -> ListContentResu
     prefix = source[: located[0][0]]
     analysis = analyze_list_prefix(prefix)
     substantive = analysis.substantive_prefix if analysis.safe else prefix.strip()
-    prefix_present = _tokens_are_ordered_subset(_tokens(substantive), _tokens(surface_prefix))
+    prefix_present = _tokens_are_ordered_subset(
+        _tokens(substantive),
+        _tokens(surface_prefix),
+    )
 
     for index in range(len(located) - 1):
         gap = source[located[index][1] : located[index + 1][0]]
-        if not _gap_is_structural(gap):
+        if not _gap_is_structural(gap, item_number=index + 2):
             return ListContentResult(source, "complete_transcript_fallback")
     if _tokens(source[located[-1][1] :]):
         return ListContentResult(source, "complete_transcript_fallback")
@@ -308,17 +353,83 @@ def _find_token_run(
     return None
 
 
-def _gap_is_structural(gap: str) -> bool:
-    tokens = _tokens(gap)
-    for token in tokens:
-        if token in _STRUCTURAL_GAP_WORDS:
-            continue
-        if re.fullmatch(r"[a-z]", token):
-            continue
-        if re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)?", token):
-            continue
+def _gap_is_structural(gap: str, *, item_number: int) -> bool:
+    """Accept only a complete marker phrase for the next rendered item.
+
+    A bag-of-words check cannot distinguish ``second priority is`` (structure)
+    from ``priority. Second`` (omitted content). Parse the expected marker from
+    the start of the gap and reject every unconsumed or ambiguous word.
+    """
+
+    tokens = tuple(_tokens(gap))
+    if not tokens:
+        return True
+    for connector in _GAP_CONNECTORS:
+        if tokens[: len(connector)] == connector:
+            tokens = tokens[len(connector) :]
+            break
+
+    marker_length = _expected_marker_length(tokens, item_number=item_number)
+    if marker_length is None:
         return False
-    return True
+    remainder = tokens[marker_length:]
+    if remainder in _GAP_LINKS:
+        return True
+
+    for label in SPOKEN_LIST_ITEM_LABELS:
+        if remainder[: len(label)] != label:
+            continue
+        # A bare noun can be real item content ("second priority ship"). A
+        # following link makes the label structural ("second priority is").
+        return remainder[len(label) :] in _GAP_LINKS - {()}
+    return False
+
+
+def _expected_marker_length(tokens: tuple[str, ...], *, item_number: int) -> int | None:
+    markers: set[tuple[str, ...]] = {
+        ("next",),
+        ("finally",),
+        ("lastly",),
+        (str(item_number),),
+        (_numeric_ordinal(item_number),),
+    }
+    number_word = next(
+        (
+            word
+            for word, value in SPOKEN_LIST_NUMBER_WORDS.items()
+            if value == item_number
+        ),
+        None,
+    )
+    if number_word is not None:
+        markers.add((number_word,))
+        markers.add(("number", number_word))
+    markers.add(("number", str(item_number)))
+    markers.update(
+        (word,)
+        for word, value in SPOKEN_LIST_ORDINALS.items()
+        if value == item_number
+    )
+    if 1 <= item_number <= 26:
+        markers.add((chr(ord("a") + item_number - 1),))
+
+    for marker in sorted(markers, key=len, reverse=True):
+        if tokens[: len(marker)] == marker:
+            return len(marker)
+    return None
+
+
+def _numeric_ordinal(value: int) -> str:
+    if 10 <= value % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
+    return f"{value}{suffix}"
+
+
+def _starts_clause(text: str, start: int) -> bool:
+    leading = text[:start]
+    return not _tokens(leading) or re.search(r"[.!?;:]\s*$", leading) is not None
 
 
 def _tokens(text: str) -> list[str]:

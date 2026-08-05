@@ -185,6 +185,8 @@ def _delete_is_evidenced(
     """
     span = text[start:end]
     tokens = _norm_tokens(span)
+    if _DELETE_MARKER_RE.search(span):
+        return True
     if first_item_start is not None and start < first_item_start:
         # A structural edit may remove only the proven list announcement and
         # ordinal syntax. The old broad ``start < first_item_start`` exception
@@ -199,8 +201,6 @@ def _delete_is_evidenced(
             return True
         return False
     if len(tokens) <= 2:
-        return True
-    if _DELETE_MARKER_RE.search(span):
         return True
     following = _norm_tokens(text[end : end + 160])
     if len(tokens) >= 2 and len(following) >= 2:
