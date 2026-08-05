@@ -90,6 +90,78 @@ def test_final_paste_guard_rejects_short_list_that_drops_opening_text() -> None:
     ) == "list_content_omitted"
 
 
+def test_oneshot_pipeline_restores_list_content_dropped_by_writer() -> None:
+    source = (
+        "This matters. There are two things. First protect the opening text. "
+        "Second keep the list safe."
+    )
+    surface = "- protect the opening text\n- keep the list safe"
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeWriter:
+        config = WriterConfig(
+            enable_model_transforms=False,
+            enable_turn_planner=False,
+            dictation_editor_enabled=False,
+        )
+
+        def plan_turn(self, **kwargs: object) -> None:
+            return None
+
+        def process_transcript(self, **kwargs: object) -> WriterOutcome:
+            return WriterOutcome(
+                utterance_id="utt-list-loss-pipeline",
+                action=WriterActionKind.PASS_THROUGH_COMMIT,
+                output_text=surface,
+                metadata={"structure": "bullets"},
+            )
+
+    class RecordingRecorder(_Recorder):
+        def __init__(self) -> None:
+            super().__init__()
+            self.events: list[tuple[str, dict[str, object]]] = []
+
+        def record(self, *args: object, **kwargs: object) -> None:
+            if len(args) >= 3 and isinstance(args[1], str) and isinstance(args[2], dict):
+                self.events.append((args[1], args[2]))
+
+    recorder = RecordingRecorder()
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=recorder,
+        writer_service=FakeWriter(),  # type: ignore[arg-type]
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=False),
+        itn_enabled=False,
+    )
+
+    result = pipeline.run(
+        _loud_wav_bytes(),
+        utterance_id="utt-list-loss-pipeline",
+        save_history=False,
+        save_audio=False,
+    )
+
+    assert result.ok
+    assert result.transcript == source
+    assert any(
+        name == "oneshot_writer_surface_fallback"
+        and payload.get("reason") == "list_content_omitted"
+        for name, payload in recorder.events
+    )
+
+
 def test_preview_repair_keeps_fuzzy_memory_terms_out_of_committed_hud() -> None:
     repaired, meta = repair_preview_word_dicts(
         [{"word": "karo", "start": 0.0, "end": 0.2}],

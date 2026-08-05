@@ -168,10 +168,26 @@ _DELETE_MARKER_RE = re.compile(
     r"\b(?:scratch\s+that|no\s+wait|no\s+no|i\s+mean|actually|rather|sorry|um+|uh+|erm)\b",
     re.IGNORECASE,
 )
+_CORRECTION_MARKER_RE = re.compile(
+    r"\b(?:scratch\s+that|no\s+wait|no\s+no|i\s+mean|actually|rather|sorry)\b",
+    re.IGNORECASE,
+)
 
 
 def _norm_tokens(text: str) -> list[str]:
     return [t for t in re.sub(r"[^\w\s']", " ", text.casefold()).split() if t]
+
+
+def _delete_is_only_correction_markers(span: str) -> bool:
+    if _DELETE_MARKER_RE.search(span) is None:
+        return False
+    remainder = _DELETE_MARKER_RE.sub(" ", span)
+    if not _norm_tokens(remainder):
+        return True
+    correction = _CORRECTION_MARKER_RE.search(span)
+    if correction is None:
+        return False
+    return not _norm_tokens(span[correction.end() :])
 
 
 def _delete_is_evidenced(
@@ -185,7 +201,7 @@ def _delete_is_evidenced(
     """
     span = text[start:end]
     tokens = _norm_tokens(span)
-    if _DELETE_MARKER_RE.search(span):
+    if _delete_is_only_correction_markers(span):
         return True
     if first_item_start is not None and start < first_item_start:
         # A structural edit may remove only the proven list announcement and

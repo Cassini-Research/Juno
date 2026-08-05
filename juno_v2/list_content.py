@@ -92,6 +92,19 @@ SPOKEN_LIST_ITEM_LABELS = (
     ("takeaway",),
     ("focus", "area"),
 )
+SPOKEN_LIST_ITEM_LABEL_PATTERN = (
+    r"(?:"
+    + "|".join(r"\s+".join(re.escape(token) for token in label) for label in SPOKEN_LIST_ITEM_LABELS)
+    + r")"
+)
+SPOKEN_LIST_CONNECTORS = ("and", "then", "plus")
+SPOKEN_LIST_CONNECTOR_PATTERN = r"(?:" + "|".join(SPOKEN_LIST_CONNECTORS) + r")"
+SPOKEN_LIST_SEQUENCE_MARKER_PATTERN = (
+    rf"(?:number\s+{SPOKEN_LIST_NUMBER_PATTERN}|{SPOKEN_LIST_ORDINAL_PATTERN})"
+)
+SPOKEN_LIST_FIRST_MARKER_PATTERN = (
+    r"(?:number\s+(?:one|1)|first(?:ly)?|1st|a(?:[.)]|(?=[,;:])))"
+)
 
 ListPreservationMode: TypeAlias = Literal[
     "list_rendered",
@@ -111,9 +124,8 @@ _COUNT_RE = re.compile(
 )
 _TRAILING_FIRST_MARKER_RE = re.compile(
     r"(?:^|[\s,.:;!?-]+)"
-    r"(?P<marker>number\s+(?:one|1)|first(?:ly)?|one|1(?:st)?|a[.)]?)"
-    r"(?:\s+(?:one|thing|point|item|step|reason|priority|topic|goal|task|"
-    r"takeaway|focus\s+area))?"
+    rf"(?P<marker>{SPOKEN_LIST_FIRST_MARKER_PATTERN})"
+    rf"(?:\s+{SPOKEN_LIST_ITEM_LABEL_PATTERN})?"
     r"(?:\s+(?:is|are|was|were)(?:\s+(?:that|to))?|\s+(?:that|to))?"
     r"[\s,.:;!?-]*$",
     re.IGNORECASE,
@@ -123,8 +135,12 @@ _EXPLICIT_ANNOUNCEMENT_RE = re.compile(
     r"(?:"
     r"(?:start|begin)\s+(?:a\s+)?(?:bullet\s+list|bullets?|bulleted\s+list)"
     r"|(?:note\s+down|write\s+down|write|list|make|create|capture|give\s+me|"
-    r"put\s+down)\b[^.!?;]{0,160}\b(?:things?|points?|items?|steps?|bullets?|"
-    r"bullet\s+points?|checklist|numbered\s+list|list)\b[^.!?;]{0,60}"
+    r"put\s+down)\b[^.!?;]{0,160}\b"
+    rf"(?:{SPOKEN_LIST_COUNT_NOUN_PATTERN}|bullets?|bullet\s+points?|"
+    r"checklist|numbered\s+list|list)\b"
+    r"(?:\s+to\s+(?:do|cover|discuss|address|handle|remember|consider)"
+    r"(?:\s+(?:today|tonight|tomorrow|now|this\s+(?:week|month|morning|afternoon)))?"
+    r")?"
     r")$",
     re.IGNORECASE,
 )
@@ -210,11 +226,7 @@ def analyze_list_prefix(prefix: str) -> ListPrefixAnalysis:
     if not _tokens(core):
         return ListPrefixAnalysis(True, "", core_end)
 
-    explicit_matches = [
-        match
-        for match in _EXPLICIT_ANNOUNCEMENT_RE.finditer(core)
-        if _starts_clause(core, match.start())
-    ]
+    explicit_matches = _explicit_announcement_matches(core)
     if explicit_matches:
         announcement = explicit_matches[-1]
         if not _tokens(core[announcement.end() :]):
@@ -233,6 +245,7 @@ def analyze_list_prefix(prefix: str) -> ListPrefixAnalysis:
                 match
                 for pattern in _ANNOUNCEMENT_HEAD_RES
                 for match in pattern.finditer(before_count)
+                if _starts_clause(before_count, match.start())
             ]
             if heads:
                 # Prefer the widest proven announcement. Narrow nested matches
@@ -288,16 +301,27 @@ def protect_list_render(source_text: str, rendered_text: str) -> ListContentResu
 
     prefix = source[: located[0][0]]
     analysis = analyze_list_prefix(prefix)
-    substantive = analysis.substantive_prefix if analysis.safe else prefix.strip()
+    if not analysis.safe:
+        return ListContentResult(source, "complete_transcript_fallback")
+    substantive = analysis.substantive_prefix
     prefix_present = _tokens_are_ordered_subset(
         _tokens(substantive),
         _tokens(surface_prefix),
     )
 
-    for index in range(len(located) - 1):
-        gap = source[located[index][1] : located[index + 1][0]]
-        if not _gap_is_structural(gap, item_number=index + 2):
-            return ListContentResult(source, "complete_transcript_fallback")
+    gaps = [
+        source[located[index][1] : located[index + 1][0]]
+        for index in range(len(located) - 1)
+    ]
+    gaps_are_structural = all(
+        _gap_is_structural(gap, item_number=index + 2)
+        for index, gap in enumerate(gaps)
+    )
+    if not gaps_are_structural and not (
+        _prefix_has_explicit_list_command(prefix)
+        and _gaps_are_unpunctuated_ordered_ordinals(gaps)
+    ):
+        return ListContentResult(source, "complete_transcript_fallback")
     if _tokens(source[located[-1][1] :]):
         return ListContentResult(source, "complete_transcript_fallback")
 
@@ -364,12 +388,20 @@ def _gap_is_structural(gap: str, *, item_number: int) -> bool:
     tokens = tuple(_tokens(gap))
     if not tokens:
         return True
+    marker_boundary_proven = re.match(r"\s*[.,;:!?-]", gap) is not None
     for connector in _GAP_CONNECTORS:
         if tokens[: len(connector)] == connector:
             tokens = tokens[len(connector) :]
+            marker_boundary_proven = True
             break
+    if re.fullmatch(r"\s*(?:\d{1,2}|[a-z])[.)]\s*", gap, re.IGNORECASE):
+        marker_boundary_proven = True
 
-    marker_length = _expected_marker_length(tokens, item_number=item_number)
+    marker_length = _expected_marker_length(
+        tokens,
+        item_number=item_number,
+        boundary_proven=marker_boundary_proven,
+    )
     if marker_length is None:
         return False
     remainder = tokens[marker_length:]
@@ -385,7 +417,14 @@ def _gap_is_structural(gap: str, *, item_number: int) -> bool:
     return False
 
 
-def _expected_marker_length(tokens: tuple[str, ...], *, item_number: int) -> int | None:
+def _expected_marker_length(
+    tokens: tuple[str, ...],
+    *,
+    item_number: int,
+    boundary_proven: bool,
+) -> int | None:
+    if not boundary_proven:
+        return None
     markers: set[tuple[str, ...]] = {
         ("next",),
         ("finally",),
@@ -402,7 +441,6 @@ def _expected_marker_length(tokens: tuple[str, ...], *, item_number: int) -> int
         None,
     )
     if number_word is not None:
-        markers.add((number_word,))
         markers.add(("number", number_word))
     markers.add(("number", str(item_number)))
     markers.update(
@@ -425,6 +463,39 @@ def _numeric_ordinal(value: int) -> str:
     else:
         suffix = {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
     return f"{value}{suffix}"
+
+
+def _gaps_are_unpunctuated_ordered_ordinals(gaps: list[str]) -> bool:
+    if len(gaps) < 2:
+        return False
+    for index, gap in enumerate(gaps):
+        if re.search(r"[.,;:!?-]", gap) is not None:
+            return False
+        tokens = tuple(_tokens(gap))
+        expected = {
+            (word,)
+            for word, value in SPOKEN_LIST_ORDINALS.items()
+            if value == index + 2
+        }
+        expected.add((_numeric_ordinal(index + 2),))
+        if tokens not in expected:
+            return False
+    return True
+
+
+def _prefix_has_explicit_list_command(prefix: str) -> bool:
+    marker = _TRAILING_FIRST_MARKER_RE.search(prefix)
+    core_end = marker.start() if marker is not None else len(prefix)
+    core = prefix[:core_end].rstrip(" \t\r\n,.:;!?-")
+    return bool(_explicit_announcement_matches(core))
+
+
+def _explicit_announcement_matches(text: str) -> list[re.Match[str]]:
+    return [
+        match
+        for match in _EXPLICIT_ANNOUNCEMENT_RE.finditer(text)
+        if _starts_clause(text, match.start())
+    ]
 
 
 def _starts_clause(text: str, start: int) -> bool:

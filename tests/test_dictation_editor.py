@@ -346,6 +346,31 @@ def test_structural_delete_allows_evidenced_filler_before_list() -> None:
     assert applied["struct"] == "bulleted"
 
 
+def test_structural_delete_filler_does_not_authorize_surrounding_content() -> None:
+    src = (
+        "This matters um there are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "This matters um there are two things"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == (
+        "This matters um there are two things\n"
+        "- protect the opening text\n"
+        "- keep the list safe"
+    )
+    assert applied["deletes"] == 0
+    assert applied["skipped"] == 1
+
+
 def test_structural_delete_still_blocks_short_substantive_prefix() -> None:
     src = (
         "This matters. There are two things, a, protect the opening text, "

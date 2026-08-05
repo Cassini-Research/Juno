@@ -27,10 +27,12 @@ from typing import Protocol
 from juno_v2.list_content import (
     ListPreservationMode,
     SPOKEN_LIST_COUNT_NOUN_PATTERN,
+    SPOKEN_LIST_CONNECTOR_PATTERN,
+    SPOKEN_LIST_ITEM_LABEL_PATTERN,
     SPOKEN_LIST_NUMBER_PATTERN,
     SPOKEN_LIST_NUMBER_WORDS,
-    SPOKEN_LIST_ORDINAL_PATTERN,
     SPOKEN_LIST_ORDINALS,
+    SPOKEN_LIST_SEQUENCE_MARKER_PATTERN,
     protect_list_render,
 )
 from juno_v2.memory.fold import fold_key, fold_match_pattern
@@ -84,9 +86,9 @@ _NATURAL_LIST_COUNT_RE = re.compile(
     re.IGNORECASE,
 )
 _NATURAL_LIST_MARKER_RE = re.compile(
-    r"(?P<prefix>^|[.,:;!?]\s*|\b(?:and|then|plus)\s+)?"
-    rf"(?P<marker>number\s+{SPOKEN_LIST_NUMBER_PATTERN}|{SPOKEN_LIST_ORDINAL_PATTERN})"
-    r"(?:\s+(?:one|thing|point|item|step|reason|priority|topic|goal|task|takeaway|focus\s+area))?"
+    rf"(?P<prefix>^|[.,:;!?]\s*|\b{SPOKEN_LIST_CONNECTOR_PATTERN}\s+)?"
+    rf"(?P<marker>{SPOKEN_LIST_SEQUENCE_MARKER_PATTERN})"
+    rf"(?:\s+(?:one|{SPOKEN_LIST_ITEM_LABEL_PATTERN}))?"
     r"\b[\s,.:;-]*",
     re.IGNORECASE,
 )
@@ -138,7 +140,10 @@ def render_explicit_bullet_list_command(text: str) -> str | None:
         items = _split_items(body)
     if len(items) < 2:
         return None
-    return "\n".join(f"- {item}" for item in items)
+    return protect_list_render(
+        text,
+        "\n".join(f"- {item}" for item in items),
+    ).text
 
 
 def render_natural_bullet_list_dictation(text: str) -> SpokenListRender | None:
