@@ -76,6 +76,21 @@ def test_render_natural_bullet_list_with_claimed_count_mismatch() -> None:
     assert rendered.spoken_item_count == 2
 
 
+def test_render_natural_bullet_list_preserves_substantive_prefix() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "This matters. There are two things. First protect the opening text. "
+        "Second keep the list safe."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "This matters.\n"
+        "- protect the opening text\n"
+        "- keep the list safe"
+    )
+    assert rendered.content_preservation == "substantive_prefix_preserved"
+
+
 def test_render_natural_bullet_list_with_three_spoken_points() -> None:
     rendered = render_natural_bullet_list_dictation(
         "I think we need to focus on three things. First check everything properly before production. "

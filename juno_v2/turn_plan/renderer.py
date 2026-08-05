@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from juno_v2.contracts.context import TypedContextBundle
+from juno_v2.list_content import protect_list_render
 from juno_v2.memory.store import JsonMemoryStore
 
 
@@ -51,7 +52,7 @@ def render_turn_plan(
             text = _clean_item(unit["text"])
             if text:
                 lines.append(prefix + text)
-        return RenderResult(text=_guard_markdown("\n".join(lines), plan), rendered=bool(lines), metadata=_render_meta(render))
+        return _protected_list_result("\n".join(lines), plan=plan, render=render)
 
     if kind == "numbered_list":
         lines = []
@@ -59,7 +60,7 @@ def render_turn_plan(
             text = _clean_item(unit["text"])
             if text:
                 lines.append(f"{idx}. {text}")
-        return RenderResult(text="\n".join(lines), rendered=bool(lines), metadata=_render_meta(render))
+        return _protected_list_result("\n".join(lines), plan=plan, render=render)
 
     if kind == "table":
         text = _render_table(units, markdown_allowed=bool(render.get("markdown_allowed")))
@@ -164,6 +165,25 @@ def _render_meta(render: dict[str, Any]) -> dict[str, Any]:
         "spoken_item_count": render.get("spoken_item_count"),
         "markdown_allowed": bool(render.get("markdown_allowed", False)),
     }
+
+
+def _protected_list_result(
+    text: str,
+    *,
+    plan: dict[str, Any],
+    render: dict[str, Any],
+) -> RenderResult:
+    corrected = plan.get("corrected_transcript")
+    corrected_text = str(corrected.get("text") or "").strip() if isinstance(corrected, dict) else ""
+    protected = protect_list_render(corrected_text, _guard_markdown(text, plan))
+    metadata = {**_render_meta(render), "content_preservation": protected.mode}
+    reason = "list_content_fallback" if protected.mode == "complete_transcript_fallback" else "ok"
+    return RenderResult(
+        text=protected.text,
+        rendered=bool(protected.text.strip()),
+        reason=reason,
+        metadata=metadata,
+    )
 
 
 def _render_snippet_only(

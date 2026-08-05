@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
+from juno_v2.list_content import protect_list_render
 from juno_v2.memory.fold import fold_key, fold_match_pattern
 
 
@@ -164,6 +165,7 @@ class SpokenListRender:
     claimed_item_count: int | None
     spoken_item_count: int
     pipeline: str
+    content_preservation: str = "list_rendered"
 
 
 def render_explicit_bullet_list_command(text: str) -> str | None:
@@ -244,11 +246,16 @@ def render_natural_bullet_list_dictation(text: str) -> SpokenListRender | None:
             items.append(item)
     if len(items) < 2:
         return None
+    protected = protect_list_render(
+        source,
+        "\n".join(f"- {item}" for item in items),
+    )
     return SpokenListRender(
-        text="\n".join(f"- {item}" for item in items),
+        text=protected.text,
         claimed_item_count=claimed_count,
         spoken_item_count=len(items),
         pipeline="natural_ordinal_bullet_list",
+        content_preservation=protected.mode,
     )
 
 

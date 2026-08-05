@@ -301,6 +301,29 @@ def test_lettered_structure_from_spoken_items() -> None:
     assert lines[2].startswith("c. email Sam")
 
 
+def test_structural_delete_cannot_remove_substantive_prefix() -> None:
+    src = (
+        "This matters. There are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "This matters. There are two things,"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "This matters.\n- protect the opening text\n- keep the list safe"
+    assert applied["deletes"] == 0
+    assert applied["skipped"] == 1
+    assert applied["struct"] == "bulleted"
+    assert applied["struct_content_preservation"] == "list_rendered"
+
+
 def test_ungrounded_anchor_is_skipped_not_fatal() -> None:
     src = "ship the build tonight"
     script = parse_edit_script(

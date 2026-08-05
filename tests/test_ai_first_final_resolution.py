@@ -17,6 +17,7 @@ from juno_core_v3.dictation.pipeline import (
     _reconcile_proper_nouns_from_live_hint,
     _reconcile_protected_term_near_misses,
     _reconcile_split_candidate_term,
+    _unsafe_writer_surface_reason,
 )
 from juno_core_v3.dictation.transcriber import FinalBackendTranscriber, TranscribeResult
 from juno_core_v3.actions.llm_extractor import validate_envelope
@@ -28,7 +29,7 @@ from juno_v2.contracts.final import FinalDecodeResult
 from juno_v2.contracts.memory import LexiconEntry, MemorySnapshot, SessionEntity
 from juno_v2.contracts.modes import ModeSelection, ModeSource
 from juno_v2.contracts.workbench import ClientSelection, CommitMode
-from juno_v2.contracts.writer import WriterActionKind, WriterIntentKind, WriterMode, WriterTransformRequest, WriterTransformResult
+from juno_v2.contracts.writer import WriterActionKind, WriterIntentKind, WriterMode, WriterOutcome, WriterTransformRequest, WriterTransformResult
 from juno_v2.final.config import FinalAsrConfig
 from juno_v2.itn.rules import apply_spoken_punctuation
 from juno_v2.memory.bias import RecognitionBiasEngine
@@ -66,6 +67,27 @@ class _Recorder:
 
     def record(self, *args: object, **kwargs: object) -> None:
         return None
+
+
+def test_final_paste_guard_rejects_short_list_that_drops_opening_text() -> None:
+    source = (
+        "This matters. There are two things. First protect the opening text. "
+        "Second keep the list safe."
+    )
+    surface = "- protect the opening text\n- keep the list safe"
+    outcome = WriterOutcome(
+        utterance_id="utt-list-loss-guard",
+        action=WriterActionKind.PASS_THROUGH_COMMIT,
+        output_text=surface,
+        metadata={"structure": "bullets"},
+    )
+
+    assert _unsafe_writer_surface_reason(
+        surface,
+        fallback_text=source,
+        raw_text=source,
+        writer_outcome=outcome,
+    ) == "list_content_omitted"
 
 
 def test_preview_repair_keeps_fuzzy_memory_terms_out_of_committed_hud() -> None:

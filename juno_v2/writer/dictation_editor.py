@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from juno_v2.list_content import analyze_list_prefix, protect_list_render
 from juno_v2.memory.entity_policy import common_english_single_word
 
 DICTATION_EDIT_TASK = "dictation_edit_v1"
@@ -184,11 +185,22 @@ def _delete_is_evidenced(
     """
     span = text[start:end]
     tokens = _norm_tokens(span)
+    if first_item_start is not None and start < first_item_start:
+        # A structural edit may remove only the proven list announcement and
+        # ordinal syntax. The old broad ``start < first_item_start`` exception
+        # also authorized deletion of an unrelated opening sentence.
+        prefix = analyze_list_prefix(text[:first_item_start])
+        if (
+            prefix.safe
+            and prefix.removable_start is not None
+            and start >= prefix.removable_start
+            and end <= first_item_start
+        ):
+            return True
+        return False
     if len(tokens) <= 2:
         return True
     if _DELETE_MARKER_RE.search(span):
-        return True
-    if first_item_start is not None and start < first_item_start:
         return True
     following = _norm_tokens(text[end : end + 160])
     if len(tokens) >= 2 and len(following) >= 2:
@@ -274,7 +286,14 @@ def apply_edit_script(
             anchors.append(loc[0])
             pos = loc[0] + 1
         if len(anchors) >= 2:
-            head = text[: anchors[0]].strip(" ,.;:-")
+            struct_source = text
+            raw_head = text[: anchors[0]]
+            prefix = analyze_list_prefix(raw_head)
+            head = (
+                prefix.substantive_prefix
+                if prefix.safe
+                else raw_head.strip(" ,.;:-")
+            )
             # A head that is just a spoken item marker ("a", "1", "first")
             # belongs to the first item, not to a heading line.
             if head and re.fullmatch(r"(?:[a-z]|\d{1,2}|first|firstly)[.)]?", head, re.IGNORECASE):
@@ -283,10 +302,10 @@ def apply_edit_script(
                 text[a:b].strip() for a, b in zip(anchors, anchors[1:] + [len(text)])
             ]
             lines: list[str] = []
+            if head:
+                lines.append(head)
             if script.title:
                 lines.append(script.title.strip())
-            elif head:
-                lines.append(head)
             for idx, chunk in enumerate(chunks):
                 if idx < len(chunks) - 1:
                     # The spoken marker of the NEXT item ("…done, b") trails
@@ -308,8 +327,11 @@ def apply_edit_script(
                     marker = "-"
                 lines.append(f"{marker} {body}")
             if len(lines) >= 2:
-                text = "\n".join(lines)
-                applied["struct"] = script.struct
+                protected = protect_list_render(struct_source, "\n".join(lines))
+                text = protected.text
+                applied["struct_content_preservation"] = protected.mode
+                if protected.mode != "complete_transcript_fallback":
+                    applied["struct"] = script.struct
 
     ratio = difflib.SequenceMatcher(a=source, b=text, autojunk=False).ratio()
     if applied["struct"] is None and ratio < (1.0 - _MAX_CHANGE_RATIO):
