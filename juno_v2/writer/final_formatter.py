@@ -154,11 +154,27 @@ class FinalFormatter:
         return result
 
 
-def apply_commit_boundary_rules(text: str, *, app_category: str | None = None) -> str:
+def apply_commit_boundary_rules(
+    text: str,
+    *,
+    app_category: str | None = None,
+    mode_name: str | None = None,
+    final_formatting_policy: str | None = None,
+) -> str:
     cat = (app_category or "").strip().lower()
     if cat in {"code", "terminal"}:
         return text or ""
-    return normalize_dictation_orthography(text)
+    out = normalize_dictation_orthography(text)
+    mode = (mode_name or "").strip().lower()
+    policy = (final_formatting_policy or "").strip().lower()
+    stripped = out.rstrip()
+    if (
+        (cat == "messaging" or mode == "casual_chat" or policy == "messaging")
+        and stripped.endswith(".")
+        and not stripped.endswith("...")
+    ):
+        return stripped[:-1] + out[len(stripped):]
+    return out
 
 
 def should_run_final_formatting(policy: str | None, *, app_category: str | None = None) -> bool:
@@ -169,12 +185,12 @@ def should_run_final_formatting(policy: str | None, *, app_category: str | None 
 
 
 def _messaging_boundary(text: str, *, packet: FormattingPacket) -> str:
-    out = apply_commit_boundary_rules(text, app_category=packet.app_category)
-    style = packet.style_card or {}
-    casual = str(style.get("formality") or "").strip().lower() in {"casual", "informal"}
-    if casual and out.endswith("."):
-        return out[:-1]
-    return out
+    return apply_commit_boundary_rules(
+        text,
+        app_category=packet.app_category,
+        mode_name=packet.mode_name,
+        final_formatting_policy=packet.final_formatting_policy,
+    )
 
 
 def _writer_mode_for_packet(packet: FormattingPacket) -> WriterMode:
