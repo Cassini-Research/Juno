@@ -185,6 +185,78 @@ def test_structural_fallback_handles_natural_counted_ordinal_list() -> None:
     assert plan["uncertainties"] == [{"type": "claimed_count_mismatch", "claimed": 3, "spoken": 2}]
 
 
+def test_turn_plan_list_renderer_preserves_substantive_prefix() -> None:
+    source = (
+        "This matters. There are two things. First protect the opening text. "
+        "Second keep the list safe."
+    )
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "format_dictation",
+        "corrected_transcript": {"text": source},
+        "target": {"kind": "cursor", "confidence": 1.0},
+        "render_plan": {
+            "render_kind": "bulleted_list",
+            "markdown_allowed": False,
+            "content_units": [
+                {
+                    "kind": "item",
+                    "text": "protect the opening text",
+                    "source_span": "protect the opening text",
+                    "order": 1,
+                },
+                {
+                    "kind": "item",
+                    "text": "keep the list safe",
+                    "source_span": "keep the list safe",
+                    "order": 2,
+                },
+            ],
+        },
+        "transform": {
+            "operation": "none",
+            "instruction": "",
+            "transformed_text": None,
+            "requires_second_pass": False,
+        },
+        "actions": [],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+        "uncertainties": [],
+    }
+
+    rendered = render_turn_plan(plan, context=TypedContextBundle(app_category="docs"))
+
+    assert rendered.text == (
+        "This matters.\n"
+        "- protect the opening text\n"
+        "- keep the list safe"
+    )
+    assert rendered.metadata["content_preservation"] == "substantive_prefix_preserved"
+
+
+def test_turn_plan_list_renderer_falls_back_when_item_content_is_omitted() -> None:
+    source = "There are two things. First protect all opening context. Second keep the list safe."
+    plan = {
+        "corrected_transcript": {"text": source},
+        "render_plan": {
+            "render_kind": "bulleted_list",
+            "markdown_allowed": False,
+            "content_units": [
+                {"kind": "item", "text": "protect", "order": 1},
+                {"kind": "item", "text": "keep the list safe", "order": 2},
+            ],
+        },
+    }
+
+    rendered = render_turn_plan(plan, context=TypedContextBundle(app_category="docs"))
+
+    assert rendered.text == source
+    assert rendered.reason == "list_content_fallback"
+    assert rendered.metadata["content_preservation"] == "complete_transcript_fallback"
+
+
 def test_turn_plan_json_parser_recovers_misnested_render_metadata() -> None:
     raw = (
         '{"schema_version":"turn_plan_v1","utterance_kind":"dictation",'
