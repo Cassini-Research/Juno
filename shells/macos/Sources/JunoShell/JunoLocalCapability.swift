@@ -31,7 +31,7 @@ enum JunoLocalCapability {
     static func pasteboardStringConfinedToMain(
         _ pasteboard: NSPasteboard = .general
     ) -> String? {
-        func guardedRead() -> String? {
+        withPasteboardReadOnMain {
             var value: String?
             if let exception = JunoCatchNSException({
                 value = pasteboard.string(forType: .string)
@@ -42,12 +42,13 @@ enum JunoLocalCapability {
             }
             return value
         }
+    }
+
+    static func withPasteboardReadOnMain<T>(_ read: () -> T) -> T {
         if Thread.isMainThread {
-            return guardedRead()
+            return read()
         }
-        return DispatchQueue.main.sync {
-            guardedRead()
-        }
+        return DispatchQueue.main.sync(execute: read)
     }
 
     static func shouldAttemptPasteboardSelectionGrab(

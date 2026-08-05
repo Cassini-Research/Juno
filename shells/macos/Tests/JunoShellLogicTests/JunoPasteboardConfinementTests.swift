@@ -33,6 +33,19 @@ final class JunoPasteboardConfinementTests: XCTestCase {
         XCTAssertEqual(result, "juno-confined-read")
     }
 
+    func testBackgroundReadBodyRunsOnMainThread() {
+        var ranOnMainThread = false
+        let done = expectation(description: "background read body completed")
+        DispatchQueue.global(qos: .utility).async {
+            ranOnMainThread = JunoLocalCapability.withPasteboardReadOnMain {
+                Thread.isMainThread
+            }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertTrue(ranOnMainThread)
+    }
+
     func testConfinedReadOnMainThreadDoesNotDeadlock() {
         let pasteboard = makePasteboard()
         defer { pasteboard.releaseGlobally() }
