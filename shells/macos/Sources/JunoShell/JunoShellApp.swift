@@ -3418,8 +3418,8 @@ final class DictationController: ObservableObject {
     /// (one of ``pasteReadbackReliableRoles``). Captured per paste in
     /// ``observedUndoSafePaste``. The async ``juno-textmon`` containment check
     /// (``verifyPasteLandedIfNeeded``) reads this so it never declares a real
-    /// paste "may not have landed" on web/Electron/Terminal surfaces (Codex,
-    /// Claude, Claude Code) that render placeholders like "[Pasted text #1]"
+    /// paste "may not have landed" on web, Electron, and terminal surfaces
+    /// that render placeholders like "[Pasted text #1]"
     /// instead of the literal pasted text.
     private var lastPasteTargetReadbackReliable: Bool = false
     /// From capability probe: focused AX role looks like a text insertion target.
@@ -6768,8 +6768,8 @@ final class DictationController: ObservableObject {
         // ``observedUndoSafePaste`` is the authoritative landing gate: for
         // read-back-reliable targets it already verified the field VALUE
         // changed, so never let this async backstop override a confirmed
-        // success. Literal containment is the wrong test anyway — Claude Code /
-        // Codex / Terminal render pasted text as a placeholder ("[Pasted text
+        // success. Literal containment is the wrong test anyway — some web,
+        // Electron, and terminal surfaces render a placeholder ("[Pasted text
         // #3]") instead of the dictated text, so a perfectly good paste never
         // "contains" it. That false-failure is what kept the HUD in copy-ready
         // after a confirmed-good paste (production 2026-06-21: traces showed
