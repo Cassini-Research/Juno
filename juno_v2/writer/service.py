@@ -1637,6 +1637,7 @@ class WriterService:
                     "claimed_item_count": rendered.claimed_item_count,
                     "spoken_item_count": rendered.spoken_item_count,
                     "claimed_count_mismatch": mismatch,
+                    "content_preservation": rendered.content_preservation,
                 },
                 "structure": "bullets",
             },
