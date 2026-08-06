@@ -4,7 +4,7 @@ import Foundation
 enum JunoCapabilitySnapshot {
     static func capture() -> [String: Any] {
         guard let bin = HelperBinary.path("juno-capability") else {
-            return JunoLocalCapability.snapshot()
+            return captureLocal()
         }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
@@ -15,19 +15,35 @@ enum JunoCapabilitySnapshot {
             try task.run()
             task.waitUntilExit()
         } catch {
-            return JunoLocalCapability.snapshot()
+            return captureLocal()
         }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return JunoLocalCapability.snapshot()
+            return captureLocal()
         }
-        let local = JunoLocalCapability.snapshot()
+        let local = captureLocal()
         if (obj["has_ax_trust"] as? Bool) == false {
             if (local["has_ax_trust"] as? Bool) == true {
                 return local
             }
         }
         return mergeHelperSnapshot(obj, withLocalContext: local)
+    }
+
+    /// AppKit-owned state inside ``JunoLocalCapability`` (NSWorkspace,
+    /// NSPasteboard, and accessibility-backed window attributes) must be
+    /// read on the main thread. Most capability captures already originate
+    /// there, but ``SurfaceEditingModel`` intentionally performs its helper
+    /// process work on a utility queue. Hop only the in-process merge back
+    /// to main so foreground polling cannot trip AppKit's main-thread
+    /// precondition while Juno itself is the active app.
+    private static func captureLocal() -> [String: Any] {
+        if Thread.isMainThread {
+            return JunoLocalCapability.snapshot()
+        }
+        return DispatchQueue.main.sync {
+            JunoLocalCapability.snapshot()
+        }
     }
 
     private static func mergeHelperSnapshot(

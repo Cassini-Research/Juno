@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Sidebar items
 
 enum MainSidebar: String, CaseIterable, Identifiable {
-    case home, history, actions, voiceCommands, modes, personalization, surfacePresets, privacy, settings
+    case home, history, stats, actions, voiceCommands, modes, personalization, surfacePresets, privacy, settings
     var id: String { rawValue }
 
     var title: String {
@@ -14,6 +14,7 @@ enum MainSidebar: String, CaseIterable, Identifiable {
         case .actions:         return "Actions"
         case .voiceCommands:   return "Voice Commands"
         case .history:         return "History"
+        case .stats:           return "Stats"
         case .modes:           return "Styles"
         case .personalization: return "Snippets & Memory"
         case .surfacePresets:  return "Per-app writing"
@@ -27,6 +28,7 @@ enum MainSidebar: String, CaseIterable, Identifiable {
         case .actions:         return "bolt.badge.checkmark"
         case .voiceCommands:   return "waveform.and.mic"
         case .history:         return "clock"
+        case .stats:           return "chart.bar.xaxis"
         case .modes:           return "sparkles"
         case .personalization: return "person.text.rectangle"
         case .surfacePresets:  return "app.badge.checkmark"
@@ -4496,6 +4498,7 @@ struct JunoMainShellView: View {
         case .actions:         JunoActionsPage().junoCenteredReadingPane()
         case .voiceCommands:   JunoVoiceCommandsPage().junoCenteredReadingPane()
         case .history:         JunoHistorySplitView()
+        case .stats:           JunoStatsPage().junoCenteredReadingPane()
         case .modes:           JunoModesView()
         case .personalization: MemoryManagementView()
         case .surfacePresets:  SurfacePresetsView()
