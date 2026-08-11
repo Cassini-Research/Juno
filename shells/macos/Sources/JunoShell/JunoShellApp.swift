@@ -3414,14 +3414,6 @@ final class DictationController: ObservableObject {
     private var pendingTextMonExpectedPaste: String = ""
     /// Focused-field value observed immediately after paste, when AX exposes it.
     private var textMonInitialSnapshot: String?
-    /// Whether the most recent paste target exposed a trustworthy AX value
-    /// (one of ``pasteReadbackReliableRoles``). Captured per paste in
-    /// ``observedUndoSafePaste``. The async ``juno-textmon`` containment check
-    /// (``verifyPasteLandedIfNeeded``) reads this so it never declares a real
-    /// paste "may not have landed" on web/Electron/Terminal surfaces (Codex,
-    /// Claude, Claude Code) that render placeholders like "[Pasted text #1]"
-    /// instead of the literal pasted text.
-    private var lastPasteTargetReadbackReliable: Bool = false
     /// From capability probe: focused AX role looks like a text insertion target.
     private var likelyPasteDestination: Bool = true
     /// TOCTOU pin for ``JunoSecureFieldPolicy``. Captured at dictation
@@ -3880,12 +3872,6 @@ final class DictationController: ObservableObject {
         // value BEFORE the paste so we can verify a real change AFTER.
         let verifyEnabled = (UserDefaults.standard.object(forKey: "JunoPasteVerificationEnabled") as? Bool) ?? true
         let before = verifyEnabled ? JunoLocalCapability.focusedValueSignature() : nil
-        // Record whether this target's AX value is trustworthy for read-back so
-        // the async textmon containment check (verifyPasteLandedIfNeeded) can
-        // skip its disproof on placeholder surfaces (web/Electron/Terminal),
-        // where the scraped value never contains the literal pasted text even
-        // on a perfect paste.
-        lastPasteTargetReadbackReliable = before?.readable ?? false
         let posted = Clipboard.undoSafePaste(text)
         markUtteranceTimeline("paste_attempt_finished_ms")
         // Couldn't even post the keystroke → definite failure.
@@ -6759,26 +6745,28 @@ final class DictationController: ObservableObject {
 
     private func recordTextMonInitialSnapshot(_ fieldSnapshot: String, pasted: String) {
         textMonInitialSnapshot = fieldSnapshot
-        verifyPasteLandedIfNeeded(fieldSnapshot: fieldSnapshot, pasted: pasted)
+        verifyPasteLandedIfNeeded(
+            fieldSnapshot: fieldSnapshot,
+            pasted: pasted,
+            pasteWasAccepted: true
+        )
     }
 
-    private func verifyPasteLandedIfNeeded(fieldSnapshot: String, pasted: String) {
+    private func verifyPasteLandedIfNeeded(
+        fieldSnapshot: String,
+        pasted: String,
+        pasteWasAccepted: Bool
+    ) {
         let p = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty else { return }
-        // ``observedUndoSafePaste`` is the authoritative landing gate: for
-        // read-back-reliable targets it already verified the field VALUE
-        // changed, so never let this async backstop override a confirmed
-        // success. Literal containment is the wrong test anyway — Claude Code /
-        // Codex / Terminal render pasted text as a placeholder ("[Pasted text
-        // #3]") instead of the dictated text, so a perfectly good paste never
-        // "contains" it. That false-failure is what kept the HUD in copy-ready
-        // after a confirmed-good paste (production 2026-06-21: traces showed
-        // ok=insert while the HUD stayed up). Keep the backstop only for
-        // targets read-back had to ASSUME success on, and only when the field
-        // came back genuinely EMPTY (nothing landed) — never merely "doesn't
-        // contain the literal text".
-        if lastPasteTargetReadbackReliable { return }
-        guard fieldSnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // This monitor is launched only after the paste path returned success.
+        // TerminalX and other Electron editors can expose an empty or stale
+        // AXValue after accepting Cmd+V, so this later learning snapshot must
+        // never downgrade the accepted result or reopen the copy-ready HUD.
+        guard JunoPasteVerificationPolicy.shouldOfferCopyFallback(
+            pasteWasAccepted: pasteWasAccepted,
+            postPasteSnapshot: fieldSnapshot
+        ) else { return }
         copyableTranscript = pasted
         transientDoneWordCount = nil
         if textMonExpectsReplacePaste {

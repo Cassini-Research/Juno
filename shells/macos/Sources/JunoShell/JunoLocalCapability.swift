@@ -134,13 +134,15 @@ enum JunoLocalCapability {
             return (false, "")
         }
         let focusedRole = axString(focused, kAXRoleAttribute as CFString) ?? ""
-        guard pasteReadbackReliableRoles.contains(focusedRole) else {
+        let value = axString(focused, kAXValueAttribute as CFString)
+        guard JunoPasteVerificationPolicy.isReadbackReliable(
+            bundleId: frontmost.bundleIdentifier,
+            role: focusedRole,
+            hasStringValue: value != nil
+        ) else {
             return (false, "")
         }
-        if let v = axString(focused, kAXValueAttribute as CFString) {
-            return (true, v)
-        }
-        return (false, "")
+        return (true, value ?? "")
     }
 
     static func snapshot() -> [String: Any] {
@@ -347,13 +349,6 @@ enum JunoLocalCapability {
         "AXComboBox",
         "AXSearchField",
         "AXWebArea",
-    ]
-
-    private static let pasteReadbackReliableRoles: Set<String> = [
-        "AXTextField",
-        "AXTextArea",
-        "AXComboBox",
-        "AXSearchField",
     ]
 
     private struct PasteCandidate {
