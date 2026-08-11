@@ -67,10 +67,14 @@ _CODE_WRITER_TONE = (
     "preserve symbols literally; no prose massaging."
 )
 _CHAT_ASR_ADDON = (
-    "User is composing in a chat surface; conversational tone, brief sentences, "
-    "ok with sentence fragments."
+    "User is composing in a messaging surface; preserve natural wording, "
+    "abbreviations, contractions, fragments, and conversational rhythm."
 )
-_CHAT_WRITER_TONE = "Chat: concise, friendly; no greetings/sign-offs unless requested."
+_CHAT_WRITER_TONE = (
+    "Messaging: correct only clear transcription errors and explicit self-corrections. "
+    "Do not formalize, expand, summarize, improve vocabulary, or add a terminal period "
+    "unless necessary or explicitly dictated."
+)
 _DOCS_ASR_ADDON = (
     "User is dictating into a notes/docs surface; allow headings and bullets."
 )

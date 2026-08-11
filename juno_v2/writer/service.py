@@ -992,7 +992,20 @@ class WriterService:
                 if not snippet_expanded and _explicit_paragraph_structure_present(text, raw_text):
                     cleanup_meta = {'pipeline': 'structured_paragraph_passthrough'}
                 else:
-                    text = apply_commit_boundary_rules(text, app_category=context.app_category)
+                    text = apply_commit_boundary_rules(
+                        text,
+                        app_category=context.app_category,
+                        mode_name=(
+                            self.state.mode_selection.effective_mode
+                            if self.state.mode_selection is not None
+                            else self.state.mode.value
+                        ),
+                        final_formatting_policy=getattr(
+                            self.state.mode_policy,
+                            "final_formatting_policy",
+                            None,
+                        ),
+                    )
                     # Issue #12 — code_grammar / meeting_grammar auto-fire,
                     # gated by ``app_category``. Runs after boundary rules
                     # (which is a no-op for code/terminal) so code surfaces
