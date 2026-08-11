@@ -360,12 +360,20 @@ class RecognitionBiasEngine:
         current = self._apply_corrections(current, snapshot, applied)
         current = self._apply_replacements(current, snapshot, applied, app_name=plan.context.app_name)
         current = self._apply_canonicalization(current, snapshot, plan, applied)
-        current = self._apply_seed_canonicalization(current, plan, applied)
+        seed_canonicalization_skipped = _plan_uses_verbatim_mode(plan)
+        if not seed_canonicalization_skipped:
+            current = self._apply_seed_canonicalization(current, plan, applied)
         return TranscriptNormalization(
             raw_text=raw,
             normalized_text=current,
             applied=applied,
-            metadata={'scope': scope, 'bias_phrase_count': len(plan.bias_phrases)},
+            metadata={
+                'scope': scope,
+                'bias_phrase_count': len(plan.bias_phrases),
+                'seed_canonicalization_skipped': (
+                    'verbatim_mode' if seed_canonicalization_skipped else None
+                ),
+            },
         )
 
     def extract_session_entities(self, text: str) -> list[str]:
@@ -662,6 +670,22 @@ def _replace_phrase(
         return replacement
 
     return re.sub(pattern, repl, text, flags=flags)
+
+
+def _plan_uses_verbatim_mode(plan: RecognitionBiasPlan) -> bool:
+    metadata = plan.metadata if isinstance(plan.metadata, dict) else {}
+    effective = str(metadata.get("effective_mode") or "").strip().casefold()
+    if effective == "verbatim":
+        return True
+    for key in ("mode_policy", "mode_policy_snapshot"):
+        policy = metadata.get(key)
+        if not isinstance(policy, dict):
+            continue
+        mode_name = str(policy.get("mode_name") or "").strip().casefold()
+        base_mode = str(policy.get("base_mode") or "").strip().casefold()
+        if "verbatim" in {mode_name, base_mode}:
+            return True
+    return False
 
 
 def _truncate_to_word_budget(text: str, *, max_words: int) -> str:
