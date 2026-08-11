@@ -92,6 +92,7 @@ from juno_v2.contracts.workbench import ClientSelection, CommitMode
 from juno_v2.contracts.writer import WriterActionKind, WriterOutcome
 from juno_v2.itn.engine import ITNEngine
 from juno_v2.itn.format_policy import resolve_itn_format_policy
+from juno_v2.list_content import list_render_omits_substantive_text
 from juno_v2.presets.surface_presets import (
     SurfacePresetStore,
     build_surface_context_line,
@@ -4890,12 +4891,20 @@ def _unsafe_writer_surface_reason(
     if _REDACTION_SENTINEL_RE.search(surface) and not _REDACTION_SENTINEL_RE.search(raw):
         return "redaction_sentinel_output"
 
+    action = None if writer_outcome is None else writer_outcome.action
+    outcome_meta = {} if writer_outcome is None else writer_outcome.metadata
+    if (
+        action == WriterActionKind.PASS_THROUGH_COMMIT
+        and not bool(outcome_meta.get("snippet_expanded"))
+        and list_render_omits_substantive_text(fallback, surface)
+    ):
+        return "list_content_omitted"
+
     fallback_words = _content_word_list(fallback)
     surface_words = _content_word_list(surface)
     if len(fallback_words) < 24:
         return None
 
-    action = None if writer_outcome is None else writer_outcome.action
     if action not in {
         WriterActionKind.DIRECT_COMMIT,
         WriterActionKind.TRANSFORM_COMMIT,

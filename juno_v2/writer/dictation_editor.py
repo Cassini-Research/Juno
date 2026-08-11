@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from juno_v2.list_content import analyze_list_prefix, protect_list_render
 from juno_v2.memory.entity_policy import common_english_single_word
 
 DICTATION_EDIT_TASK = "dictation_edit_v1"
@@ -167,10 +168,26 @@ _DELETE_MARKER_RE = re.compile(
     r"\b(?:scratch\s+that|no\s+wait|no\s+no|i\s+mean|actually|rather|sorry|um+|uh+|erm)\b",
     re.IGNORECASE,
 )
+_CORRECTION_MARKER_RE = re.compile(
+    r"\b(?:scratch\s+that|no\s+wait|no\s+no|i\s+mean|actually|rather|sorry)\b",
+    re.IGNORECASE,
+)
 
 
 def _norm_tokens(text: str) -> list[str]:
     return [t for t in re.sub(r"[^\w\s']", " ", text.casefold()).split() if t]
+
+
+def _delete_is_only_correction_markers(span: str) -> bool:
+    if _DELETE_MARKER_RE.search(span) is None:
+        return False
+    remainder = _DELETE_MARKER_RE.sub(" ", span)
+    if not _norm_tokens(remainder):
+        return True
+    correction = _CORRECTION_MARKER_RE.search(span)
+    if correction is None:
+        return False
+    return not _norm_tokens(span[correction.end() :])
 
 
 def _delete_is_evidenced(
@@ -184,11 +201,22 @@ def _delete_is_evidenced(
     """
     span = text[start:end]
     tokens = _norm_tokens(span)
-    if len(tokens) <= 2:
-        return True
-    if _DELETE_MARKER_RE.search(span):
+    if _delete_is_only_correction_markers(span):
         return True
     if first_item_start is not None and start < first_item_start:
+        # A structural edit may remove only the proven list announcement and
+        # ordinal syntax. The old broad ``start < first_item_start`` exception
+        # also authorized deletion of an unrelated opening sentence.
+        prefix = analyze_list_prefix(text[:first_item_start])
+        if (
+            prefix.safe
+            and prefix.removable_start is not None
+            and start >= prefix.removable_start
+            and end <= first_item_start
+        ):
+            return True
+        return False
+    if len(tokens) <= 2:
         return True
     following = _norm_tokens(text[end : end + 160])
     if len(tokens) >= 2 and len(following) >= 2:
@@ -218,6 +246,9 @@ def apply_edit_script(
     for phrase, replacement in script.edits:
         loc = _find_phrase(text, phrase)
         if loc is None or len(replacement) > max(24, 3 * len(phrase)):
+            applied["skipped"] += 1
+            continue
+        if _edit_drops_content_without_evidence(text, loc[0], loc[1], phrase, replacement):
             applied["skipped"] += 1
             continue
         if _case_only_edit_without_evidence(
@@ -271,7 +302,14 @@ def apply_edit_script(
             anchors.append(loc[0])
             pos = loc[0] + 1
         if len(anchors) >= 2:
-            head = text[: anchors[0]].strip(" ,.;:-")
+            struct_source = text
+            raw_head = text[: anchors[0]]
+            prefix = analyze_list_prefix(raw_head)
+            head = (
+                prefix.substantive_prefix
+                if prefix.safe
+                else raw_head.strip(" ,.;:-")
+            )
             # A head that is just a spoken item marker ("a", "1", "first")
             # belongs to the first item, not to a heading line.
             if head and re.fullmatch(r"(?:[a-z]|\d{1,2}|first|firstly)[.)]?", head, re.IGNORECASE):
@@ -280,10 +318,10 @@ def apply_edit_script(
                 text[a:b].strip() for a, b in zip(anchors, anchors[1:] + [len(text)])
             ]
             lines: list[str] = []
+            if head:
+                lines.append(head)
             if script.title:
                 lines.append(script.title.strip())
-            elif head:
-                lines.append(head)
             for idx, chunk in enumerate(chunks):
                 if idx < len(chunks) - 1:
                     # The spoken marker of the NEXT item ("…done, b") trails
@@ -305,8 +343,11 @@ def apply_edit_script(
                     marker = "-"
                 lines.append(f"{marker} {body}")
             if len(lines) >= 2:
-                text = "\n".join(lines)
-                applied["struct"] = script.struct
+                protected = protect_list_render(struct_source, "\n".join(lines))
+                text = protected.text
+                applied["struct_content_preservation"] = protected.mode
+                if protected.mode != "complete_transcript_fallback":
+                    applied["struct"] = script.struct
 
     ratio = difflib.SequenceMatcher(a=source, b=text, autojunk=False).ratio()
     if applied["struct"] is None and ratio < (1.0 - _MAX_CHANGE_RATIO):
@@ -314,6 +355,73 @@ def apply_edit_script(
     if not text.strip():
         return None
     return text, applied
+
+
+def _edit_drops_content_without_evidence(
+    text: str,
+    start: int,
+    end: int,
+    phrase: str,
+    replacement: str,
+) -> bool:
+    """Reject model EDITs that silently compress meaningful spoken content."""
+    old_tokens = _norm_tokens(phrase)
+    new_tokens = _norm_tokens(replacement)
+    if len(new_tokens) >= len(old_tokens):
+        return False
+    # Keep evidenced retakes/fillers available even when the model emits EDIT
+    # rather than DELETE for the abandoned phrase.
+    if _DELETE_MARKER_RE.search(phrase):
+        return False
+    if _edit_shrink_has_retake_evidence(text, start, end, old_tokens):
+        return False
+    # Collapsing a local stutter is content-preserving, even though it shrinks.
+    if _collapse_adjacent_duplicate_tokens(old_tokens) == new_tokens:
+        return False
+    # Pure subset edits are the common failure mode: the model keeps a few
+    # source words and silently drops the rest ("make a new" -> "new").
+    if _tokens_are_ordered_subset(new_tokens, old_tokens):
+        return True
+    # If the replacement also introduces new words, allow small corrections but
+    # reject broad compressions without deterministic retake evidence.
+    if len(old_tokens) >= 4 and len(new_tokens) <= len(old_tokens) - 2:
+        return True
+    return False
+
+
+def _tokens_are_ordered_subset(candidate: list[str], source: list[str]) -> bool:
+    if not candidate:
+        return bool(source)
+    pos = 0
+    for token in source:
+        if pos < len(candidate) and candidate[pos] == token:
+            pos += 1
+    return pos == len(candidate)
+
+
+def _collapse_adjacent_duplicate_tokens(tokens: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    for token in tokens:
+        if not collapsed or collapsed[-1] != token:
+            collapsed.append(token)
+    return collapsed
+
+
+def _edit_shrink_has_retake_evidence(
+    text: str,
+    start: int,
+    end: int,
+    tokens: list[str],
+) -> bool:
+    if len(tokens) < 2:
+        return False
+    following = _norm_tokens(text[end : end + 160])
+    if len(following) < 2:
+        return False
+    for offset in range(0, min(4, len(following) - 1)):
+        if following[offset : offset + 2] == tokens[:2]:
+            return True
+    return len(set(tokens[-3:]) & set(following[:6])) >= 2
 
 
 def _case_only_edit_without_evidence(

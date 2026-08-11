@@ -301,6 +301,98 @@ def test_lettered_structure_from_spoken_items() -> None:
     assert lines[2].startswith("c. email Sam")
 
 
+def test_structural_delete_cannot_remove_substantive_prefix() -> None:
+    src = (
+        "This matters. There are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "This matters. There are two things,"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "This matters.\n- protect the opening text\n- keep the list safe"
+    assert applied["deletes"] == 0
+    assert applied["skipped"] == 1
+    assert applied["struct"] == "bulleted"
+    assert applied["struct_content_preservation"] == "list_rendered"
+
+
+def test_structural_delete_allows_evidenced_filler_before_list() -> None:
+    src = (
+        "Um, there are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "Um"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "- protect the opening text\n- keep the list safe"
+    assert applied["deletes"] == 1
+    assert applied["skipped"] == 0
+    assert applied["struct"] == "bulleted"
+
+
+def test_structural_delete_filler_does_not_authorize_surrounding_content() -> None:
+    src = (
+        "This matters um there are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "This matters um there are two things"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == (
+        "This matters um there are two things\n"
+        "- protect the opening text\n"
+        "- keep the list safe"
+    )
+    assert applied["deletes"] == 0
+    assert applied["skipped"] == 1
+
+
+def test_structural_delete_still_blocks_short_substantive_prefix() -> None:
+    src = (
+        "This matters. There are two things, a, protect the opening text, "
+        "b, keep the list safe."
+    )
+    script = parse_edit_script(
+        "VERDICT: edited\n"
+        "STRUCT: bulleted\n"
+        'ITEM: "protect the opening text"\n'
+        'ITEM: "keep the list safe"\n'
+        'DELETE: "This matters"'
+    )
+
+    assert script is not None
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "This matters.\n- protect the opening text\n- keep the list safe"
+    assert applied["deletes"] == 0
+    assert applied["skipped"] == 1
+    assert applied["struct"] == "bulleted"
+
+
 def test_ungrounded_anchor_is_skipped_not_fatal() -> None:
     src = "ship the build tonight"
     script = parse_edit_script(
@@ -505,6 +597,67 @@ def test_delete_without_evidence_is_skipped() -> None:
     out, applied = apply_edit_script(src, script)
     assert out == src
     assert applied["skipped"] == 1
+
+
+def test_content_compressing_edit_without_evidence_is_skipped() -> None:
+    # Production: the editor compressed the opening "make if there is no" to
+    # "if no", making the committed text look like the first words were lost.
+    src = "Thank you to make if there is no new repo exists and make a new repo"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "make if there is no" => "if no"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_one_token_content_drop_without_evidence_is_skipped() -> None:
+    src = "Thank you to make if there is no new repo exists and make a new repo"
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "make if there is no" => "if there is no"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_short_content_compressing_edit_without_evidence_is_skipped() -> None:
+    src = "Please create new repo and push it"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "create new repo" => "create"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skipped"] == 1
+
+
+def test_stutter_collapse_edit_still_applies() -> None:
+    src = "Please create create new repo and push it"
+    script = parse_edit_script('VERDICT: edited\nEDIT: "create create" => "create"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "Please create new repo and push it"
+    assert applied["edits"] == 1
+
+
+def test_content_compressing_edit_with_correction_marker_still_applies() -> None:
+    src = "I told him we got the budget approved, I mean, so we can hire."
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "the budget approved, I mean" => "the headcount approved"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "I told him we got the headcount approved, so we can hire."
+    assert applied["edits"] == 1
 
 
 def test_delete_with_marker_or_restart_still_applies() -> None:

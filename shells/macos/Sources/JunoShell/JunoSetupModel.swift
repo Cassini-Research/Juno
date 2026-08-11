@@ -68,6 +68,12 @@ final class JunoSetupModel: ObservableObject {
     @Published private(set) var downloadEtaSeconds: Double? = nil
     @Published private(set) var downloadElapsedSeconds: Double = 0
     @Published private(set) var downloadActive: Bool = false
+    /// True when an active download has made no byte progress for a while —
+    /// the "stuck at N MB" case. Surfaces the Restart control in onboarding.
+    @Published private(set) var downloadStalled: Bool = false
+    private var lastDownloadBytes: Int64 = -1
+    private var lastDownloadProgressAt: Date?
+    private static let downloadStallSeconds: TimeInterval = 30
     /// Repo currently downloading ("mlx-community/…") plus x-of-y position,
     /// and the broker's short install log ("Downloading X (1 of 4)",
     /// "Loading models into memory"). Drives the per-model line and the
@@ -355,7 +361,9 @@ final class JunoSetupModel: ObservableObject {
                     self.downloadReposDone = dp.reposDone ?? 0
                     self.downloadReposTotal = dp.repos?.count ?? 0
                     self.downloadLog = (dp.log ?? []).compactMap { $0.line }
+                    self.updateDownloadStall(bytes: self.downloadBytesSoFar)
                 } else {
+                    self.resetDownloadStall()
                     self.downloadActive = false
                     self.downloadBytesSoFar = 0
                     self.downloadBytesTotal = 0
@@ -462,6 +470,49 @@ final class JunoSetupModel: ObservableObject {
             }
         }
         startFastPoll()
+    }
+
+    /// Re-trigger a stuck/stalled download. Unlike triggerInstall/Repair this
+    /// SUPERSEDES an in-flight attempt (the broker bumps its install generation
+    /// rather than no-opping "already downloading"); HF resumes the partial
+    /// blob so it continues from where it stuck.
+    func restartInstall() {
+        logSetup("restartInstall -> POST api/broker/setup/repair {restart} (was \(downloadBytesSoFar / 1_048_576)MB, stalled=\(downloadStalled))")
+        resetDownloadStall()
+        installState = "downloading"
+        JunoBroker.postSetupInstall(restart: true) { [weak self] result in
+            switch result {
+            case .success(let obj):
+                self?.logSetup("restart accepted (keys=\(obj.keys.sorted().joined(separator: ",")))")
+            case .failure(let err):
+                self?.logSetup("restart request error: \(err.localizedDescription)")
+            }
+        }
+        startFastPoll()
+    }
+
+    private func updateDownloadStall(bytes: Int64) {
+        let now = Date()
+        if bytes != lastDownloadBytes {
+            lastDownloadBytes = bytes
+            lastDownloadProgressAt = now
+            if downloadStalled { downloadStalled = false }
+            return
+        }
+        // No byte change since the last poll. Flag stalled once it's been flat
+        // long enough AND we've actually started receiving bytes (so we don't
+        // mislabel the brief pre-download/handshake window as a stall).
+        if bytes > 0, let since = lastDownloadProgressAt,
+           now.timeIntervalSince(since) >= Self.downloadStallSeconds, !downloadStalled {
+            downloadStalled = true
+            logSetup("download STALLED at \(bytes / 1_048_576)MB (no progress for \(Int(Self.downloadStallSeconds))s)")
+        }
+    }
+
+    private func resetDownloadStall() {
+        lastDownloadBytes = -1
+        lastDownloadProgressAt = nil
+        if downloadStalled { downloadStalled = false }
     }
 
     var readinessLabel: String {

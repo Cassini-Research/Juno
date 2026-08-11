@@ -111,6 +111,57 @@ public enum HUDState: Equatable {
         default:               return false
         }
     }
+
+    /// Startup states where an impatient repeat tap should be treated as a
+    /// duplicate of the opening request, not as the user's stop intent.
+    public var isOpeningTransition: Bool {
+        switch self {
+        case .checkingCapability, .checkingMic, .waitingSpeech:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+enum JunoDictationHotkeyAction: Equatable {
+    case begin
+    case stop
+    case cancelOpening
+    case resetTerminal
+    case ignore
+    case ignoreStartupRepeat
+}
+
+enum JunoDictationHotkeyPolicy {
+    static let startupRepeatDebounceSeconds: TimeInterval = 1.0
+
+    static func startupDebounceUntil(startedAt: TimeInterval) -> TimeInterval {
+        startedAt + startupRepeatDebounceSeconds
+    }
+
+    static func action(
+        for state: HUDState,
+        now: TimeInterval,
+        startupDebounceUntil: TimeInterval
+    ) -> JunoDictationHotkeyAction {
+        if state.isOpeningTransition, now < startupDebounceUntil {
+            return .ignoreStartupRepeat
+        }
+
+        switch state {
+        case .idle:
+            return .begin
+        case .checkingCapability:
+            return .cancelOpening
+        case .checkingMic, .waitingSpeech, .listening, .partialCommit:
+            return .stop
+        case .blocked, .error:
+            return .resetTerminal
+        case .refining, .unknown:
+            return .ignore
+        }
+    }
 }
 
 // MARK: - Sub-state reasons
