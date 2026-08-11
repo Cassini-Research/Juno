@@ -61,6 +61,12 @@ def test_render_explicit_same_utterance_bullet_list_command() -> None:
     assert render_explicit_bullet_list_command("Start a bullet list.") is None
 
 
+def test_render_explicit_list_falls_back_for_ambiguous_next_word() -> None:
+    spoken = "Start a bullet list. First review our next release."
+
+    assert render_explicit_bullet_list_command(spoken) == spoken
+
+
 def test_render_natural_bullet_list_with_claimed_count_mismatch() -> None:
     rendered = render_natural_bullet_list_dictation(
         "I think we need to focus on 3 things, first is that we check everything properly "
@@ -74,6 +80,34 @@ def test_render_natural_bullet_list_with_claimed_count_mismatch() -> None:
     )
     assert rendered.claimed_item_count == 3
     assert rendered.spoken_item_count == 2
+
+
+def test_render_natural_bullet_list_preserves_substantive_prefix() -> None:
+    rendered = render_natural_bullet_list_dictation(
+        "This matters. There are two things. First protect the opening text. "
+        "Second keep the list safe."
+    )
+
+    assert rendered is not None
+    assert rendered.text == (
+        "This matters.\n"
+        "- protect the opening text\n"
+        "- keep the list safe"
+    )
+    assert rendered.content_preservation == "substantive_prefix_preserved"
+
+
+def test_render_natural_list_falls_back_for_ambiguous_ordinal_content() -> None:
+    spoken = (
+        "There are three things. First discuss second quarter. "
+        "Third ship."
+    )
+
+    rendered = render_natural_bullet_list_dictation(spoken)
+
+    assert rendered is not None
+    assert rendered.text == spoken
+    assert rendered.content_preservation == "complete_transcript_fallback"
 
 
 def test_render_natural_bullet_list_with_three_spoken_points() -> None:
