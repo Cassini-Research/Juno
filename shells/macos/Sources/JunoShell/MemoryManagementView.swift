@@ -169,6 +169,7 @@ final class MemoryStoreViewModel: ObservableObject {
     @Published var replacementTrigger: String = ""
     @Published var replacementText: String = ""
     @Published var replacementScope: String = "global"
+    @Published var replacementSeedRuleID: String = ""
 
     @Published var snippetTrigger: String = ""
     @Published var snippetBody: String = ""
@@ -318,23 +319,33 @@ final class MemoryStoreViewModel: ObservableObject {
             statusMessage = "Trigger and replacement are required"
             return
         }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "trigger": trig,
             "replacement": repl,
             "scope": replacementScope.isEmpty ? "global" : replacementScope,
         ]
+        let seedRuleID = replacementSeedRuleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !seedRuleID.isEmpty {
+            payload["seed_rule_id"] = seedRuleID
+        }
         let savedTrig = trig
         mutate(path: "api/broker/memory/replacement", payload: payload, onSuccess: { [weak self] _ in
             self?.replacementTrigger = ""
             self?.replacementText = ""
+            self?.replacementSeedRuleID = ""
             self?.refreshCategory("replacement")
             self?.flashSuccess("Saved replacement \u{201C}\(savedTrig)\u{201D}")
         })
     }
 
-    func removeReplacement(trigger: String, scope: String) {
+    func removeReplacement(trigger: String, scope: String, seedRuleID: String? = nil) {
+        var payload: [String: Any] = ["trigger": trigger, "scope": scope]
+        if let seedRuleID,
+           !seedRuleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            payload["seed_rule_id"] = seedRuleID
+        }
         mutate(path: "api/broker/memory/replacement/remove",
-               payload: ["trigger": trigger, "scope": scope],
+               payload: payload,
                onSuccess: { [weak self] _ in self?.refreshCategory("replacement") })
     }
 
@@ -757,8 +768,20 @@ private struct MemoryCategoryDetail: View {
                     keyForEntry: { replacementKey($0) },
                     row: { entry in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(str(entry["trigger"]))
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            HStack(spacing: 6) {
+                                Text(str(entry["trigger"]))
+                                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                if (entry["is_builtin"] as? Bool) == true {
+                                    Text("BUILT-IN")
+                                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                                        .foregroundStyle(JunoDesignTokens.accent)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule().fill(JunoDesignTokens.accent.opacity(0.12))
+                                        )
+                                }
+                            }
                             Text("→ \(str(entry["replacement"]))")
                                 .font(.caption2)
                                 .foregroundStyle(JunoTheme.secondaryText(scheme))
@@ -769,7 +792,11 @@ private struct MemoryCategoryDetail: View {
                         ReplacementEditorCard(store: store, entry: entry)
                     },
                     onDelete: { entry in
-                        store.removeReplacement(trigger: str(entry["trigger"]), scope: str(entry["scope"], fallback: "global"))
+                        store.removeReplacement(
+                            trigger: str(entry["trigger"]),
+                            scope: str(entry["scope"], fallback: "global"),
+                            seedRuleID: entry["seed_rule_id"] as? String
+                        )
                     }
                 )
             case .correction:
@@ -840,6 +867,7 @@ private struct MemoryCategoryDetail: View {
             if store.vocabCanonical.isEmpty { store.vocabCanonical = "" }
         case .replacement:
             if store.replacementScope.isEmpty { store.replacementScope = "global" }
+            store.replacementSeedRuleID = ""
         case .snippet:
             store.snippetTrigger = ""
             store.snippetBody = ""
@@ -878,7 +906,10 @@ private struct MemoryCategoryDetail: View {
         "snippet:\(str(entry["trigger"])):\(str(entry["scope"], fallback: "global"))"
     }
     private func replacementKey(_ entry: [String: Any]) -> String {
-        "replacement:\(str(entry["trigger"])):\(str(entry["scope"], fallback: "global"))"
+        if let seedRuleID = entry["seed_rule_id"] as? String, !seedRuleID.isEmpty {
+            return "replacement:\(seedRuleID)"
+        }
+        return "replacement:\(str(entry["trigger"])):\(str(entry["scope"], fallback: "global"))"
     }
     private func correctionKey(_ entry: [String: Any]) -> String {
         "correction:\(str(entry["observed"])):\(str(entry["corrected"]))"
@@ -1685,12 +1716,22 @@ private struct ReplacementEditorCard: View {
     @State private var dirty: Bool = false
     @Environment(\.colorScheme) private var scheme
 
+    private var isBuiltIn: Bool {
+        guard let entry else { return false }
+        return (entry["is_builtin"] as? Bool) == true
+            || !(str(entry["seed_rule_id"])).isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Replacement")
+            Text(isBuiltIn ? "Built-in replacement" : "Replacement")
                 .font(.system(.headline, design: .rounded))
                 .foregroundStyle(JunoTheme.primaryText(scheme))
-            Text("Replace a phrase with fixed text. Great for emails, signatures, and common replies.")
+            Text(
+                isBuiltIn
+                    ? "This Juno default is editable and removable. Built-in replacements are inactive in Verbatim."
+                    : "Replace a phrase with fixed text. Great for emails, signatures, and common replies."
+            )
                 .font(.caption)
                 .foregroundStyle(JunoTheme.secondaryText(scheme))
 
@@ -1708,43 +1749,55 @@ private struct ReplacementEditorCard: View {
                     }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                label("Scope")
-                GenericGlyphPopoverPicker(
-                    selection: Binding(
-                        get: { scopePreset.rawValue },
-                        set: { newRaw in
-                            let newValue = JunoScopePreset(rawValue: newRaw) ?? .global
-                            scopePreset = newValue
-                            dirty = true
-                            switch newValue {
-                            case .global: scope = "global"
-                            case .custom: break
-                            }
-                            syncReplacementAddToStore()
-                        }
-                    ),
-                    options: JunoScopePreset.allCases.map {
-                        GenericGlyphPopoverPicker.Option(
-                            value: $0.rawValue,
-                            title: $0.label,
-                            subtitle: "",
-                            systemName: "app.badge"
-                        )
-                    }
-                )
-            }
-
-            if scopePreset == .custom {
+            if isBuiltIn {
                 VStack(alignment: .leading, spacing: 6) {
-                    label("App name")
-                    TextField("e.g. mail, messages, slack", text: $scope)
-                        .textFieldStyle(.roundedBorder)
-                        .focusEffectDisabled()
-                        .onChange(of: scope) { _ in
-                            dirty = true
-                            syncReplacementAddToStore()
+                    label("Collection")
+                    Text(str(entry?["scope_label"], fallback: "Juno defaults"))
+                        .font(.system(.body, design: .rounded).weight(.medium))
+                        .foregroundStyle(JunoTheme.primaryText(scheme))
+                    Label("Inactive in Verbatim", systemImage: "text.quote")
+                        .font(.caption)
+                        .foregroundStyle(JunoTheme.secondaryText(scheme))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    label("Scope")
+                    GenericGlyphPopoverPicker(
+                        selection: Binding(
+                            get: { scopePreset.rawValue },
+                            set: { newRaw in
+                                let newValue = JunoScopePreset(rawValue: newRaw) ?? .global
+                                scopePreset = newValue
+                                dirty = true
+                                switch newValue {
+                                case .global: scope = "global"
+                                case .custom: break
+                                }
+                                syncReplacementAddToStore()
+                            }
+                        ),
+                        options: JunoScopePreset.allCases.map {
+                            GenericGlyphPopoverPicker.Option(
+                                value: $0.rawValue,
+                                title: $0.label,
+                                subtitle: "",
+                                systemName: "app.badge"
+                            )
                         }
+                    )
+                }
+
+                if scopePreset == .custom {
+                    VStack(alignment: .leading, spacing: 6) {
+                        label("App name")
+                        TextField("e.g. mail, messages, slack", text: $scope)
+                            .textFieldStyle(.roundedBorder)
+                            .focusEffectDisabled()
+                            .onChange(of: scope) { _ in
+                                dirty = true
+                                syncReplacementAddToStore()
+                            }
+                    }
                 }
             }
 
@@ -1773,7 +1826,8 @@ private struct ReplacementEditorCard: View {
                         Button("Remove", role: .destructive) {
                             store.removeReplacement(
                                 trigger: str(entry["trigger"]),
-                                scope: str(entry["scope"], fallback: "global")
+                                scope: str(entry["scope"], fallback: "global"),
+                                seedRuleID: entry["seed_rule_id"] as? String
                             )
                         }
                         .junoSecondaryActionButton()
@@ -1787,7 +1841,10 @@ private struct ReplacementEditorCard: View {
                         store.replacementTrigger = newTrigger
                         store.replacementScope = newScope
                         store.replacementText = replacement
-                        if !oldTrigger.isEmpty, (oldTrigger != newTrigger || oldScope != newScope) {
+                        store.replacementSeedRuleID = str(entry?["seed_rule_id"])
+                        if !isBuiltIn,
+                           !oldTrigger.isEmpty,
+                           (oldTrigger != newTrigger || oldScope != newScope) {
                             store.removeReplacement(trigger: oldTrigger, scope: oldScope)
                         }
                         store.addReplacement()
@@ -1808,12 +1865,14 @@ private struct ReplacementEditorCard: View {
                 replacement = str(entry["replacement"])
                 scope = str(entry["scope"], fallback: "global")
                 scopePreset = (scope == "global") ? .global : .custom
+                store.replacementSeedRuleID = str(entry["seed_rule_id"])
                 dirty = false
             } else {
                 trigger = store.replacementTrigger
                 replacement = store.replacementText
                 scope = store.replacementScope.isEmpty ? "global" : store.replacementScope
                 scopePreset = (scope == "global") ? .global : .custom
+                store.replacementSeedRuleID = ""
                 dirty = true
                 syncReplacementAddToStore()
             }

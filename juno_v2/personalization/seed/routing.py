@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.personalization.seed.models import ActivePackSelection, JunoPersonalizationSeedLayer, RoutingPolicy
 
@@ -27,6 +29,21 @@ def _pack_ids_from_always(routing: RoutingPolicy) -> set[str]:
     return out
 
 
+def _surface_keyword_matches(haystack: str, keyword: str) -> bool:
+    """Match complete surface words/phrases, never arbitrary substrings.
+
+    The routing policy includes the one-character app name ``X``. Plain
+    substring matching made that route fire for unrelated surfaces such as
+    TextEdit and Xcode. Alphanumeric boundaries preserve intended matches like
+    ``X - Home`` and ``Google Docs`` without matching inside another word.
+    """
+    value = (keyword or "").strip().casefold()
+    if not value:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(value)}(?![a-z0-9])"
+    return re.search(pattern, haystack, flags=re.IGNORECASE) is not None
+
+
 def select_active_packs(
     seed: JunoPersonalizationSeedLayer,
     context: TypedContextBundle,
@@ -39,7 +56,7 @@ def select_active_packs(
     routed: set[str] = set()
     if hay.strip():
         for idx, route in enumerate(routing.surface_routes):
-            if any(kw in hay for kw in route.surface_keywords):
+            if any(_surface_keyword_matches(hay, kw) for kw in route.surface_keywords):
                 matched.append(idx)
                 routed.update(route.enable_packs)
 

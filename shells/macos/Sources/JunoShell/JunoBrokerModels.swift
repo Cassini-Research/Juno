@@ -239,6 +239,24 @@ struct SetupInstallLogEntry: Codable {
 
 // MARK: - Stats
 
+struct StatsAppResponse: Codable, Hashable, Identifiable {
+    let name: String
+    let words: Int
+
+    var id: String { name }
+}
+
+struct StatsPeriodResponse: Codable, Hashable, Identifiable {
+    let id: String
+    let totalWords: Int
+    let dictations: Int
+    let timeSavedS: Int
+    let bucketStartDates: [String]
+    let bucketEndDates: [String]
+    let wordsByBucket: [Int]
+    let topApps: [StatsAppResponse]
+}
+
 struct StatsSummaryResponse: Codable {
     let ok: Bool?
     let wordsToday: Int?
@@ -255,6 +273,9 @@ struct StatsSummaryResponse: Codable {
     let appsTodayTop: [String]?
     /// Top app name used today (for the "most in X" caption). Optional.
     let topAppToday: String?
+    /// Additive range summaries for the dedicated Stats page. Optional so
+    /// a newer shell can still show Home against an older local broker.
+    let periods: [StatsPeriodResponse]?
 }
 
 // MARK: - JunoBroker typed GET / POST decode

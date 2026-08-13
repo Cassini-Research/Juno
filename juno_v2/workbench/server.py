@@ -6935,7 +6935,18 @@ class WorkbenchApp:
         if err:
             return err
         with self._lock:
-            return {"ok": True, "entries": self.memory.replacements.raw()}
+            return {"ok": True, "entries": self._memory_replacement_entries()}
+
+    def _memory_replacement_entries(self) -> list[dict[str, Any]]:
+        user_entries = [dict(entry) for entry in self.memory.replacements.raw()]
+        for entry in user_entries:
+            entry.setdefault("is_builtin", False)
+        builtin_entries = (
+            self.juno_seed_runtime.list_default_replacements()
+            if self.juno_seed_runtime is not None
+            else []
+        )
+        return user_entries + builtin_entries
 
     def broker_memory_replacement_upsert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         err = self._memory_required()
@@ -6946,14 +6957,26 @@ class WorkbenchApp:
         if not trigger or not replacement:
             return {"ok": False, "error": "trigger_and_replacement_required"}
         with self._lock:
-            self.memory.add_replacement(
-                trigger=trigger,
-                replacement=replacement,
-                scope=str(payload.get("scope") or "global"),
-                case_sensitive=bool(payload.get("case_sensitive") or False),
-                source=str(payload.get("source") or "user_edit"),
-            )
-            entries = self.memory.replacements.raw()
+            seed_rule_id = str(payload.get("seed_rule_id") or "").strip()
+            if seed_rule_id:
+                if self.juno_seed_runtime is None:
+                    return {"ok": False, "error": "seed_runtime_unavailable"}
+                updated = self.juno_seed_runtime.update_default_replacement(
+                    seed_rule_id,
+                    trigger=trigger,
+                    replacement=replacement,
+                )
+                if not updated:
+                    return {"ok": False, "error": "seed_replacement_not_found"}
+            else:
+                self.memory.add_replacement(
+                    trigger=trigger,
+                    replacement=replacement,
+                    scope=str(payload.get("scope") or "global"),
+                    case_sensitive=bool(payload.get("case_sensitive") or False),
+                    source=str(payload.get("source") or "user_edit"),
+                )
+            entries = self._memory_replacement_entries()
         return {"ok": True, "entries": entries}
 
     def broker_memory_replacement_remove(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -6964,12 +6987,18 @@ class WorkbenchApp:
         if not trigger:
             return {"ok": False, "error": "trigger_required"}
         with self._lock:
-            removed = self.memory.remove_replacement(
-                trigger,
-                scope=str(payload.get("scope") or "global"),
-                case_sensitive=bool(payload.get("case_sensitive") or False),
-            )
-            entries = self.memory.replacements.raw()
+            seed_rule_id = str(payload.get("seed_rule_id") or "").strip()
+            if seed_rule_id:
+                if self.juno_seed_runtime is None:
+                    return {"ok": False, "error": "seed_runtime_unavailable"}
+                removed = self.juno_seed_runtime.remove_default_replacement(seed_rule_id)
+            else:
+                removed = self.memory.remove_replacement(
+                    trigger,
+                    scope=str(payload.get("scope") or "global"),
+                    case_sensitive=bool(payload.get("case_sensitive") or False),
+                )
+            entries = self._memory_replacement_entries()
         return {"ok": True, "removed": removed, "entries": entries}
 
     def broker_memory_snippet_list(self) -> Dict[str, Any]:

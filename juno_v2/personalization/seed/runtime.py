@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.contracts.memory import MemorySnapshot
@@ -124,7 +125,9 @@ class JunoSeedPersonalizationRuntime:
             promotion=self._seed.promotion,
             context_suppressed=suppressed,
         )
-        canon = seed_canonicalization_candidates(bundle)
+        canon = self._effective_seed_canonicalization(
+            seed_canonicalization_candidates(bundle)
+        )
         meta = {
             "active_pack_ids": list(selection.pack_ids),
             "matched_route_indices": list(selection.matched_route_indices),
@@ -139,6 +142,156 @@ class JunoSeedPersonalizationRuntime:
             canonicalization_tuples=canon,
             metadata=meta,
         )
+
+    @staticmethod
+    def seed_replacement_rule_id(
+        trigger: str,
+        replacement: str,
+        source: str,
+    ) -> str:
+        identity = "\0".join(
+            (
+                (source or "").strip().casefold(),
+                (trigger or "").strip().casefold(),
+                (replacement or "").strip().casefold(),
+            )
+        )
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+        return f"seed-replacement:{digest}"
+
+    @staticmethod
+    def _pack_name_from_source(source: str) -> str:
+        prefix = "seed_bias:"
+        value = (source or "").strip()
+        return value[len(prefix):] if value.startswith(prefix) else value
+
+    @staticmethod
+    def _pack_display_name(pack_name: str) -> str:
+        value = (pack_name or "").strip()
+        if value == "personal_entities":
+            return "Personal entities"
+        if value.startswith("domain_"):
+            value = value[len("domain_"):]
+        return value.replace("_", " ").strip().title() or "Juno defaults"
+
+    def _all_seed_canonicalization(self) -> tuple[tuple[str, str, str], ...]:
+        rows: list[tuple[str, str, str]] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        def add_entry(entry: Any, *, pack_name: str) -> None:
+            canonical = str(getattr(entry, "canonical", "") or "").strip()
+            if not canonical:
+                return
+            source = f"seed_bias:{pack_name}"
+            values = [
+                *(getattr(entry, "aliases", ()) or ()),
+                *(getattr(entry, "spoken_forms", ()) or ()),
+            ]
+            for value in values:
+                trigger = str(value or "").strip()
+                if (
+                    not trigger
+                    or trigger.casefold() == canonical.casefold()
+                    or len(trigger) < 3
+                    or len(trigger) > 48
+                ):
+                    continue
+                key = (trigger.casefold(), canonical.casefold(), source)
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append((trigger, canonical, source))
+
+        for pack_name in sorted(self._seed.packs):
+            for entry in self._seed.packs[pack_name]:
+                add_entry(entry, pack_name=pack_name)
+        for entry in self._seed.personal_entities:
+            add_entry(entry, pack_name="personal_entities")
+        rows.sort(key=lambda row: (row[0].casefold(), row[1].casefold(), row[2]))
+        return tuple(rows)
+
+    def _effective_seed_canonicalization(
+        self,
+        candidates: tuple[tuple[str, str, str], ...],
+    ) -> tuple[tuple[str, str, str], ...]:
+        disabled = self._learned.disabled_seed_replacement_ids()
+        overrides = self._learned.seed_replacement_overrides()
+        out: list[tuple[str, str, str]] = []
+        for trigger, replacement, source in candidates:
+            rule_id = self.seed_replacement_rule_id(trigger, replacement, source)
+            if rule_id in disabled:
+                continue
+            override = overrides.get(rule_id)
+            if override is not None:
+                trigger = override["trigger"]
+                replacement = override["replacement"]
+            out.append((trigger, replacement, source))
+        out.sort(key=lambda row: len(row[0]), reverse=True)
+        return tuple(out)
+
+    def list_default_replacements(self) -> list[dict[str, Any]]:
+        disabled = self._learned.disabled_seed_replacement_ids()
+        overrides = self._learned.seed_replacement_overrides()
+        rows: list[dict[str, Any]] = []
+        for original_trigger, original_replacement, source in self._all_seed_canonicalization():
+            rule_id = self.seed_replacement_rule_id(
+                original_trigger,
+                original_replacement,
+                source,
+            )
+            if rule_id in disabled:
+                continue
+            override = overrides.get(rule_id)
+            trigger = override["trigger"] if override is not None else original_trigger
+            replacement = (
+                override["replacement"] if override is not None else original_replacement
+            )
+            pack_name = self._pack_name_from_source(source)
+            rows.append(
+                {
+                    "trigger": trigger,
+                    "replacement": replacement,
+                    "scope": f"seed:{pack_name}",
+                    "scope_label": self._pack_display_name(pack_name),
+                    "case_sensitive": False,
+                    "source": "builtin_seed_override" if override is not None else "builtin_seed",
+                    "seed_rule_id": rule_id,
+                    "is_builtin": True,
+                    "inactive_in_verbatim": True,
+                    "original_trigger": original_trigger,
+                    "original_replacement": original_replacement,
+                }
+            )
+        return rows
+
+    def update_default_replacement(
+        self,
+        rule_id: str,
+        *,
+        trigger: str,
+        replacement: str,
+    ) -> bool:
+        known_ids = {
+            self.seed_replacement_rule_id(candidate, canonical, source)
+            for candidate, canonical, source in self._all_seed_canonicalization()
+        }
+        if rule_id not in known_ids:
+            return False
+        self._learned.set_seed_replacement_override(
+            rule_id,
+            trigger=trigger,
+            replacement=replacement,
+        )
+        return True
+
+    def remove_default_replacement(self, rule_id: str) -> bool:
+        known_ids = {
+            self.seed_replacement_rule_id(candidate, canonical, source)
+            for candidate, canonical, source in self._all_seed_canonicalization()
+        }
+        if rule_id not in known_ids:
+            return False
+        return self._learned.disable_seed_replacement(rule_id)
 
     def observe_transcript_for_context_entities(
         self,
