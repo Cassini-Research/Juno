@@ -66,6 +66,24 @@ def test_core_device_seed_includes_macbook_mishearing() -> None:
     assert ("mic book", "MacBook", "seed_bias:core_names") in attachment.canonicalization_tuples
 
 
+def test_slang_seed_keeps_irl_pronunciations_without_a_partial_phrase_replacement() -> None:
+    seed = load_seed_bundle(_seed_data_root())
+    runtime = JunoSeedPersonalizationRuntime(seed, memory_store=None)
+
+    attachment = runtime.build_seed_attachment(
+        snapshot=MemorySnapshot(schema_version=1),
+        context=TypedContextBundle(app_name="Discord", app_category="messaging"),
+        context_plane_suppression=None,
+    )
+
+    assert attachment.structured_bundle is not None
+    terms = [term for term in attachment.structured_bundle.terms if term.canonical == "IRL"]
+    assert len(terms) == 1
+    assert {"IRL", "I R L", "eye are ell", "in real life"} <= set(terms[0].bias_strings)
+    assert "in real" not in {value.casefold() for value in terms[0].bias_strings}
+    assert ("I R L", "IRL", "seed_bias:domain_colloquial_slang") in attachment.canonicalization_tuples
+
+
 def test_seed_canonicalization_repairs_macbook_mishearing() -> None:
     seed = load_seed_bundle(_seed_data_root())
     runtime = JunoSeedPersonalizationRuntime(seed, memory_store=None)

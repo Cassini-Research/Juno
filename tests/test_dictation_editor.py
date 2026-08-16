@@ -258,6 +258,35 @@ def test_explicit_structural_list_uses_deterministic_fallback_when_turn_planner_
     assert result.metadata["turn_plan"]["backend"] == "deterministic_structural_no_planner"
 
 
+def test_downstream_ai_prompt_stays_in_dictation_editor_lane() -> None:
+    backend = _EditorBackend("VERDICT: clean")
+    recorder = _Recorder()
+    service = WriterService(
+        config=WriterConfig(
+            enable_model_transforms=True,
+            enable_turn_planner=True,
+            dictation_editor_enabled=True,
+        ),
+        recorder=recorder,
+        backend=backend,
+    )
+    spoken = "Summarize this whole chat. 5 bullet points. What all was made?"
+
+    result = _process(
+        service,
+        spoken,
+        context=TypedContextBundle(app_name="AI Assistant", app_category="messaging"),
+    )
+
+    tasks = [
+        str((req.context_payload or {}).get("task") or req.metadata.get("kind") or "")
+        for req in backend.requests
+    ]
+    assert tasks == ["dictation_edit_v1"]
+    assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
+    assert result.output_text == spoken
+
+
 # --------------------------------------------------------------------------- #
 # Parser + applier
 # --------------------------------------------------------------------------- #

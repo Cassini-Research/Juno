@@ -13,6 +13,7 @@ from juno_core_v3.dictation.pipeline import (
     _collect_self_correction_cues,
     _final_adjudication_fast_skip_reason,
     _mode_policy_for_final_delivery,
+    _recover_nonwake_writer_noop,
     _reconcile_explicit_candidate_term_confusions,
     _reconcile_proper_nouns_from_live_hint,
     _reconcile_protected_term_near_misses,
@@ -88,6 +89,61 @@ def test_final_paste_guard_rejects_short_list_that_drops_opening_text() -> None:
         raw_text=source,
         writer_outcome=outcome,
     ) == "list_content_omitted"
+
+
+def test_targetless_nonwake_noop_falls_back_to_dictated_text() -> None:
+    source = "Summarize this whole chat. 5 bullet points. What all was made?"
+    outcome = WriterOutcome(
+        utterance_id="utt-targetless-nonwake",
+        action=WriterActionKind.NOOP,
+        metadata={"reason": "missing_selection_for_transform"},
+    )
+
+    recovered = _recover_nonwake_writer_noop(
+        outcome,
+        fallback_text=source,
+        wake_verified=False,
+        selection_present=False,
+    )
+
+    assert recovered is not None
+    assert recovered.action is WriterActionKind.PASS_THROUGH_COMMIT
+    assert recovered.output_text == source
+    assert recovered.learn_from_commit
+    assert recovered.metadata["reason"] == "nonwake_dictation_fallback"
+    assert recovered.metadata["original_noop_reason"] == "missing_selection_for_transform"
+
+
+def test_nonwake_noop_fallback_does_not_override_real_command_context() -> None:
+    outcome = WriterOutcome(
+        utterance_id="utt-command-context",
+        action=WriterActionKind.NOOP,
+        metadata={"reason": "turn_plan_ambiguous"},
+    )
+
+    assert _recover_nonwake_writer_noop(
+        outcome,
+        fallback_text="Summarize this",
+        wake_verified=True,
+        selection_present=False,
+    ) is outcome
+    assert _recover_nonwake_writer_noop(
+        outcome,
+        fallback_text="Summarize this",
+        wake_verified=False,
+        selection_present=True,
+    ) is outcome
+
+    intentional_noop = replace(
+        outcome,
+        metadata={"reason": "structure_mode_handles_items"},
+    )
+    assert _recover_nonwake_writer_noop(
+        intentional_noop,
+        fallback_text="Next bullet",
+        wake_verified=False,
+        selection_present=False,
+    ) is intentional_noop
 
 
 def test_oneshot_pipeline_restores_list_content_dropped_by_writer() -> None:
@@ -1740,10 +1796,10 @@ def test_writer_parser_does_not_misclassify_reply_dictation_as_transform() -> No
     assert intent.kind == WriterIntentKind.DICTATE
 
 
-def test_writer_parser_still_accepts_real_unscoped_transform_command() -> None:
+def test_writer_parser_accepts_transform_command_with_a_selection() -> None:
     intent = WriterIntentParser().parse(
         "Make this shorter.",
-        selection_present=False,
+        selection_present=True,
         active_mode=WriterMode.DEFAULT_SURFACE,
         mode_policy=BUILTIN_MODES["default_surface"],
     )

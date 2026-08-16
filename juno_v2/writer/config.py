@@ -29,7 +29,8 @@ class WriterConfig:
     # and use the deterministic structural plan (list/checklist rendering)
     # at zero model cost. Short utterances, selection-anchored commands, and
     # explicit structure requests keep the model planner: that is where
-    # transforms / memory mutations / message rendering actually live.
+    # free-form transforms / memory mutations / message rendering actually
+    # live. Exact bounded selection transforms bypass it deterministically.
     # Flip the env to restore the model planner on every utterance.
     turn_plan_dictation_enabled: bool = field(
         default_factory=lambda: _env_bool("JUNO_V2_TURN_PLAN_DICTATION", False)

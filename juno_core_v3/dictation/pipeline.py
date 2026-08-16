@@ -2100,6 +2100,24 @@ class OneShotDictationPipeline:
             if wake_status.verified and turn_plan_result is not None
             else adjudicated_text
         )
+        recovered_writer_outcome = _recover_nonwake_writer_noop(
+            writer_outcome,
+            fallback_text=writer_fallback_text,
+            wake_verified=wake_status.verified,
+            selection_present=bool((getattr(context, "selected_text", "") or "").strip()),
+        )
+        if recovered_writer_outcome is not writer_outcome:
+            original_reason = None if writer_outcome is None else writer_outcome.metadata.get("reason")
+            self.recorder.record(
+                TraceKind.WRITER,
+                "nonwake_writer_noop_fell_back_to_dictation",
+                {
+                    "utterance_id": uid,
+                    "original_reason": original_reason,
+                    "fallback_chars": len(writer_fallback_text or ""),
+                },
+            )
+            writer_outcome = recovered_writer_outcome
         writer_text, writer_action, writer_deterministic, memory_updated = _writer_to_surface_text(
             writer_outcome, fallback=writer_fallback_text
         )
@@ -4863,6 +4881,53 @@ def _writer_to_surface_text(
         return outcome.output_text or "", action.value, outcome.deterministic_used, outcome.memory_updated
     # NOOP / STATE_MUTATION / MODE_SWITCH / MEMORY_MUTATION -> surface pastes nothing
     return "", action.value, outcome.deterministic_used, outcome.memory_updated
+
+
+_RECOVERABLE_NONWAKE_NOOP_REASONS = frozenset({
+    "command_unhandled",
+    "missing_recent_target",
+    "missing_selection_for_transform",
+    "turn_plan_ambiguous",
+    "turn_plan_no_op",
+    "unsupported_intent",
+})
+
+
+def _recover_nonwake_writer_noop(
+    outcome: WriterOutcome | None,
+    *,
+    fallback_text: str,
+    wake_verified: bool,
+    selection_present: bool,
+) -> WriterOutcome | None:
+    """Preserve targetless non-wake speech instead of shipping empty text.
+
+    Exact state/memory commands keep their non-paste actions, and selection or
+    wake turns retain their existing ambiguity behavior.  Recovery is limited
+    to reasons that mean a supposed edit could not find a target or the model
+    could not establish a command.  In those cases the user's non-empty spoken
+    transcript is the safest deliverable.
+    """
+    if outcome is None or outcome.action is not WriterActionKind.NOOP:
+        return outcome
+    if wake_verified or selection_present or not (fallback_text or "").strip():
+        return outcome
+    reason = str(outcome.metadata.get("reason") or "")
+    if reason not in _RECOVERABLE_NONWAKE_NOOP_REASONS:
+        return outcome
+    return replace(
+        outcome,
+        action=WriterActionKind.PASS_THROUGH_COMMIT,
+        output_text=fallback_text,
+        learn_from_commit=True,
+        deterministic_used=False,
+        model_used=False,
+        metadata={
+            **outcome.metadata,
+            "reason": "nonwake_dictation_fallback",
+            "original_noop_reason": reason,
+        },
+    )
 
 
 _REDACTION_SENTINEL_RE = re.compile(r"<(?:url|email|phone|address|selection|redacted|private)>", re.I)

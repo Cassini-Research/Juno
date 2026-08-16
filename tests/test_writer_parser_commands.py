@@ -78,3 +78,56 @@ def test_replacement_command_round_trip_fields(parser: WriterIntentParser) -> No
     intent = parser.parse("change Chino to Juno")
     assert intent.trigger == "Chino"
     assert intent.replacement == "Juno"
+
+
+def test_downstream_ai_prompt_is_dictation_without_a_juno_target(
+    parser: WriterIntentParser,
+) -> None:
+    intent = parser.parse(
+        "Summarize this whole chat. 5 bullet points. What all was made?",
+        selection_present=False,
+    )
+
+    assert intent.kind == WriterIntentKind.DICTATE
+
+
+def test_selection_summary_prompt_remains_a_transform(
+    parser: WriterIntentParser,
+) -> None:
+    intent = parser.parse("Summarize this in five points", selection_present=True)
+
+    assert intent.kind == WriterIntentKind.MODEL_TRANSFORM
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "Summarize that",
+        "Summarize the last paragraph",
+        "Expand that with more detail",
+    ],
+)
+def test_explicit_recent_semantic_commands_remain_commands(
+    parser: WriterIntentParser,
+    command: str,
+) -> None:
+    intent = parser.parse(command, selection_present=False)
+
+    assert intent.kind != WriterIntentKind.DICTATE
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "This paragraph discusses bullet points.",
+        "I mentioned bullet points in this paragraph.",
+        "Bullet points are the topic of this paragraph.",
+    ],
+)
+def test_selected_prose_that_mentions_bullets_is_not_a_transform(
+    parser: WriterIntentParser,
+    prose: str,
+) -> None:
+    intent = parser.parse(prose, selection_present=True)
+
+    assert intent.kind == WriterIntentKind.DICTATE

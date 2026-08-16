@@ -80,7 +80,7 @@ def test_default_seed_replacements_are_visible_through_memory_endpoint(tmp_path:
     assert any(row["trigger"] == "my email" and not row["is_builtin"] for row in result["entries"])
     irl = next(row for row in result["entries"] if row.get("seed_rule_id") == _irl_rule(runtime)["seed_rule_id"])
     assert irl["trigger"] == "in real life"
-    assert irl["replacement"] == "irl"
+    assert irl["replacement"] == "IRL"
     assert irl["is_builtin"] is True
     assert irl["inactive_in_verbatim"] is True
 
@@ -88,7 +88,7 @@ def test_default_seed_replacements_are_visible_through_memory_endpoint(tmp_path:
 def test_seed_replacement_is_disabled_automatically_in_verbatim(tmp_path: Path) -> None:
     runtime, memory = _runtime(tmp_path)
 
-    assert _normalize(runtime, memory, mode="default_surface") == "irl"
+    assert _normalize(runtime, memory, mode="default_surface") == "IRL"
     assert _normalize(runtime, memory, mode="verbatim") == "in real life"
 
 

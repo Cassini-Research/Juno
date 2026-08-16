@@ -22,6 +22,7 @@ from juno_v2.contracts.writer import (
     WriterTransformRequest,
     WriterTransformResult,
 )
+from juno_v2.list_content import looks_like_list_surface, protect_list_render
 from juno_v2.memory.entity_policy import common_english_single_word
 from juno_v2.memory.store import JsonMemoryStore
 from juno_v2.memory.term_policy import learned_term_allowed
@@ -67,6 +68,11 @@ from juno_v2.writer.final_formatter import (
 )
 from juno_v2.writer.parser import WriterIntentParser
 from juno_v2.writer.punctuation_controller import apply_final_punctuation_floor
+from juno_v2.writer.selection_commands import (
+    recognize_selection_transform_command,
+    selection_command_allows_list_output,
+    selection_command_requests_content_preserving_list,
+)
 from juno_v2.writer.state import WriterState
 
 
@@ -188,6 +194,29 @@ class WriterService:
             if acquired and self.backend_release is not None:
                 self.backend_release()
 
+    def classify_dictation_vs_edit_selection(
+        self,
+        *,
+        spoken: str,
+        selection_excerpt: str,
+    ) -> dict[str, Any] | None:
+        """Run the optional backend classifier under the normal model lease."""
+
+        if self.backend is None:
+            return None
+        classify = getattr(self.backend, "classify_dictation_vs_edit_selection", None)
+        if not callable(classify):
+            return None
+        acquired = False
+        if self.backend_acquire is not None:
+            self.backend_acquire()
+            acquired = True
+        try:
+            return classify(spoken=spoken, selection_excerpt=selection_excerpt)
+        finally:
+            if acquired and self.backend_release is not None:
+                self.backend_release()
+
     def _rewrite_with_backend(self, req: WriterTransformRequest) -> WriterTransformResult:
         if self.backend is None:
             raise RuntimeError("writer backend unavailable")
@@ -251,11 +280,13 @@ class WriterService:
     ) -> TurnPlanResult | None:
         if not self.config.enable_turn_planner or self.backend is None or not self.config.enable_model_transforms:
             return None
-        if self._skip_model_planner_for_dictation(
+        skip_reason = self._model_planner_skip_reason(
             final_text=final_text,
             context=context,
             wake_verified=wake_verified,
-        ):
+            mode_policy=mode_policy,
+        )
+        if skip_reason is not None:
             structural = self._structural_turn_plan_for_dictation(
                 utterance_id=utterance_id,
                 final_text=final_text,
@@ -263,13 +294,19 @@ class WriterService:
             )
             if structural is not None:
                 return structural
-            if not structural_instruction_present(final_text):
+            if (
+                skip_reason in {
+                    "dictation_editor_owned_no_selection",
+                    "bounded_selection_transform_command",
+                }
+                or not structural_instruction_present(final_text)
+            ):
                 self.recorder.record(
                     TraceKind.WRITER,
                     "turn_plan_skipped",
                     {
                         "utterance_id": utterance_id,
-                        "reason": "long_dictation_without_structure",
+                        "reason": skip_reason,
                         "words": _approx_word_count(final_text),
                     },
                 )
@@ -381,31 +418,44 @@ class WriterService:
         self.recorder.record(TraceKind.WRITER, "turn_plan_generated", payload)
         return result
 
-    def _skip_model_planner_for_dictation(
+    def _model_planner_skip_reason(
         self,
         *,
         final_text: str,
         context: TypedContextBundle,
         wake_verified: bool,
-    ) -> bool:
-        """Decide whether this utterance is long plain dictation.
+        mode_policy: ModePolicy | None,
+    ) -> str | None:
+        """Return why this turn does not need the model planner.
 
-        Wake-verified turns (actions), short utterances (where transforms,
-        memory mutations, and message rendering live), and selection-anchored
-        commands keep the model planner. Long plain dictation skips it: the
-        renderer never uses planner text for plain dictation, and the decode
-        cost (8-28s observed on Qwen3-4B) lands on the paste critical path.
+        With the dictation editor enabled, non-wake text without a selection
+        is already owned by that editor and the deterministic parser floor.
+        Running a second semantic planner on a short prompt can reinterpret
+        content intended for the focused app as a Juno command. Exact bounded
+        selection transforms also skip the planner because their target and
+        operation are already known. Other selection and wake turns keep it.
+        The legacy long-dictation latency guard remains for configurations
+        where the editor is disabled.
         """
+        selected_text = (getattr(context, "selected_text", "") or "").strip()
+        if selected_text:
+            selection_commands_allowed = (
+                mode_policy is None
+                or getattr(mode_policy, "allow_selection_commands", True)
+            )
+            if selection_commands_allowed and recognize_selection_transform_command(final_text) is not None:
+                return "bounded_selection_transform_command"
+            return None
         if wake_verified or self.config.turn_plan_dictation_enabled:
-            return False
+            return None
+        if self.config.dictation_editor_enabled:
+            return "dictation_editor_owned_no_selection"
         limit = int(self.config.turn_plan_max_dictation_words or 0)
         if limit <= 0:
-            return False
+            return None
         if _approx_word_count(final_text) <= limit:
-            return False
-        if (getattr(context, "selected_text", "") or "").strip():
-            return False
-        return True
+            return None
+        return "long_dictation_without_structure"
 
     def _structural_turn_plan_for_dictation(
         self,
@@ -1864,7 +1914,23 @@ class WriterService:
                 )
                 return None
 
-        transformed = transform.get("transformed_text")
+        instruction = str(transform.get("instruction") or final_text)
+        bounded_command = recognize_selection_transform_command(final_text)
+        content_preservation: str | None = None
+        if (
+            target["target"] == "selection"
+            and bounded_command is not None
+            and bounded_command.lane == "deterministic"
+            and bounded_command.transform_kind
+        ):
+            # A pure structure change never needs regenerated model text.
+            transformed = self._deterministic_transform(
+                bounded_command.transform_kind,
+                target["text"],
+            )
+            content_preservation = "deterministic_selection_structure"
+        else:
+            transformed = transform.get("transformed_text")
         if not isinstance(transformed, str) or not transformed.strip():
             if bool(transform.get("requires_second_pass")):
                 transformed = self._run_turn_plan_transform_generation(
@@ -1881,6 +1947,28 @@ class WriterService:
         if not isinstance(transformed, str) or not transformed.strip():
             return None
 
+        source_is_list = looks_like_list_surface(target["text"])
+        output_is_list = looks_like_list_surface(transformed)
+        if output_is_list and not source_is_list:
+            if not selection_command_allows_list_output(final_text, instruction=instruction):
+                # Tone, grammar, clarity, and brevity transforms must not
+                # silently change a paragraph into bullets. Defer to the
+                # bounded parser/classifier lane instead of replacing text.
+                self.recorder.record(
+                    TraceKind.WRITER,
+                    "turn_plan_transform_structure_drift_rejected",
+                    {
+                        "utterance_id": utterance_id,
+                        "target": target["target"],
+                        "operation": str(transform.get("operation") or "none"),
+                    },
+                )
+                return None
+            if selection_command_requests_content_preserving_list(final_text, instruction=instruction):
+                protected = protect_list_render(target["text"], transformed)
+                transformed = protected.text
+                content_preservation = protected.mode
+
         out_text, replace_meta = _replace_commit_fields(target, transformed)
         return WriterOutcome(
             utterance_id=utterance_id,
@@ -1892,7 +1980,8 @@ class WriterService:
             structure_mode=self.state.structure_mode,
             model_used=True,
             metadata={
-                "instruction": str(transform.get("instruction") or final_text),
+                "instruction": instruction,
+                "content_preservation": content_preservation,
                 "turn_plan": self._turn_plan_metadata(result, validation=validation),
                 **replace_meta,
             },
@@ -2716,7 +2805,40 @@ class WriterService:
                 },
             )
         result = self._rewrite_with_backend(req)
-        out_text, replace_meta = _replace_commit_fields(target, result.text)
+        transformed_text = str(result.text or "").strip()
+        if not transformed_text:
+            return self._noop(
+                utterance_id,
+                'selection_transform_empty_output',
+                intent.kind.value,
+                extra={'target': target['target'], 'writer_backend': result.backend_name},
+            )
+        if (
+            _normalized_surface_key(transformed_text) == _normalized_surface_key(intent.raw_text)
+            and _normalized_surface_key(target['text']) != _normalized_surface_key(intent.raw_text)
+        ):
+            return self._noop(
+                utterance_id,
+                'selection_transform_command_echo',
+                intent.kind.value,
+                extra={'target': target['target'], 'writer_backend': result.backend_name},
+            )
+
+        content_preservation: str | None = None
+        if looks_like_list_surface(transformed_text) and not looks_like_list_surface(target['text']):
+            if not selection_command_allows_list_output(intent.raw_text, instruction=instruction):
+                return self._noop(
+                    utterance_id,
+                    'selection_transform_structure_drift',
+                    intent.kind.value,
+                    extra={'target': target['target'], 'writer_backend': result.backend_name},
+                )
+            if selection_command_requests_content_preserving_list(intent.raw_text, instruction=instruction):
+                protected = protect_list_render(target['text'], transformed_text)
+                transformed_text = protected.text
+                content_preservation = protected.mode
+
+        out_text, replace_meta = _replace_commit_fields(target, transformed_text)
         return WriterOutcome(
             utterance_id=utterance_id,
             action=WriterActionKind.TRANSFORM_COMMIT,
@@ -2731,6 +2853,7 @@ class WriterService:
                 'writer_backend': result.backend_name,
                 'writer_decode_ms': result.decode_ms,
                 'style_card': style_card.name if style_card is not None else None,
+                'content_preservation': content_preservation,
                 **result.metadata,
                 **replace_meta,
             },
@@ -3004,9 +3127,9 @@ class WriterService:
 
     def _deterministic_transform(self, transform_kind: str, text: str) -> str:
         if transform_kind == 'bullets':
-            return render_bullets(text)
+            return protect_list_render(text, render_bullets(text)).text
         if transform_kind == 'numbered':
-            return render_numbered(text)
+            return protect_list_render(text, render_numbered(text)).text
         if transform_kind == 'uppercase':
             return render_uppercase(text)
         if transform_kind == 'lowercase':
@@ -3043,6 +3166,12 @@ def _style_card_to_prompt(card: object | None) -> str:
 
 def _approx_word_count(text: str) -> int:
     return len((text or "").split())
+
+
+def _normalized_surface_key(text: str) -> str:
+    """Comparison key for detecting a model echo of the spoken command."""
+
+    return " ".join(re.findall(r"[a-z0-9]+", str(text or "").casefold()))
 
 
 def _is_no_touch_context(context: TypedContextBundle) -> bool:

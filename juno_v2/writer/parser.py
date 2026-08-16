@@ -6,6 +6,7 @@ from juno_v2.commands.grammar import parse_deterministic_command
 from juno_v2.contracts.modes import ModePolicy
 from juno_v2.contracts.writer import WriterIntent, WriterIntentKind, WriterMode
 from juno_v2.language.normalize import summarize_scripts
+from juno_v2.writer.selection_commands import recognize_selection_transform_command
 
 _COMMAND_STARTERS = frozenset({
     'make', 'rewrite', 'fix', 'convert', 'turn', 'change', 'add', 'remember',
@@ -15,9 +16,11 @@ _COMMAND_STARTERS = frozenset({
     'start', 'stop', 'end', 'begin', 'next', 'continue',
 })
 _MAX_COMMAND_WORDS = 32
-_MAX_SELECTION_FALLBACK_WORDS = 14
-_MAX_SELECTION_TRANSFORM_WORDS = 64
 _SEMANTIC_TARGET_RE = re.compile(r"\b(?:that|this|it|selection|selected)\b", re.I)
+_RECENT_SEMANTIC_TARGET_RE = re.compile(
+    r"\b(?:that|the\s+last\s+(?:sentence|line|paragraph|answer|thing|paste|text))\b",
+    re.I,
+)
 
 _INLINE_FORMATTING_RULES = [
     (re.compile(r'^new\s+paragraph\.?$', re.I), 'new_paragraph', '\n\n'),
@@ -63,49 +66,6 @@ _ADD_REPLACEMENT_RULES = [
     (re.compile(rf"^{_WAKE_PREFIX}(?:replace|change)\s+[\"']?(.+?)[\"']?\s+(?:to|with)\s+[\"']?(.+?)[\"']?\s*$", re.I), 1, 2),
 ]
 
-_DETERMINISTIC_TRANSFORMS = [
-    (re.compile(r'\b(?:(?:convert|turn|change|put)\s+)?(this|it)\s*(?:into\s+)?(bullet\s+points?|bullets|a\s+bulleted\s+list|a\s+list)\b', re.I), 'bullets'),
-    (re.compile(r'\b(?:(?:convert|turn|change)\s+)?(this|it)\s*(?:into\s+)?(numbered|a\s+numbered\s+list)\b', re.I), 'numbered'),
-    (re.compile(r'\b(?:uppercase\s+)?(this|it)\s*(?:in\s+)?uppercase\b|\buppercase\s+(this|it)\b', re.I), 'uppercase'),
-    (re.compile(r'\b(?:lowercase\s+)?(this|it)\s*(?:in\s+)?lowercase\b|\blowercase\s+(this|it)\b', re.I), 'lowercase'),
-    (re.compile(r'\b(?:title\s*case|titlecase)\s+(this|it)\b|\b(this|it)\s+(?:in\s+)?(?:title\s*case|titlecase)\b', re.I), 'title_case'),
-]
-
-_MODEL_TRANSFORMS = [
-    (re.compile(r'\b(?:(?:make|rewrite)\s+)?(this|it)\s+(?:more\s+)?(formal|professional|polished)\b|\b(make|rewrite)\s+(this|it)\s+(?:more\s+)?(formal|professional|polished)\b', re.I), 'Rewrite in a formal, professional tone. Preserve meaning.'),
-    (re.compile(r'\b(?:(?:make|rewrite)\s+)?(this|it)\s+(?:more\s+)?(casual|informal|friendly|conversational)\b|\b(make|rewrite)\s+(this|it)\s+(?:more\s+)?(casual|informal|friendly|conversational)\b', re.I), 'Rewrite in a casual, friendly tone. Preserve meaning.'),
-    (re.compile(r'\b(fix|correct|clean\s+up)\s+(the\s+)?(grammar|spelling|punctuation|errors|typos)\b', re.I), 'Fix grammar, spelling, and punctuation. Preserve meaning exactly.'),
-    (re.compile(r'\b(summarize|summarise|give\s+me\s+a\s+summary|create\s+a\s+summary)\b', re.I), 'Summarize the selected text into concise key points.'),
-    (re.compile(r'\b(simplify|make\s+(this|it)\s+simpler|make\s+(this|it)\s+easier\s+to\s+read)\b', re.I), 'Simplify the selected text. Preserve meaning.'),
-    (re.compile(r'\b(improve|tighten|polish)\s+(this|it)\b', re.I), 'Improve clarity and flow. Preserve meaning.'),
-    (re.compile(r'\b(make|keep)\s+(this|it)\s+(more\s+)?(concise|shorter|brief|short)\b', re.I), 'Make the selected text more concise while preserving meaning.'),
-    (re.compile(r'\b(make|expand)\s+(this|it)\s+(more\s+)?(longer|detailed|elaborate|comprehensive)\b', re.I), 'Expand the selected text with more detail and context.'),
-    # Phase 6a — close the silent-failure gap on six catalog transforms
-    # whose spoken commands previously routed to DICTATE (translate /
-    # email / slack / notes / checklist) or to semantic_candidate
-    # (clearer). These map to the corresponding entries in
-    # ``juno_v2/transforms/catalog.py``.
-    #
-    # All anchored at ``^`` so they only fire when the utterance LEADS
-    # with a command verb (after polite-prefix strip). Anchoring stops
-    # mid-sentence false positives like
-    #   "let's make this clearer in the next meeting agenda"   (9 words)
-    #   "we should turn this into an email campaign"            (8 words)
-    # from being misclassified as transform commands. Existing
-    # _MODEL_TRANSFORMS above are NOT anchored — that's a pre-existing
-    # parser behaviour we don't change in this PR.
-    #
-    # ``(this|it)`` is optional so both forms work:
-    #   "rewrite this as an email"   (with target pronoun)
-    #   "rewrite as an email"        (without — natural shorthand)
-    (re.compile(r'^(?:make|rewrite)\s+(this|it)\s+(?:more\s+)?(clearer|easier\s+to\s+understand)\b|^clarify\s+(this|it)\b', re.I), 'Improve clarity. Preserve meaning.'),
-    (re.compile(r'^(?:rewrite|turn|make)(?:\s+(?:this|it))?(?:\s+(?:into|as|for))?\s+(?:an?\s+)?email\b', re.I), 'Rewrite as a polished email.'),
-    (re.compile(r'^(?:rewrite|turn|make)(?:\s+(?:this|it))?(?:\s+(?:into|as|for))?\s+(?:an?\s+)?slack(?:\s+message)?\b', re.I), 'Rewrite as a concise Slack message.'),
-    (re.compile(r'^(?:rewrite|turn|make)(?:\s+(?:this|it))?(?:\s+(?:into|as|for))?\s+(?:an?\s+)?(?:structured\s+)?notes\b', re.I), 'Rewrite as structured notes with bullets where helpful.'),
-    (re.compile(r'^(?:rewrite|turn|make)(?:\s+(?:this|it))?(?:\s+(?:into|as|for))?\s+(?:an?\s+)?checklist\b', re.I), 'Rewrite as a short checklist.'),
-]
-
-
 # Languages we can recognize as the target of a "translate to ..." command.
 # The list is conservative — only common written languages — so we don't
 # misinterpret (e.g.) a person's name or a topic as a translation target.
@@ -128,10 +88,6 @@ _TRANSLATE_LANGS = (
 # the same reason as the patterns above — without the anchor a
 # sentence like "I'll send the translation to spanish team" would
 # misroute to MODEL_TRANSFORM.
-_TRANSLATE_PATTERN = re.compile(
-    rf'^translate\s+(?:(?:this|it)\s+)?to\s+(?P<lang>{_TRANSLATE_LANGS})\b',
-    re.IGNORECASE,
-)
 _TRANSLATE_RECENT_PATTERN = re.compile(
     rf'^translate\s+(?:that|the\s+last\s+(?:sentence|line|paragraph|answer|thing))\s+to\s+(?P<lang>{_TRANSLATE_LANGS})\b',
     re.IGNORECASE,
@@ -230,7 +186,14 @@ class WriterIntentParser:
         if not _english_command_safe(text, words, language_hint=language_hint):
             return WriterIntent(kind=WriterIntentKind.DICTATE, raw_text=text, metadata={'reason': 'non_command_language'})
 
-        selection_transform = _selection_transform_intent(text, words, selection_present=selection_present)
+        selection_commands_allowed = (
+            mode_policy is None
+            or getattr(mode_policy, 'allow_selection_commands', True)
+        )
+        selection_transform = _selection_transform_intent(
+            text,
+            selection_present=selection_present and selection_commands_allowed,
+        )
         if selection_transform is not None:
             return selection_transform
 
@@ -294,20 +257,11 @@ class WriterIntentParser:
         #   - recent-target commands ("rewrite that", "delete the last sentence") —
         #     gated by mode_policy.allow_recent_target_commands. Verbatim sets
         #     this True per c0feb74 ("verbatim allows explicit user commands").
-        #   - LLM-rewrite commands (RECENT_MODEL_TRANSFORMS / MODEL_TRANSFORMS) —
-        #     additionally gated by mode_policy.allow_model_insert_rewrite. Verbatim
-        #     sets this False so the model never silently rewrites.
-        #   - non-targeted deterministic transforms ("make this a bullet list" with
-        #     no recent/selection qualifier) — these reshape the active dictation
-        #     and are blocked when command_behavior == 'strict_narrow'. Verbatim
-        #     uses strict_narrow so they stay blocked.
+        #   - recent LLM-rewrite commands — additionally gated by
+        #     mode_policy.allow_model_insert_rewrite.
         #
-        # The selection_present block below runs unconditionally and is governed
-        # by mode_policy.allow_selection_commands. Verbatim sets that True too.
-        narrow_command_behavior = active_mode == WriterMode.VERBATIM or (
-            mode_policy is not None
-            and getattr(mode_policy, 'command_behavior', '') == 'strict_narrow'
-        )
+        # Exact selected-text transforms were resolved above by the shared
+        # bounded recognizer and mode_policy.allow_selection_commands.
         allow_recent_target = (
             mode_policy is None
             or getattr(mode_policy, 'allow_recent_target_commands', True)
@@ -316,8 +270,6 @@ class WriterIntentParser:
             mode_policy is None
             or getattr(mode_policy, 'allow_model_insert_rewrite', True)
         )
-        allow_unscoped_transform = _unscoped_transform_command_allowed(words)
-
         if allow_recent_target:
             for pattern, transform_kind in _RECENT_DETERMINISTIC_TRANSFORMS:
                 if pattern.search(text):
@@ -338,40 +290,11 @@ class WriterIntentParser:
                     if pattern.search(text):
                         return WriterIntent(kind=WriterIntentKind.RECENT_MODEL_TRANSFORM, raw_text=text, instruction=instruction)
 
-        if not narrow_command_behavior and allow_unscoped_transform:
-            for pattern, transform_kind in _DETERMINISTIC_TRANSFORMS:
-                if pattern.search(text):
-                    return WriterIntent(kind=WriterIntentKind.DETERMINISTIC_TRANSFORM, raw_text=text, transform_kind=transform_kind)
-
-            if allow_model_rewrite:
-                # Translate (selection / unscoped): capture the target
-                # language so it reaches the LLM instruction. Phase 6a.
-                m_translate = _TRANSLATE_PATTERN.search(text)
-                if m_translate is not None:
-                    lang = m_translate.group("lang").strip()
-                    return WriterIntent(
-                        kind=WriterIntentKind.MODEL_TRANSFORM,
-                        raw_text=text,
-                        instruction=f"Translate faithfully to {lang}. Preserve meaning and tone where possible.",
-                    )
-                for pattern, instruction in _MODEL_TRANSFORMS:
-                    if pattern.search(text):
-                        return WriterIntent(kind=WriterIntentKind.MODEL_TRANSFORM, raw_text=text, instruction=instruction)
-
-        if selection_present and _selection_fallback_allowed(text, words):
-            lower_text = text.casefold()
-            if 'bullet' in lower_text:
-                return WriterIntent(kind=WriterIntentKind.DETERMINISTIC_TRANSFORM, raw_text=text, transform_kind='bullets', metadata={'reason': 'selection_fallback'})
-            if 'numbered' in lower_text:
-                return WriterIntent(kind=WriterIntentKind.DETERMINISTIC_TRANSFORM, raw_text=text, transform_kind='numbered', metadata={'reason': 'selection_fallback'})
-            if any(token in lower_text for token in ('formal', 'professional', 'polished')):
-                return WriterIntent(kind=WriterIntentKind.MODEL_TRANSFORM, raw_text=text, instruction='Rewrite in a formal, professional tone. Preserve meaning.', metadata={'reason': 'selection_fallback'})
-            if any(token in lower_text for token in ('casual', 'informal', 'friendly', 'conversational')):
-                return WriterIntent(kind=WriterIntentKind.MODEL_TRANSFORM, raw_text=text, instruction='Rewrite in a casual, friendly tone. Preserve meaning.', metadata={'reason': 'selection_fallback'})
-            if any(token in lower_text for token in ('grammar', 'spelling', 'punctuation', 'typos')):
-                return WriterIntent(kind=WriterIntentKind.MODEL_TRANSFORM, raw_text=text, instruction='Fix grammar, spelling, and punctuation. Preserve meaning exactly.', metadata={'reason': 'selection_fallback'})
-
-        if _looks_like_semantic_command(text, words):
+        if _looks_like_semantic_command(
+            text,
+            words,
+            selection_present=selection_present,
+        ):
             return WriterIntent(
                 kind=WriterIntentKind.COMMAND_RESULT,
                 raw_text=text,
@@ -403,101 +326,57 @@ def _strip_polite_prefix(text: str) -> str:
 
 def _selection_transform_intent(
     text: str,
-    words: list[str],
     *,
     selection_present: bool,
 ) -> WriterIntent | None:
     if not selection_present:
         return None
-    if len(words) > _MAX_SELECTION_TRANSFORM_WORDS:
+    command = recognize_selection_transform_command(text)
+    if command is None:
         return None
-    first = re.sub(r'[^a-z]', '', words[0].lower()) if words else ""
-    if first not in _COMMAND_STARTERS:
-        return None
-    if _SEMANTIC_TARGET_RE.search(text) is None:
-        return None
-    lowered = text.casefold()
-    if re.search(r"\b(?:bullet\s+points?|bullets|bulleted\s+list|a\s+list)\b", lowered):
+    metadata = {
+        'reason': 'selection_transform_command',
+        'transform_id': command.transform_id,
+        'normalized_command': command.normalized_command,
+        'allows_list_output': command.allows_list_output,
+        'content_preserving_list': command.content_preserving_list,
+    }
+    if command.lane == 'deterministic':
         return WriterIntent(
             kind=WriterIntentKind.DETERMINISTIC_TRANSFORM,
             raw_text=text,
-            transform_kind='bullets',
-            metadata={'reason': 'selection_transform_command'},
+            transform_kind=command.transform_kind,
+            metadata=metadata,
         )
-    if re.search(r"\b(?:numbered|numbered\s+list)\b", lowered):
-        return WriterIntent(
-            kind=WriterIntentKind.DETERMINISTIC_TRANSFORM,
-            raw_text=text,
-            transform_kind='numbered',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('formal', 'professional', 'polished')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Rewrite in a formal, professional tone. Preserve meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('casual', 'informal', 'friendly', 'conversational')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Rewrite in a casual, friendly tone. Preserve meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('grammar', 'spelling', 'punctuation', 'typos')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Fix grammar, spelling, and punctuation. Preserve meaning exactly.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('concise', 'shorter', 'brief')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Make the text more concise. Preserve meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('clearer', 'clarity')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Improve clarity. Preserve meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('summarize', 'summarise', 'summary')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Summarize into concise key points. Preserve core meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('expand', 'longer', 'detailed', 'elaborate')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Expand with useful detail while preserving meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    if any(token in lowered for token in ('simplify', 'simpler', 'easier to read')):
-        return WriterIntent(
-            kind=WriterIntentKind.MODEL_TRANSFORM,
-            raw_text=text,
-            instruction='Simplify the text. Preserve meaning.',
-            metadata={'reason': 'selection_transform_command'},
-        )
-    return None
+    return WriterIntent(
+        kind=WriterIntentKind.MODEL_TRANSFORM,
+        raw_text=text,
+        instruction=command.instruction,
+        metadata=metadata,
+    )
 
 
-def _looks_like_semantic_command(text: str, words: list[str]) -> bool:
+def _looks_like_semantic_command(
+    text: str,
+    words: list[str],
+    *,
+    selection_present: bool,
+) -> bool:
     if not words:
+        return False
+    # Selected free-form edits are resolved by the model-backed selection
+    # gate. Exact transforms were already handled by the bounded recognizer.
+    # Keeping this heuristic for selected text would reintroduce substring
+    # false positives such as "Make this shorter is what she said".
+    if selection_present:
         return False
     starter = re.sub(r'[^a-z]', '', words[0].lower())
     if starter not in _COMMAND_STARTERS:
         return False
     lowered = text.casefold()
     if _SEMANTIC_TARGET_RE.search(text) is None:
+        return False
+    if _RECENT_SEMANTIC_TARGET_RE.search(text) is None:
         return False
     semantic_markers = (
         'concise', 'shorter', 'brief', 'clearer', 'clarity', 'formal', 'professional',
@@ -506,26 +385,3 @@ def _looks_like_semantic_command(text: str, words: list[str]) -> bool:
         'bullet', 'numbered', 'expand', 'detailed', 'simplify', 'simpler',
     )
     return any(marker in lowered for marker in semantic_markers)
-
-
-def _unscoped_transform_command_allowed(words: list[str]) -> bool:
-    if not words:
-        return False
-    starter = re.sub(r'[^a-z]', '', words[0].lower())
-    return starter in _COMMAND_STARTERS
-
-
-def _selection_fallback_allowed(text: str, words: list[str]) -> bool:
-    if len(words) > _MAX_SELECTION_FALLBACK_WORDS:
-        return False
-    if _SEMANTIC_TARGET_RE.search(text):
-        return True
-    lowered = text.casefold()
-    return any(
-        marker in lowered
-        for marker in (
-            'selected text',
-            'highlighted text',
-            'selection',
-        )
-    )

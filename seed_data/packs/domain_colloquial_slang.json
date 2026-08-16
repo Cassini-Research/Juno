@@ -694,13 +694,15 @@
     "notes": ""
   },
   {
-    "canonical": "irl",
+    "canonical": "IRL",
     "kind": "slang_term",
     "aliases": [
       "in real life"
     ],
     "spoken_forms": [
-      "irl"
+      "irl",
+      "I R L",
+      "eye are ell"
     ],
     "tags": [
       "slang",
@@ -712,7 +714,7 @@
     ],
     "source": "manual_seed",
     "confidence": 1.0,
-    "notes": ""
+    "notes": "Includes acronym pronunciations and the complete phrase only; the partial phrase 'in real' is intentionally excluded."
   },
   {
     "canonical": "it is giving",

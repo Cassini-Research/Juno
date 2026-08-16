@@ -342,6 +342,12 @@ def list_render_omits_substantive_text(source_text: str, rendered_text: str) -> 
     return protected.text.strip() != str(rendered_text or "").strip()
 
 
+def looks_like_list_surface(text: str) -> bool:
+    """Return whether text is already rendered as a line-oriented list."""
+
+    return _parse_list_surface(str(text or "").strip()) is not None
+
+
 def _parse_list_surface(text: str) -> tuple[str, list[str]] | None:
     prefix_lines: list[str] = []
     bodies: list[str] = []
