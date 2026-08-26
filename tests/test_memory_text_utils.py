@@ -14,9 +14,14 @@ from juno_v2.memory.ai_dictionary import AI_GLOSSARY, is_ai_glossary_term
 from juno_v2.memory.correction_diff import diff_pasted_segment
 from juno_v2.memory.fold import fold_key, fold_match_pattern
 from juno_v2.memory.hallucination import (
+    LOOP_RUN_MAX_UNIT_LEN,
     LOOP_RUN_MIN_ALNUM_REPEATS,
     LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+    LOOP_SPACED_TOKEN_MIN_CHARS,
+    LOOP_SPACED_TOKEN_MIN_REPEATS,
     _has_repeated_unit_run,
+    _has_spaced_token_run,
+    _spaced_token_core,
     looks_like_hallucination,
     strip_adjacent_low_signal_word_duplicates,
     strip_repeated_stock_hallucination_tail,
@@ -413,6 +418,284 @@ def test_hallucination_spares_legitimate_repetition_at_any_confidence(
         assert not looks_like_hallucination(text, confidence=confidence), (
             f"false positive at confidence={confidence}"
         )
+
+
+# --------------------------------------------------------------------- #
+# looks_like_hallucination — case (8): spaced token runs (issue #83)
+# --------------------------------------------------------------------- #
+#
+# Follow-up to issue #69/#72. Whisper emits its degenerate loops with a
+# leading space at least as often as without one ("CU CU CU …"), and that
+# shape fell through everything:
+#   * case (7) requires alnum units to be whitespace-free;
+#   * case (2) (dominant token) and case (4) (substring loop) are gated on
+#     the confidence floor, which a long confident utterance clears;
+#   * case (5) (distinct-token ratio) is coverage-based, and a tail loop on
+#     80 words of real speech never reaches 85 % of the token stream.
+# Issue #83 also reported units of 5+ characters escaping entirely because
+# LOOP_RUN_MAX_UNIT_LEN was 4. Every assertion below is on synthetic text.
+
+
+def _spaced_repeats_needed(token: str) -> int:
+    """Smallest run length of *token* that clears both spaced-run bars."""
+    return max(
+        LOOP_SPACED_TOKEN_MIN_REPEATS,
+        -(-LOOP_SPACED_TOKEN_MIN_CHARS // len(token)),  # ceil division
+    )
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+@pytest.mark.parametrize("loop", ["CU " * 220, "CU, " * 220, "Cu cu CU " * 74])
+def test_hallucination_spaced_token_loop_survives_good_confidence(
+    confidence: float | None, loop: str
+) -> None:
+    # The issue #83 repro: ~80 words of ordinary prose then a spaced loop.
+    # Was True only at confidence None / < -1.0 before this change.
+    text = _REAL_PREFIX_80_WORDS + " " + loop
+    assert sum(1 for c in text if c.isalnum()) / len(text) > 0.4
+    assert looks_like_hallucination(text, confidence=confidence)
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+@pytest.mark.parametrize("unit", ["thank", '" ," ', "Dagmen "])
+def test_hallucination_long_unit_loop_is_detected(
+    confidence: float | None, unit: str
+) -> None:
+    # Units of 5-7 characters, past the old LOOP_RUN_MAX_UNIT_LEN of 4.
+    assert looks_like_hallucination(
+        _REAL_PREFIX_80_WORDS + " " + unit * 40, confidence=confidence
+    )
+
+
+def test_loop_run_max_unit_len_covers_five_to_eight_char_units() -> None:
+    # Issue #83 asked for 6-8; the 5-char cases above depend on it.
+    assert 6 <= LOOP_RUN_MAX_UNIT_LEN <= 8
+
+
+@pytest.mark.parametrize("token", ["CU", "xyz", "quux", "thank", "Dagmengdola"])
+def test_spaced_token_run_at_and_below_threshold(token: str) -> None:
+    needed = _spaced_repeats_needed(token)
+    at_threshold = _REAL_PREFIX_80_WORDS + " " + (token + " ") * needed
+    below = _REAL_PREFIX_80_WORDS + " " + (token + " ") * (needed - 1)
+    assert _has_spaced_token_run(at_threshold)
+    assert not _has_spaced_token_run(below)
+
+
+def test_spaced_token_run_needs_both_bars() -> None:
+    # A two-character token at exactly the repeat minimum is only 24 chars
+    # of repetition — below LOOP_SPACED_TOKEN_MIN_CHARS, so it is spared.
+    assert not _has_spaced_token_run("CU " * LOOP_SPACED_TOKEN_MIN_REPEATS)
+    # ... and a five-character token clears both bars at the same count.
+    assert _has_spaced_token_run("Dagme " * LOOP_SPACED_TOKEN_MIN_REPEATS)
+
+
+def test_spaced_token_run_ignores_punctuation_around_the_token() -> None:
+    # "CU, CU. CU;" is the same loop with decoder punctuation sprinkled in.
+    assert _has_spaced_token_run("CU, CU. CU; " * 80)
+
+
+# --------------------------------------------------------------------- #
+# case (8): no word allow-list, and Unicode-correct token cores
+# --------------------------------------------------------------------- #
+#
+# The 2026-08-26 re-review rejected the first cut of case (8), which paired a
+# 12-repeat bar with a list of words allowed to repeat. Two independent
+# faults, both fixed by the same move (raise the bars, delete the list):
+#   1. the list cannot be completed for English, let alone for the twelve
+#      languages in DEFAULT_SUPPORTED_LANGUAGES;
+#   2. a list is the wrong instrument for "is this deliberate repetition" —
+#      the repeat count is.
+# Separately, the core extractor stripped every character str.isalnum() calls
+# false, which ate Devanagari combining marks ("नहीं" -> "नह") and made
+# different words compare equal.
+
+_NO_ALLOW_LIST_TOKENS = [
+    # English: every one of these was a false positive under the old bars.
+    "please", "sorry", "hello", "test", "check", "again", "wait", "more",
+    "sure", "help", "right", "really", "never", "next", "amen", "run",
+    "shh", "brr", "hehe", "hahaha", "lol", "bravo", "encore",
+    # Identifier-ish words a developer dictates or types.
+    "null", "cell", "true", "TODO", "END",
+    # Laughter spellings, which cannot be enumerated.
+    "ha", "haha", "hahaha", "hehe", "heh",
+    # Non-English one-word answers: es, de, fr, ja, ar, hi, zh, ko, pt, id.
+    "sí", "vale", "muy", "ja", "nein", "oui", "non", "はい", "لا",
+    "नहीं", "हाँ", "不", "네", "sim", "não", "ya", "tidak",
+]
+
+
+@pytest.mark.parametrize("token", _NO_ALLOW_LIST_TOKENS)
+@pytest.mark.parametrize("repeats", [12, 15, 20])
+def test_deliberate_repetition_is_spared_without_an_allow_list(
+    token: str, repeats: int
+) -> None:
+    # Nothing here is on any list; the bars alone must spare all of it.
+    text = _REAL_PREFIX_80_WORDS + " " + (token + " ") * repeats
+    assert not _has_spaced_token_run(text)
+    assert not looks_like_hallucination(text, confidence=-0.3)
+
+
+def test_spaced_token_run_has_no_word_allow_list() -> None:
+    # Guard against the allow-list creeping back in: an ordinary English word
+    # and a Spanish one must both be judged purely on the bars, so each fires
+    # once repeated far enough and not before.
+    for token in ("hello", "sí"):
+        needed = _spaced_repeats_needed(token)
+        assert not _has_spaced_token_run((token + " ") * (needed - 1))
+        assert _has_spaced_token_run((token + " ") * needed)
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+@pytest.mark.parametrize(
+    "token",
+    ["बहुत", "नहीं", "हाँ", "لا", "はい", "不", "sí", "Dagmengdola"],
+)
+def test_non_latin_spaced_loops_are_detected(
+    token: str, confidence: float | None
+) -> None:
+    # The whole point of the category-based core: a Hindi/Arabic/Japanese
+    # loop must be caught, not silently excluded because str.isalnum() is
+    # False for a word carrying a combining mark.
+    #
+    # Repeats are derived from the thresholds rather than hardcoded, because
+    # the character bar makes the needed count depend on token length: a
+    # 4-char word like "बहुत" needs 30, a single glyph like "不" needs 120.
+    # Real loops run to hundreds either way (the issue's own example is 220).
+    repeats = _spaced_repeats_needed(token) * 2
+    text = _REAL_PREFIX_80_WORDS + " " + (token + " ") * repeats
+    assert _has_spaced_token_run(text)
+    assert looks_like_hallucination(text, confidence=confidence)
+
+
+@pytest.mark.parametrize(
+    "token,expected_core",
+    [
+        ("CU,", "cu"),
+        ('"CU"', "cu"),
+        ("«CU»", "cu"),
+        ("---", ""),
+        ("नहीं", "नहीं"),  # combining marks preserved
+        ("नहीं।", "नहीं"),  # Devanagari danda is P*, so it goes
+        ("हाँ", "हाँ"),
+        ("चलो", "चलो"),
+        ("はい。", "はい"),
+        ("不、", "不"),
+    ],
+)
+def test_spaced_token_core_strips_only_punctuation(
+    token: str, expected_core: str
+) -> None:
+    assert _spaced_token_core(token) == expected_core
+
+
+def test_spaced_token_core_keeps_distinct_words_distinct() -> None:
+    # "चल" and "चलो" are different words. The old isalnum()-based strip
+    # reduced both to "चल" and fused them into one 30-token "run".
+    assert _spaced_token_core("चल") != _spaced_token_core("चलो")
+    assert not _has_spaced_token_run("चल चलो " * 15)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "cu cu- " * 15,  # 30-token run, but only 60 chars: under the bar
+        "get_value " * 30,  # inner P* -> not word-like
+        "user.name " * 30,
+        "1,alpha,10 " * 40,
+        "https://example.com/a " * 30,
+        "50% " * 40,
+        "0 " * 120,  # number-only core
+        "२ " * 120,  # ... in any script
+        "2026 " * 40,
+    ],
+)
+def test_spaced_token_run_rejects_non_word_and_numeric_cores(text: str) -> None:
+    assert not _has_spaced_token_run(text)
+
+
+# Legitimate repetition-heavy text. Asserted on the detector itself because
+# case (8) is unconditional: some of these strings are flagged by OTHER
+# (pre-existing, confidence-gated) checks, but the new one must never fire.
+_LEGITIMATE_SPACED_REPEAT_TEXTS = [
+    # Laughter, song syllables and chants transcribed literally.
+    "and then he said ha ha ha ha ha ha ha ha and everyone laughed hard",
+    "he was laughing for ages " + "ha " * 40 + "and then finally stopped",
+    "we sang " + "na " * 40 + "hey jude until the very end of the song",
+    "the chorus goes " + "la " * 30 + "and then it repeats one more time",
+    "the crowd chanted " + "go " * 24 + "as the runners came round the bend",
+    # One-word answers repeated for emphasis.
+    "no no no no that is not at all what I meant when I said it earlier",
+    "no no no no no no no no no no no no stop the deploy right this second",
+    "she just kept saying " + "yeah " * 20 + "without listening to any of it",
+    "he said " + "okay " * 16 + "before we could even finish the sentence",
+    "that is a very very very good idea and we should do it soon",
+    # Onomatopoeia.
+    "the alarm went " + "beep " * 20 + "until somebody finally unplugged it",
+    "the clock went " + "tick " * 20 + "all night long and I could not sleep",
+    "he kept saying " + "blah " * 20 + "and none of it meant anything at all",
+    # Dictated digits and spelled-out letters.
+    "the row reads " + "0 " * 40 + "and then a single one at the very end",
+    "the pin is " + "1 " * 30 + "which is obviously not a real pin code",
+    "it is spelled a b c d e f g h i j k l m n o p q r s t u v w x y z",
+    # Structured text: internal punctuation is the tell.
+    "here is the csv id,name,value " + "1,alpha,10 " * 40 + "end of file",
+    "the links are " + "https://example.com/a " * 20 + "and that is all",
+    "the fields are " + "user.name " * 20 + "in the exported record set",
+    "a markdown table |---|---|---|---|---|---|---|---| with columns",
+    "a thematic break " + "* " * 30 + " and then the next paragraph here",
+    "section one " + "- " * 40 + " section two body text goes here now",
+    # Phrase-level repeats: no identical *consecutive* token run.
+    "thank you for watching " * 50,
+    "make sure that we " * 30,
+    # Ordinary prose.
+    _REAL_PREFIX_80_WORDS,
+    _REAL_PREFIX_25_WORDS,
+]
+
+
+@pytest.mark.parametrize("text", _LEGITIMATE_SPACED_REPEAT_TEXTS)
+def test_spaced_token_run_spares_legitimate_text(text: str) -> None:
+    assert not _has_spaced_token_run(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "no no no no that is not at all what I meant when I said it earlier",
+        "and then he said ha ha ha ha ha ha ha ha and everyone laughed hard",
+        "we sang " + "na " * 40 + "hey jude until the very end of the song",
+        "the row reads " + "0 " * 40 + "and then a single one at the very end",
+        "it is spelled a b c d e f g h i j k l m n o p q r s t u v w x y z",
+        "here is the csv id,name,value "
+        + "1,alpha,10 " * 12
+        + "end of file and that is everything we exported today",
+        "the links are "
+        + "https://example.com/a " * 12
+        + "and that is all of them for now",
+        "the fields are " + "user.name " * 20 + "in the exported record set",
+        "the alarm went " + "beep " * 20 + "until somebody finally unplugged it",
+    ],
+)
+def test_hallucination_spares_legitimate_spaced_repetition_at_good_confidence(
+    text: str,
+) -> None:
+    # The guard as a whole, at the confidence where case (8) is the only
+    # loop check still armed.
+    #
+    # Longer variants of the structured-text cases (``"1,alpha,10" × 40``,
+    # ``"https://example.com/a" × 20``) are deliberately NOT asserted here:
+    # they are flagged by the pre-existing, unrelated distinct-token-ratio
+    # rule (case 5) on the base commit too. What must hold is that case (8)
+    # adds nothing — that is asserted directly above on
+    # :func:`_has_spaced_token_run`, which sees the ×40 forms and spares them.
+    assert not looks_like_hallucination(text, confidence=-0.3)
+
+
+def test_repeated_unit_run_spares_legitimate_text_at_wider_unit_len() -> None:
+    # Raising LOOP_RUN_MAX_UNIT_LEN must not turn separators, tables or
+    # dictated structured text into loops.
+    for text in _LEGITIMATE_REPEATED_UNIT_TEXTS + _LEGITIMATE_SPACED_REPEAT_TEXTS:
+        assert not _has_repeated_unit_run(text), text[:60]
 
 
 # --------------------------------------------------------------------- #

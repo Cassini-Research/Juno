@@ -9,6 +9,7 @@ identical.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 
 
@@ -21,10 +22,13 @@ from collections import Counter
 HALLUCINATION_CONFIDENCE_FLOOR = -1.0
 
 #: Longest repeating unit :func:`_has_repeated_unit_run` considers. Whisper's
-#: degenerate loops repeat units of one to four characters (``","``, ``", "``,
-#: ``"CU"``). Longer repeated units are phrase-level loops, already covered by
-#: the distinct-ratio and n-gram checks.
-LOOP_RUN_MAX_UNIT_LEN = 4
+#: degenerate loops repeat units of one to eight characters (``","``, ``", "``,
+#: ``"CU"``, ``"thank"``, ``'" ," '``). Longer repeated units are phrase-level
+#: loops, already covered by the distinct-ratio and n-gram checks. Cost is
+#: linear in this bound (one O(len(text)) sweep per unit length), and the
+#: 2026-08-26 review found units of five and six characters in the wild that
+#: a bound of four could not see at all.
+LOOP_RUN_MAX_UNIT_LEN = 8
 
 #: Consecutive repeats of a punctuation-only unit that mark a loop. Eight
 #: back-to-back copies of ``","`` / ``", "`` / ``,`` has no legitimate
@@ -48,12 +52,45 @@ LOOP_RUN_MIN_ALNUM_REPEATS = 16
 #: units no matter how long the run gets.
 _LOOPABLE_PUNCTUATION: frozenset[str] = frozenset(",\"'!?;:")
 
+#: Consecutive identical whitespace-separated tokens that mark a spaced loop
+#: (``"CU CU CU …"``). Whisper emits its degenerate token loops with a leading
+#: space at least as often as without one, and the spaced shape is invisible to
+#: :func:`_has_repeated_unit_run` (which requires whitespace-free alnum units)
+#: *and* to every confidence-gated word check when the whole-buffer
+#: ``avg_logprob`` is good.
+#:
+#: Set high on purpose. The first cut of this check used twelve repeats plus a
+#: list of words allowed to repeat ("ha", "no", "okay", …), and the 2026-08-26
+#: review destroyed it: the list can never be complete for English
+#: (``"please" × 12``, ``"hello" × 12``, ``"test" × 15`` from a mic check,
+#: ``"hahaha" × 12`` while ``"haha"`` was exempt) let alone for the twelve
+#: languages Juno supports (``"sí" × 30``, ``"はい" × 30``, ``"لا" × 30``).
+#: A word list is the wrong instrument. The right one is a bar so high that no
+#: deliberate repetition reaches it, which makes the list unnecessary: real
+#: Whisper loops run to *hundreds* of repeats, so they clear 24 by an order of
+#: magnitude while a frustrated speaker saying "no" twenty times does not.
+LOOP_SPACED_TOKEN_MIN_REPEATS = 24
+
+#: Repeated characters a spaced run must *also* reach, i.e.
+#: ``repeats × len(token)``. The count alone is not conservative enough for
+#: short tokens, where long legitimate runs do occur (laughter, chants,
+#: one-word answers, a dictated digit sequence): 120 characters means a
+#: two-character token needs 60 repeats, a four-character token 30, and a
+#: five-character-or-longer token the bare 24. Both bars must be cleared.
+LOOP_SPACED_TOKEN_MIN_CHARS = 120
+
+#: Unicode general-category initials allowed inside a word-like token core:
+#: letters, numbers, and **combining marks**. Marks matter — ``"बहुत"`` is
+#: ``ब ह ु त`` where ``ु`` is ``Mn``, so ``str.isalnum()`` is False for the
+#: whole word and a category-blind check silently excluded most Hindi.
+_WORD_CORE_CATEGORIES: frozenset[str] = frozenset({"L", "N", "M"})
+
 
 def looks_like_hallucination(text: str, *, confidence: float | None = None) -> bool:
     """Return True if *text* looks like ASR hallucination, not real speech.
 
     See ``juno_v2/memory/store.py`` history for the full rationale; we
-    preserve the behaviour exactly. Six shapes the rule catches:
+    preserve the behaviour exactly. Eight shapes the rule catches:
 
     1. All-short-token noise (``"A.D. A.D. A.D."``)
     2. Dominant substantive token (``"thu thu thu thu thu"``)
@@ -84,6 +121,11 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
        degenerate tail averages to ~-0.27 and every confidence-gated check
        switches itself off exactly when the loop is present. See
        :func:`_has_repeated_unit_run`.
+    8. The same loop rendered *with* spaces (``"CU CU CU …"`` × 220), which
+       case (7) cannot see because its alnum units must be whitespace-free.
+       Judged on the number of identical consecutive tokens rather than on
+       coverage or confidence, so a degenerate tail on a long confident
+       utterance still fires. See :func:`_has_spaced_token_run`.
 
     And two legitimate shapes it spares:
 
@@ -165,6 +207,16 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
     # metadata at all. Left as a follow-up: this check is purely structural
     # and needs no audio-side signal to be safe.
     if _has_repeated_unit_run(text):
+        return True
+
+    # Case (8): the same loop with spaces between the copies
+    # (``"CU CU CU …"``). Case (7) deliberately requires alnum units to be
+    # whitespace-free, and every check that *would* see a spaced repeat —
+    # the dominant-token rule (2) and the distinct-ratio rule (5) — is either
+    # confidence-gated or coverage-based, so a spaced tail loop on a long
+    # confident utterance falls through both. Count-based and
+    # confidence-independent for the same reason as case (7).
+    if _has_spaced_token_run(text):
         return True
 
     # Case (4): substring loops. Whisper hallucinates patterns like
@@ -258,20 +310,28 @@ def _repeated_unit_is_loop(
     Two shapes qualify, and nothing else does:
 
     * **Punctuation-only** units built solely from
-      :data:`_LOOPABLE_PUNCTUATION` (plus spaces). Legitimate long runs of
-      punctuation are all made of characters outside that set — ``"..."``,
-      ``"----"``, ``"===="``, ``"* * *"``, ``"…"``, repeated emoji — so they
-      never reach the count test.
+      :data:`_LOOPABLE_PUNCTUATION` and whitespace, inner whitespace
+      included — ``'","'`` and ``'" ," '`` are the same loop rendered with
+      and without spacing. Legitimate long runs of punctuation are all made
+      of characters outside that set — ``"..."``, ``"----"``, ``"===="``,
+      ``"* * *"``, ``"…"``, repeated emoji — so they never reach the count
+      test, at any spacing.
     * **Multi-character, whitespace-free alphanumeric** units (``"CU"``,
-      ``"ansa"``). The whitespace-free requirement is what separates this
-      from ordinary speech: a spaced repeat (``"na na na …"``) is fully
-      visible to the word-repetition and distinct-token-ratio checks above,
-      whereas a spaceless run is exactly the shape that collapses into one
-      giant ``\\b\\w+\\b`` token and evades them. Single-character units are
-      excluded because their legitimate long runs are real — an elongated
-      vowel (``"Aaaaaaaaaaaaaaah"``) or a repeated digit in a dictated
-      number (``"1111111111111111"``) — and the single-character
-      hallucination shape is already covered by the char-dominance check.
+      ``"ansa"``, ``"thank"``). The whitespace-free requirement keeps this
+      check narrow: a spaceless run collapses into one giant ``\\b\\w+\\b``
+      token and is invisible to every word-level check, so it can be judged
+      on repeat count alone. A *spaced* repeat (``"CU CU CU …"``) is a real
+      loop shape too, but it is visible as tokens and therefore needs a
+      different, more conservative bar — see :func:`_has_spaced_token_run`,
+      which owns that case. (It is emphatically *not* true that the
+      word-repetition and distinct-token-ratio checks above already cover
+      spaced repeats: both are disabled or diluted exactly when the loop is
+      a tail on a long, confidently-decoded utterance — issue #83.)
+      Single-character units are excluded because their legitimate long runs
+      are real — an elongated vowel (``"Aaaaaaaaaaaaaaah"``) or a repeated
+      digit in a dictated number (``"1111111111111111"``) — and the
+      single-character hallucination shape is already covered by the
+      char-dominance check.
     """
     core = unit.strip()
     if not core:
@@ -280,7 +340,7 @@ def _repeated_unit_is_loop(
         if len(unit) < 2 or any(char.isspace() for char in unit):
             return False
         return repeats >= min_alnum_repeats
-    if all(char in _LOOPABLE_PUNCTUATION for char in core):
+    if all(char in _LOOPABLE_PUNCTUATION or char.isspace() for char in core):
         return repeats >= min_punctuation_repeats
     return False
 
@@ -335,6 +395,128 @@ def _has_repeated_unit_run(
             # phase-shifted run starting mid-unit is still seen, without
             # rescanning the whole run from every offset.
             index = cursor - unit_len + 1
+    return False
+
+
+def _spaced_token_core(token: str) -> str:
+    """Strip wrapping *punctuation* from *token* and casefold what is left.
+
+    ``"CU,"`` -> ``"cu"``, ``'"CU"'`` -> ``"cu"``, ``"---"`` -> ``""``,
+    ``"नहीं।"`` -> ``"नहीं"``.
+
+    Only characters in Unicode general category ``P*`` are stripped, and only
+    from the ends. Stripping "everything ``str.isalnum()`` says is not
+    alphanumeric" — the first cut of this function — silently ate combining
+    marks (``Mn``/``Mc``), turning ``"नहीं"`` into ``"नह"`` and ``"चलो"`` into
+    ``"चल"``, which both mangled Hindi and made two *different* words compare
+    equal. Category ``P*`` also covers the punctuation the other scripts
+    actually use — ``।``, ``。``, ``、``, ``؟``, ``«»`` — which an ASCII
+    strip-list would have missed.
+
+    Inner punctuation is deliberately left in place: ``"1,alpha,10"`` keeps
+    its commas and is rejected by :func:`_spaced_token_is_loopable`, which is
+    what keeps dictated CSV/code/URL rows out of the spaced-run check.
+    """
+    if token.isascii() and token.isalnum():
+        return token.casefold()  # fast path: a plain ASCII word
+    start = 0
+    end = len(token)
+    while start < end and unicodedata.category(token[start])[0] == "P":
+        start += 1
+    while end > start and unicodedata.category(token[end - 1])[0] == "P":
+        end -= 1
+    return token[start:end].casefold()
+
+
+def _spaced_token_is_loopable(core: str) -> bool:
+    """Return True if a long run of *core* would mean a loop, not speech.
+
+    A core qualifies when it is *word-like*: every character is a letter, a
+    number or a combining mark (:data:`_WORD_CORE_CATEGORIES`) and at least
+    one is a letter. That single rule carries three exclusions:
+
+    * **punctuation or symbol runs** — ``"- - - -"``, ``"| | |"``, ``"* * *"``
+      have no letters at all;
+    * **structured text** — a repeated CSV row (``"1,alpha,10"``), code
+      fragment (``"get_value"``), URL (``"https://example.com/a"``) or
+      dotted path (``"user.name"``) carries inner ``P*`` characters. That
+      inner punctuation is the tell: this is structured text being dictated
+      or pasted, not a decoder loop;
+    * **number-only cores** — reading a matrix row or an account number
+      aloud produces ``"0 0 0 0 …"`` legitimately, in any script
+      (``"२ २ २"`` too).
+
+    Note what is deliberately *absent*: a list of words allowed to repeat.
+    See :data:`LOOP_SPACED_TOKEN_MIN_REPEATS` for why — such a list cannot be
+    completed for one language, never mind twelve, so the repeat/character
+    bars carry the whole load instead.
+    """
+    if not core:
+        return False
+    if core.isascii():
+        # Equivalent to the loop below for ASCII (no combining marks exist in
+        # that range), but ~10x cheaper on the overwhelmingly common case.
+        return core.isalnum() and not core.isdigit()
+    has_letter = False
+    for char in core:
+        category = unicodedata.category(char)[0]
+        if category not in _WORD_CORE_CATEGORIES:
+            return False
+        if category == "L":
+            has_letter = True
+    return has_letter
+
+
+def _has_spaced_token_run(
+    text: str,
+    *,
+    min_repeats: int = LOOP_SPACED_TOKEN_MIN_REPEATS,
+    min_chars: int = LOOP_SPACED_TOKEN_MIN_CHARS,
+) -> bool:
+    """Return True if *text* contains a long run of one identical token.
+
+    The spaced sibling of :func:`_has_repeated_unit_run`, and the answer to
+    issue #83: Whisper emits ``"CU CU CU …"`` at least as readily as
+    ``"CUCUCU…"``, but the spaced form is whitespace-separated, so
+    :func:`_has_repeated_unit_run` skips it (its alnum units must be
+    whitespace-free) while the word-level checks that *can* see it are
+    confidence-gated (case 2) or coverage-based (case 5). A degenerate tail
+    on 90 s of confident speech clears the confidence floor and never reaches
+    the coverage bar, so nothing fired.
+
+    Like case (7) this judges on **count**, not coverage or confidence:
+    a run of ``min_repeats`` identical consecutive tokens totalling
+    ``min_chars`` repeated characters. Both bars must be cleared, and both
+    are set far above deliberate repetition rather than just above it — see
+    :data:`LOOP_SPACED_TOKEN_MIN_REPEATS`. The deliberate consequence is that
+    a *short* loop (``"CU " × 30``) is let through: a guard that discards a
+    real utterance is worse than one that misses a short degenerate tail, and
+    the confidence-gated checks still cover the low-confidence case.
+
+    Tokens are compared by their punctuation-stripped, casefolded core, so
+    ``"CU, CU, CU,"`` reads as one run; :func:`_spaced_token_is_loopable`
+    then rejects cores that are not word-like.
+
+    Cost is O(len(text)): one split, one pass.
+    """
+    tokens = text.split()
+    if len(tokens) < min_repeats:
+        return False
+    run_core = ""
+    run_len = 0
+    run_loopable = False
+    for token in tokens:
+        core = _spaced_token_core(token)
+        if core and core == run_core:
+            run_len += 1
+        else:
+            run_core = core
+            run_len = 1
+            run_loopable = _spaced_token_is_loopable(core)
+        if not run_loopable:
+            continue
+        if run_len >= min_repeats and run_len * len(run_core) >= min_chars:
+            return True
     return False
 
 
@@ -952,6 +1134,8 @@ __all__ = [
     "LOOP_RUN_MAX_UNIT_LEN",
     "LOOP_RUN_MIN_ALNUM_REPEATS",
     "LOOP_RUN_MIN_PUNCTUATION_REPEATS",
+    "LOOP_SPACED_TOKEN_MIN_CHARS",
+    "LOOP_SPACED_TOKEN_MIN_REPEATS",
     "LOW_YIELD_CONFIDENCE_FLOOR",
     "LOW_YIELD_MAX_WORDS",
     "LOW_YIELD_MIN_AUDIO_MS",
