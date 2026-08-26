@@ -45,6 +45,14 @@ class WriterConfig:
     # model planner entirely (reason ``plain_dictation_without_intent``).
     # Any cue keeps the planner, so the gate can only cost latency, never a
     # dropped command.
+    #
+    # Two scope notes: the cue lexicon is English, so the gate only applies
+    # when the turn's language hint is absent or starts with "en" — a
+    # non-English turn always keeps the planner. And like the word gate
+    # above, this gate is disabled wholesale by JUNO_V2_TURN_PLAN_DICTATION=1
+    # (which restores the model planner on every utterance); the repair skip
+    # and the paste-path deadline below are independent of that flag and
+    # still apply.
     turn_plan_plain_dictation_skip: bool = field(
         default_factory=lambda: _env_bool("JUNO_V2_TURN_PLAN_PLAIN_SKIP", True)
     )
@@ -54,6 +62,10 @@ class WriterConfig:
     # the same mechanism the dictation editor uses; backends without a
     # streaming loop ignore it. 0 disables the budget. Wake/selection turns
     # never get a budget — truncating those would drop actions or transforms.
+    # Applies whatever JUNO_V2_TURN_PLAN_DICTATION is set to: that flag only
+    # governs which utterances reach the planner, not how long a reached
+    # decode may run. A decode stopped on this budget is reported as
+    # decode_timed_out in the turn_plan_generated trace.
     turn_plan_paste_deadline_ms: int = field(
         default_factory=lambda: _env_int("JUNO_V2_TURN_PLAN_PASTE_DEADLINE_MS", 6000)
     )

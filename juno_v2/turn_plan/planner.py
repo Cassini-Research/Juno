@@ -183,6 +183,10 @@ class TurnPlanResult:
     validation_errors_before_repair: list[str] = field(default_factory=list)
     validation_warnings_before_repair: list[str] = field(default_factory=list)
     normalization_notes: list[str] = field(default_factory=list)
+    # True when the backend stopped this decode on its ``deadline_ms`` budget
+    # rather than on an end-of-sequence token — a truncated decode is the
+    # usual cause of an invalid_json plan on the paste path.
+    decode_timed_out: bool = False
 
     @property
     def ok(self) -> bool:
@@ -383,6 +387,7 @@ class TurnPlanner:
 
 def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
     raw = str(getattr(result, "text", "") or "")
+    timed_out = bool((getattr(result, "metadata", None) or {}).get("timed_out"))
     obj, parse_notes = _json_object_with_notes(raw)
     if obj is None:
         return TurnPlanResult(
@@ -392,6 +397,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
             decode_ms=float(getattr(result, "decode_ms", 0.0) or 0.0),
             raw_output=raw,
             errors=["invalid_json"],
+            decode_timed_out=timed_out,
         )
     if not _looks_like_turn_plan_object(obj):
         return TurnPlanResult(
@@ -402,6 +408,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
             raw_output=raw,
             errors=["invalid_turn_plan_object"],
             normalization_notes=parse_notes,
+            decode_timed_out=timed_out,
         )
     obj.setdefault("schema_version", "turn_plan_v1")
     return TurnPlanResult(
@@ -411,6 +418,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
         decode_ms=float(getattr(result, "decode_ms", 0.0) or 0.0),
         raw_output=raw,
         normalization_notes=parse_notes,
+        decode_timed_out=timed_out,
     )
 
 
@@ -524,11 +532,16 @@ _PLANNER_INTENT_CUE_RE = re.compile(
     r"rewrite|reword|rephrase|revise|edit|change|convert|translate|"
     r"summari[sz]e|summari[sz]ed|shorten|shorter|longer|expand|condense|tighten|"
     r"simplify|polish|proofread|fix|correct|clean|tidy|turn|undo|redo|replace|scratch|"
+    # Bare edit imperatives that rewrite the recent commit without any of the
+    # verbs above ("cap that", "strike that", "clear that") — the planner can
+    # answer these with a recent_commit target, so they must reach it.
+    r"strike|erase|clear|repeat|cut|trim|swap|"
     # --- structure / formatting -------------------------------------------
     r"bullet|bullets|bulleted|numbered|list|lists|itemi[sz]e|outline|table|"
     r"heading|headings|paragraph|paragraphs|line|indent|"
-    r"bold|italic|underline|capitali[sz]e|uppercase|lowercase|caps|"
-    r"format|formatted|formatting|quote|"
+    r"bold|italic|italics|italici[sz]e|underline|capitali[sz]e|uppercase|lowercase|"
+    r"cap|caps|"
+    r"format|formatted|formatting|quote|quotes|"
     # --- memory / snippets / addressing Juno -------------------------------
     r"juno|remember|teach|spell|spelled|spelt|snippet|snippets|vocabulary|glossary|"
     r"term|terms|please"

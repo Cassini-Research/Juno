@@ -4521,6 +4521,7 @@ def test_paste_path_invalid_json_commits_without_a_repair_decode() -> None:
         "reason": "text_delivery_guaranteed",
         "status": "invalid_json",
         "decode_ms": result.decode_ms,
+        "decode_timed_out": False,
     }
 
 
@@ -4647,6 +4648,166 @@ def test_wake_and_selection_planner_decodes_have_no_budget() -> None:
     )
 
     assert [(req.metadata or {}).get("deadline_ms") for req in backend.requests] == [None] * 4
+
+
+_RECENT_COMMIT = "the quick brown fox"
+
+
+class _RecentCommitRepairBackend:
+    """turn_planning_v1 -> not json; turn_repair_v1 -> a recent_commit transform.
+
+    Mirrors the production shape behind issue #75: the first planner decode is
+    unparseable and only the repair pass carries the edit. ``_turn_plan_target``
+    honours ``target.kind="recent_commit"`` whatever the wording, so any edit
+    imperative can land here — the repair skip must not cut it off.
+    """
+
+    def __init__(self, source: str, transformed: str) -> None:
+        self.transformed = transformed
+        self.plan = {
+            "schema_version": "turn_plan_v1",
+            "utterance_kind": "transform",
+            "corrected_transcript": {"text": source, "corrections": [], "literal_spans": []},
+            "target": {"kind": "recent_commit", "confidence": 0.9},
+            "render_plan": {"render_kind": "plain", "markdown_allowed": False, "content_units": []},
+            "transform": {
+                "operation": "rewrite",
+                "instruction": source,
+                "transformed_text": transformed,
+                "requires_second_pass": False,
+            },
+            "actions": [],
+            "snippets": [],
+            "memory_candidates": [],
+            "safety": {"commit_policy": "commit", "execute_policy": "no_execute"},
+            "uncertainties": [],
+        }
+        self.requests: list[WriterTransformRequest] = []
+
+    def warm(self) -> None:
+        return None
+
+    def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+        self.requests.append(req)
+        task = str((req.context_payload or {}).get("task") or req.metadata.get("kind") or "")
+        if task == "turn_repair_v1":
+            text = json.dumps(self.plan)
+        elif task == "transform_generation_v1":
+            text = json.dumps({"transformed_text": self.transformed})
+        else:
+            text = "Sure! {not json"
+        return WriterTransformResult(utterance_id=req.utterance_id, text=text, backend_name="fake-qwen")
+
+
+def _recent_commit_context() -> TypedContextBundle:
+    return TypedContextBundle(
+        app_name="Notes",
+        app_category="docs",
+        metadata={
+            "last_committed_text": _RECENT_COMMIT,
+            "last_committed_start": 0,
+            "last_committed_end": len(_RECENT_COMMIT),
+        },
+    )
+
+
+def _run_edit_command(text: str, transformed: str) -> Any:
+    backend = _RecentCommitRepairBackend(text, transformed)
+    service = _paste_path_service(backend, _Recorder())
+    outcome = service.process_transcript(
+        utterance_id="utt-edit",
+        final_text=text,
+        raw_text=text,
+        context=_recent_commit_context(),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+    return outcome, backend
+
+
+def test_bare_edit_imperatives_keep_their_repair_and_still_transform() -> None:
+    # None of these carry a _TRANSFORM_VERB_RE verb, but the planner can
+    # answer any of them with a recent_commit target — so the repair pass
+    # must still run and its transform must still land, exactly as on
+    # develop. Skipping it would paste the command literally.
+    cases = [
+        ("Cap that", "THE QUICK BROWN FOX"),
+        ("Delete that", "the quick brown"),
+        ("Undo", "the slow grey fox"),
+        ("Put quotes around that", '"the quick brown fox"'),
+        ("make that shorter", "quick fox"),
+    ]
+    for source, transformed in cases:
+        outcome, backend = _run_edit_command(source, transformed)
+        planner_tasks = [t for t in _tasks(backend) if t.startswith("turn_")]
+        assert planner_tasks == ["turn_planning_v1", "turn_repair_v1"], source
+        assert outcome.action == WriterActionKind.TRANSFORM_COMMIT, source
+        assert outcome.output_text == transformed, source
+
+
+def test_edit_imperatives_reach_the_model_planner_at_all() -> None:
+    # The cue lexicon must carry these verbs too — an utterance skipped by
+    # the intent gate never reaches the repair pass in the first place.
+    for text in (
+        "Cap that",
+        "Delete that",
+        "Undo",
+        "Put quotes around that",
+        "Strike that",
+        "Erase that",
+        "Clear that",
+        "Italicize that",
+        "Repeat that",
+    ):
+        backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+        _plan_turn(_paste_path_service(backend, _Recorder()), text)
+        assert _tasks(backend)[:1] == ["turn_planning_v1"], text
+
+
+def test_plain_dictation_still_skips_alongside_the_edit_imperatives() -> None:
+    for text in (
+        "And prepare a summary as well.",
+        "I think the deployment went fine yesterday.",
+        "The customer said the latency was much better today.",
+        "It rained all afternoon in the valley.",
+        "Thanks for the update, talk soon.",
+    ):
+        backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+        recorder = _Recorder()
+        assert _plan_turn(_paste_path_service(backend, recorder), text) is None, text
+        assert backend.requests == [], text
+        payload = _trace_payload(recorder, "turn_plan_skipped")
+        assert payload is not None and payload["reason"] == "plain_dictation_without_intent", text
+
+
+def test_backend_decode_timeout_is_surfaced_in_the_turn_plan_trace() -> None:
+    class _TimedOutBackend:
+        requests: list[WriterTransformRequest] = []
+
+        def warm(self) -> None:
+            return None
+
+        def rewrite(self, req: WriterTransformRequest) -> WriterTransformResult:
+            return WriterTransformResult(
+                utterance_id=req.utterance_id,
+                text='{"schema_version": "turn_plan_v1", "utteranc',
+                backend_name="fake-qwen",
+                metadata={"timed_out": True},
+            )
+
+    recorder = _Recorder()
+    result = _plan_turn(
+        _paste_path_service(_TimedOutBackend(), recorder),
+        "Remind me to call the bank at four.",
+    )
+
+    assert result is not None and result.decode_timed_out is True
+    assert _trace_payload(recorder, "turn_plan_repair_skipped")["decode_timed_out"] is True
+    assert _trace_payload(recorder, "turn_plan_generated")["decode_timed_out"] is True
 
 
 def test_planner_budget_is_configurable() -> None:

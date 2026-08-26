@@ -104,19 +104,41 @@ _RETARGET_REFERENT_RE = re.compile(
     r"\b(?:that|this|it|these|those|above|previous|last|selection|selected)\b",
     re.IGNORECASE,
 )
+# Edit imperatives that rewrite existing text without any _TRANSFORM_VERB_RE
+# verb: "cap that", "delete that", "put quotes around that". The planner may
+# answer any of them with target.kind="recent_commit", which _turn_plan_target
+# honours regardless of wording — so these must never lose their repair pass.
+_EDIT_IMPERATIVE_RE = re.compile(
+    r"\b(?:delete|remove|undo|redo|scratch|strike|erase|clear|cut|trim|swap|replace|repeat|"
+    r"cap|caps|capitali[sz]e|uppercase|lowercase|quote|quotes|"
+    r"italici[sz]e|italics|italic|bold|underline)\b",
+    re.IGNORECASE,
+)
+# Bare edit commands carry their target implicitly ("Undo" == undo the last
+# commit), so they qualify with no referent word at all.
+_BARE_EDIT_COMMAND_RE = re.compile(
+    r"^\s*(?:hey\s+juno[,.\s]+)?(?:please\s+)?(?:undo|redo)(?:\s+that)?\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _plan_may_reshape_paste(text: str) -> bool:
     """True when the plan could change what lands on screen.
 
-    Two shapes qualify even with nothing selected: a transform verb aimed at
-    a referent ("make that shorter", "rewrite this"), which produces a
-    TRANSFORM_COMMIT against the recent commit or the focused text; and an
-    instruction head the plan trims off the paste ("write hello world" ->
-    ``hello world``). Everything else pastes the transcript itself.
+    Three shapes qualify even with nothing selected: a transform or edit
+    imperative aimed at a referent ("make that shorter", "cap that", "put
+    quotes around that"), which the planner can answer with a
+    ``recent_commit`` target and turn into a TRANSFORM_COMMIT; a bare edit
+    command ("Undo"); and an instruction head the plan trims off the paste
+    ("write hello world" -> ``hello world``). Everything else pastes the
+    transcript itself, so an unparseable plan there costs nothing.
     """
     current = str(text or "")
-    if _TRANSFORM_VERB_RE.search(current) and _RETARGET_REFERENT_RE.search(current):
+    if _RETARGET_REFERENT_RE.search(current) and (
+        _TRANSFORM_VERB_RE.search(current) or _EDIT_IMPERATIVE_RE.search(current)
+    ):
+        return True
+    if _BARE_EDIT_COMMAND_RE.match(current):
         return True
     return instruction_head_present(current)
 
@@ -359,6 +381,7 @@ class WriterService:
                     "reason": "text_delivery_guaranteed",
                     "status": result.status,
                     "decode_ms": result.decode_ms,
+                    "decode_timed_out": result.decode_timed_out,
                 },
             )
             fallback = fallback_structural_turn_plan(final_text)
@@ -378,6 +401,7 @@ class WriterService:
                             *result.normalization_notes,
                             "structural_render_fallback_without_repair",
                         ],
+                        decode_timed_out=result.decode_timed_out,
                     )
                     validation_after_plan = fallback_validation
             needs_repair = False
@@ -429,6 +453,7 @@ class WriterService:
             "errors": list(result.errors),
             "repair_attempted": result.repair_attempted,
             "repair_status": result.repair_status,
+            "decode_timed_out": result.decode_timed_out,
             "initial_status": result.initial_status,
             "initial_errors": list(result.initial_errors),
             "validation_errors_before_repair": list(result.validation_errors_before_repair),
