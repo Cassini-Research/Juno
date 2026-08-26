@@ -4749,6 +4749,34 @@ def test_bare_edit_imperatives_keep_their_repair_and_still_transform() -> None:
         assert outcome.output_text == transformed, source
 
 
+def test_short_edit_commands_that_name_their_target_keep_their_repair() -> None:
+    # No referent word at all — the target is named directly. The planner can
+    # still answer with recent_commit, so these must keep the repair pass or
+    # they paste the command literally instead of editing (issue #75 review).
+    cases = [
+        ("Italicize the title", "*the quick brown fox*"),
+        ("Lowercase everything", "the quick brown fox"),
+        ("Bold the heading", "**the quick brown fox**"),
+        ("Uppercase the first word", "THE quick brown fox"),
+    ]
+    for source, transformed in cases:
+        outcome, backend = _run_edit_command(source, transformed)
+        planner_tasks = [t for t in _tasks(backend) if t.startswith("turn_")]
+        assert planner_tasks == ["turn_planning_v1", "turn_repair_v1"], source
+        assert outcome.action == WriterActionKind.TRANSFORM_COMMIT, source
+        assert outcome.output_text == transformed, source
+
+
+def test_short_prose_carrying_an_edit_verb_costs_at_most_one_repair() -> None:
+    # The short-edit rule is deliberately loose, so prose built around one of
+    # these verbs is misread as an edit. The cost is bounded: one extra
+    # repair decode, never a lost command.
+    for text in ("cut the budget", "I'll clear my schedule"):
+        _outcome, backend = _run_edit_command(text, "the quick brown")
+        planner_tasks = [t for t in _tasks(backend) if t.startswith("turn_")]
+        assert planner_tasks == ["turn_planning_v1", "turn_repair_v1"], text
+
+
 def test_edit_imperatives_reach_the_model_planner_at_all() -> None:
     # The cue lexicon must carry these verbs too — an utterance skipped by
     # the intent gate never reaches the repair pass in the first place.
@@ -4762,6 +4790,10 @@ def test_edit_imperatives_reach_the_model_planner_at_all() -> None:
         "Clear that",
         "Italicize that",
         "Repeat that",
+        "Italicize the title",
+        "Lowercase everything",
+        "Bold the heading",
+        "Uppercase the first word",
     ):
         backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
         _plan_turn(_paste_path_service(backend, _Recorder()), text)

@@ -120,16 +120,24 @@ _BARE_EDIT_COMMAND_RE = re.compile(
     r"^\s*(?:hey\s+juno[,.\s]+)?(?:please\s+)?(?:undo|redo)(?:\s+that)?\s*[.!]?\s*$",
     re.IGNORECASE,
 )
+# An edit imperative names its target directly just as often as it uses a
+# referent — "italicize the title", "lowercase everything", "bold the
+# heading". Short utterances built around one are treated as edits; the cost
+# of being wrong on prose ("cut the budget") is a single bounded repair
+# decode, while being wrong the other way pastes the command literally.
+_SHORT_EDIT_COMMAND_MAX_WORDS = 6
 
 
 def _plan_may_reshape_paste(text: str) -> bool:
     """True when the plan could change what lands on screen.
 
-    Three shapes qualify even with nothing selected: a transform or edit
+    Four shapes qualify even with nothing selected, all of which the planner
+    can answer with a ``recent_commit`` target that ``_turn_plan_target``
+    honours and turns into a TRANSFORM_COMMIT: a transform or edit
     imperative aimed at a referent ("make that shorter", "cap that", "put
-    quotes around that"), which the planner can answer with a
-    ``recent_commit`` target and turn into a TRANSFORM_COMMIT; a bare edit
-    command ("Undo"); and an instruction head the plan trims off the paste
+    quotes around that"); a bare edit command ("Undo"); a short utterance
+    carrying an edit imperative with its target named directly ("italicize
+    the title"); and an instruction head the plan trims off the paste
     ("write hello world" -> ``hello world``). Everything else pastes the
     transcript itself, so an unparseable plan there costs nothing.
     """
@@ -139,6 +147,11 @@ def _plan_may_reshape_paste(text: str) -> bool:
     ):
         return True
     if _BARE_EDIT_COMMAND_RE.match(current):
+        return True
+    if (
+        _EDIT_IMPERATIVE_RE.search(current)
+        and _approx_word_count(current) <= _SHORT_EDIT_COMMAND_MAX_WORDS
+    ):
         return True
     return instruction_head_present(current)
 
