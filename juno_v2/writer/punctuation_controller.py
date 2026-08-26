@@ -35,6 +35,7 @@ _PERSONAL_SUBJECTS = {
 }
 _DEMONSTRATIVE_SUBJECTS = {"it", "this", "that", "these", "those"}
 _QUESTION_SUBJECTS = _PERSONAL_SUBJECTS | _DEMONSTRATIVE_SUBJECTS
+_SENTENCE_TERMINATORS = ".?!…？！。"
 _WH_NOUN_BRIDGES = {
     "branch", "build", "command", "commit", "file", "model", "option", "pr",
     "release", "repo", "repository", "setting", "version",
@@ -118,7 +119,10 @@ def apply_final_punctuation_floor(
     if category == "messaging" or formatting == "messaging" or policy == "light":
         return _skip(original, "messaging_light")
 
-    mark = "?" if _looks_like_question(words, stripped) else "."
+    # Only the trailing sentence decides the terminal mark. A buffer that opens
+    # with "Can you ...?" and closes with an imperative must still end in ".".
+    tail = _trailing_sentence(stripped)
+    mark = "?" if _looks_like_question(_words(tail), tail) else "."
     rule = "terminal_question" if mark == "?" else "terminal_period"
     return PunctuationFloorResult(text=original.rstrip() + mark, changed=True, rules_applied=[rule])
 
@@ -129,6 +133,23 @@ def _skip(text: str, reason: str) -> PunctuationFloorResult:
 
 def _words(text: str) -> list[str]:
     return re.findall(r"[A-Za-z][A-Za-z']*", (text or "").casefold())
+
+
+def _trailing_sentence(text: str) -> str:
+    """Return the text that follows the last sentence terminator.
+
+    The question heuristics below all inspect the opening words of a clause, so
+    for a multi-sentence buffer they must be given the final sentence rather
+    than the whole buffer. This is deliberately a plain scan for terminal marks
+    with no abbreviation or decimal handling, matching the rest of this module:
+    a misplaced split can only shorten the clause that is inspected, and the
+    heuristics fall back to a period whenever they cannot see a clear question.
+    """
+    body = text or ""
+    last = max(body.rfind(char) for char in _SENTENCE_TERMINATORS)
+    if last < 0:
+        return body.strip()
+    return body[last + 1:].strip()
 
 
 def _looks_like_question(words: list[str], text: str) -> bool:

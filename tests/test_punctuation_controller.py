@@ -86,6 +86,42 @@ def test_keeps_question_marks_for_technical_noun_bridge_questions() -> None:
         assert result.rules_applied == ["terminal_question"]
 
 
+def test_multi_sentence_buffer_uses_trailing_sentence_for_the_mark() -> None:
+    # The opening sentence is a question but the trailing clause is an
+    # imperative, so the buffer must close with a period (issue #70).
+    result = _apply("Do you have the file? Please send it to me now")
+
+    assert result.text == "Do you have the file? Please send it to me now."
+    assert result.changed is True
+    assert result.rules_applied == ["terminal_period"]
+
+
+def test_multi_sentence_imperative_openers_still_get_terminal_period() -> None:
+    cases = [
+        "Can you check the branch? Then rebase it onto develop",
+        "What broke the build! Update the readme and ping the team",
+        "Is it ready? Send the brief to Mira tonight",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + ".", text
+        assert result.rules_applied == ["terminal_period"], text
+
+
+def test_multi_sentence_question_tail_still_gets_question_mark() -> None:
+    cases = [
+        "I sent the brief. Can you review it before Friday",
+        "The build failed! What did you change in the config",
+        "Update the readme. Do you want me to bump the version",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + "?", text
+        assert result.rules_applied == ["terminal_question"], text
+
+
 def test_inline_marker_shaped_prose_still_gets_terminal_period() -> None:
     cases = [
         "option a. should remain available",
