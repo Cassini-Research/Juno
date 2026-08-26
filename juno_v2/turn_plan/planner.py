@@ -183,6 +183,10 @@ class TurnPlanResult:
     validation_errors_before_repair: list[str] = field(default_factory=list)
     validation_warnings_before_repair: list[str] = field(default_factory=list)
     normalization_notes: list[str] = field(default_factory=list)
+    # True when the backend stopped this decode on its ``deadline_ms`` budget
+    # rather than on an end-of-sequence token — a truncated decode is the
+    # usual cause of an invalid_json plan on the paste path.
+    decode_timed_out: bool = False
 
     @property
     def ok(self) -> bool:
@@ -201,8 +205,22 @@ def _env_flag(name: str, default: bool) -> bool:
 
 
 class TurnPlanner:
-    def __init__(self, backend: "WriterBackend") -> None:
+    def __init__(self, backend: "WriterBackend", *, deadline_ms: int | None = None) -> None:
         self.backend = backend
+        # Wall-clock decode budget handed to the backend as request metadata.
+        # The MLX backend already enforces ``deadline_ms`` by breaking out of
+        # its stream loop (same mechanism the dictation editor uses); backends
+        # without streaming ignore it. ``None`` means no budget.
+        self.deadline_ms = int(deadline_ms) if deadline_ms and int(deadline_ms) > 0 else None
+
+    def _decode_metadata(self, packet: TurnPlanPacket, **extra: Any) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "max_tokens": _planner_max_tokens(packet.final_text, packet.context.selected_text),
+            **extra,
+        }
+        if self.deadline_ms is not None:
+            metadata["deadline_ms"] = self.deadline_ms
+        return metadata
 
     def plan(self, packet: TurnPlanPacket) -> TurnPlanResult:
         payload = packet.to_payload()
@@ -219,13 +237,13 @@ class TurnPlanner:
                 "schema_version": "turn_planning_v1",
                 "payload": payload,
             },
-            metadata={
-                "kind": "turn_planning_v1",
-                "max_tokens": _planner_max_tokens(packet.final_text, packet.context.selected_text),
+            metadata=self._decode_metadata(
+                packet,
+                kind="turn_planning_v1",
                 # Static system prompt is KV-cached like the dictation
                 # editor's — action turns paid 15s of cold prefill without it.
-                "cache_prefix": _env_flag("JUNO_V2_ACTION_PROMPT_CACHE", True),
-            },
+                cache_prefix=_env_flag("JUNO_V2_ACTION_PROMPT_CACHE", True),
+            ),
         )
         try:
             result = self.backend.rewrite(req)
@@ -278,10 +296,7 @@ class TurnPlanner:
                 "schema_version": "turn_repair_v1",
                 "payload": payload,
             },
-            metadata={
-                "kind": "turn_repair_v1",
-                "max_tokens": _planner_max_tokens(packet.final_text, packet.context.selected_text),
-            },
+            metadata=self._decode_metadata(packet, kind="turn_repair_v1"),
         )
         try:
             result = self.backend.rewrite(req)
@@ -372,6 +387,7 @@ class TurnPlanner:
 
 def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
     raw = str(getattr(result, "text", "") or "")
+    timed_out = bool((getattr(result, "metadata", None) or {}).get("timed_out"))
     obj, parse_notes = _json_object_with_notes(raw)
     if obj is None:
         return TurnPlanResult(
@@ -381,6 +397,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
             decode_ms=float(getattr(result, "decode_ms", 0.0) or 0.0),
             raw_output=raw,
             errors=["invalid_json"],
+            decode_timed_out=timed_out,
         )
     if not _looks_like_turn_plan_object(obj):
         return TurnPlanResult(
@@ -391,6 +408,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
             raw_output=raw,
             errors=["invalid_turn_plan_object"],
             normalization_notes=parse_notes,
+            decode_timed_out=timed_out,
         )
     obj.setdefault("schema_version", "turn_plan_v1")
     return TurnPlanResult(
@@ -400,6 +418,7 @@ def _result_from_backend(result: WriterTransformResult) -> TurnPlanResult:
         decode_ms=float(getattr(result, "decode_ms", 0.0) or 0.0),
         raw_output=raw,
         normalization_notes=parse_notes,
+        decode_timed_out=timed_out,
     )
 
 
@@ -491,6 +510,116 @@ def structural_instruction_present(source_text: str) -> bool:
     renderer failed to itemize it.
     """
     return _structural_list_instruction(str(source_text or "")) is not None
+
+
+# Words that make an utterance worth a model turn-plan decode: native-action
+# verbs, transform/edit verbs, explicit structure and formatting requests, and
+# memory/snippet vocabulary. Everything here is a *keep the planner* signal —
+# the gate skips only when NONE of them appear, so a missing word costs
+# latency, never a dropped command. Nouns are avoided unless they are strong
+# structure signals ("bullet", "checklist"): "summary" is ordinary dictation,
+# "summarize" is an instruction.
+_PLANNER_INTENT_CUE_RE = re.compile(
+    r"\b(?:"
+    # --- native actions / app control -------------------------------------
+    r"remind|reminders?|schedule|scheduled|rescheduled?|alarm|alarms|timer|timers|"
+    r"calendar|invite|note|notes|jot|todo|to-do|task|tasks|checklist|"
+    r"add|create|make|write|draft|send|email|e-mail|mail|message|text|call|dial|ring|"
+    r"open|launch|start|play|pause|stop|cancel|delete|remove|rename|save|"
+    r"search|google|find|book|order|buy|capture|put|set|insert|paste|copy|"
+    r"share|reply|forward|submit|run|execute|track|log|record|"
+    # --- transforms / edits ------------------------------------------------
+    r"rewrite|reword|rephrase|revise|edit|change|convert|translate|"
+    r"summari[sz]e|summari[sz]ed|shorten|shorter|longer|expand|condense|tighten|"
+    r"simplify|polish|proofread|fix|correct|clean|tidy|turn|undo|redo|replace|scratch|"
+    # Bare edit imperatives that rewrite the recent commit without any of the
+    # verbs above ("cap that", "strike that", "clear that") — the planner can
+    # answer these with a recent_commit target, so they must reach it.
+    r"strike|erase|clear|repeat|cut|trim|swap|"
+    # --- structure / formatting -------------------------------------------
+    r"bullet|bullets|bulleted|numbered|list|lists|itemi[sz]e|outline|table|"
+    r"heading|headings|paragraph|paragraphs|line|indent|"
+    r"bold|italic|italics|italici[sz]e|underline|capitali[sz]e|uppercase|lowercase|"
+    r"cap|caps|"
+    r"format|formatted|formatting|quote|quotes|"
+    # --- memory / snippets / addressing Juno -------------------------------
+    r"juno|remember|teach|spell|spelled|spelt|snippet|snippets|vocabulary|glossary|"
+    r"term|terms|please"
+    r")\b",
+    re.IGNORECASE,
+)
+_ORDINAL_CUE_RE = re.compile(
+    r"\b(?P<ordinal>" + "|".join(sorted(_ORDINAL_WORDS.keys(), key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def planner_intent_cue_present(source_text: str) -> bool:
+    """True when the utterance carries any action / transform / structure cue.
+
+    The model turn planner only ever changes the delivered turn when the
+    speaker asked for something: a native action, a transform of existing
+    text, explicit structure, or a memory mutation. Plain narration produces
+    a ``render_kind=plain`` plan whose text the renderer discards
+    (``corrected_text_fallback``), so the multi-second decode buys nothing
+    while sitting on the paste critical path (issue #75).
+
+    This is deliberately a *presence* test over a broad cue lexicon rather
+    than an intent classifier: any hit keeps the planner. Only utterances
+    with no cue at all, no explicit structure request and no spoken ordinal
+    run are treated as plain dictation.
+    """
+    text = str(source_text or "")
+    if not text.strip():
+        return False
+    if "\n" in text:
+        return True
+    if _PLANNER_INTENT_CUE_RE.search(text):
+        return True
+    if structural_instruction_present(text):
+        return True
+    return _spoken_ordinal_run_present(text)
+
+
+def _spoken_ordinal_run_present(text: str) -> bool:
+    """True for "first ... second ... third ..." style spoken enumerations.
+
+    A single ordinal is ordinary speech ("the first time I met him"); an
+    ascending run of two or more is a dictated list and must keep the
+    planner even without an explicit "make a list" instruction.
+    """
+    seen: list[int] = []
+    for match in _ORDINAL_CUE_RE.finditer(text):
+        order = _ORDINAL_WORDS.get(match.group("ordinal").casefold())
+        if order is None:
+            continue
+        if not seen:
+            if order == 1:
+                seen.append(order)
+            continue
+        if order == seen[-1] + 1:
+            seen.append(order)
+            if len(seen) >= 2:
+                return True
+    return False
+
+
+def instruction_head_present(source_text: str) -> bool:
+    """True when the utterance opens with an instruction the plan would trim.
+
+    "write hello world" pastes ``hello world`` once the planner strips the
+    write clause, and "take a note that ..." drops its note head — in both
+    cases the plan, not the transcript, decides what lands on screen. The
+    writer service uses this to decide whether an unparseable plan is free
+    to discard (issue #75).
+    """
+    text = str(source_text or "").strip()
+    if not text:
+        return False
+    if _NOTE_INSTRUCTION_HEAD_RE.search(text):
+        return True
+    tail = _write_clause_tail(text)
+    return bool(tail) and _term_key(tail) != _term_key(text)
 
 
 def _structural_list_instruction(text: str) -> re.Match[str] | None:

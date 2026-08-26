@@ -37,6 +37,38 @@ class WriterConfig:
     turn_plan_max_dictation_words: int = field(
         default_factory=lambda: _env_int("JUNO_V2_TURN_PLAN_MAX_DICTATION_WORDS", 16)
     )
+    # Short utterances are under the word gate above, yet most of them are
+    # still plain dictation with nothing for the planner to do — production
+    # traces showed 4-24s of paste-path wait and zero actions across 25
+    # utterances (issue #75). When enabled, a non-wake, unselected utterance
+    # that carries no action / transform / structure / memory cue skips the
+    # model planner entirely (reason ``plain_dictation_without_intent``).
+    # Any cue keeps the planner, so the gate can only cost latency, never a
+    # dropped command.
+    #
+    # Two scope notes: the cue lexicon is English, so the gate only applies
+    # when the turn's language hint is absent or starts with "en" — a
+    # non-English turn always keeps the planner. And like the word gate
+    # above, this gate is disabled wholesale by JUNO_V2_TURN_PLAN_DICTATION=1
+    # (which restores the model planner on every utterance); the repair skip
+    # and the paste-path deadline below are independent of that flag and
+    # still apply.
+    turn_plan_plain_dictation_skip: bool = field(
+        default_factory=lambda: _env_bool("JUNO_V2_TURN_PLAN_PLAIN_SKIP", True)
+    )
+    # Wall-clock decode budget for the planner when the turn is on the paste
+    # critical path (no wake verification, no selection) and text delivery is
+    # therefore already guaranteed. Handed to the backend as ``deadline_ms``,
+    # the same mechanism the dictation editor uses; backends without a
+    # streaming loop ignore it. 0 disables the budget. Wake/selection turns
+    # never get a budget — truncating those would drop actions or transforms.
+    # Applies whatever JUNO_V2_TURN_PLAN_DICTATION is set to: that flag only
+    # governs which utterances reach the planner, not how long a reached
+    # decode may run. A decode stopped on this budget is reported as
+    # decode_timed_out in the turn_plan_generated trace.
+    turn_plan_paste_deadline_ms: int = field(
+        default_factory=lambda: _env_int("JUNO_V2_TURN_PLAN_PASTE_DEADLINE_MS", 6000)
+    )
     # The dictation editor is the AI lane for every non-wake dictation turn
     # (cached-prefix edit-script model pass, deterministic application).
     # When enabled it supersedes the model turn planner for dictation —
