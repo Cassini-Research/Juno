@@ -81,6 +81,7 @@ from juno_v2.context.clipboard_enrichment import inject_clipboard_ring
 from juno_v2.context.compiler import compile_context
 from juno_v2.context.frozen_merge import merge_frozen_capability_into_bundle
 from juno_v2.audio.diagnostics import analyze_wav_bytes
+from juno_v2.audio.silence_trim import SilenceTrimResult, trim_wav_edge_silence
 from juno_v2.contracts.context import RecognitionBiasPlan, TypedContextBundle
 from juno_core_v3.actions.contracts import Action, ActionKind
 from juno_core_v3.actions.pipeline_hook import detect_actions_for_pipeline
@@ -512,6 +513,26 @@ class OneShotDictationPipeline:
                     transcript_stage=stage,
                 )
 
+        # Edge-silence trim ---------------------------------------------------
+        # The buffer that reaches the backend is not always the buffer we
+        # recorded: minutes of trailing room tone are what Whisper
+        # hallucinates on, so cut long silence off the edges first. Only
+        # ``asr_input_wav_bytes`` is trimmed — ``wav_bytes`` stays the original
+        # recording for retention/replay, and every duration and timestamp
+        # we report is restored to the original timebase after the decode
+        # (see ``_restore_pretrim_audio_timebase``).
+        silence_trim: SilenceTrimResult | None = None
+        asr_input_wav_bytes = wav_bytes
+        if not live_adjudication and not use_live_transcript_for_final:
+            silence_trim = trim_wav_edge_silence(wav_bytes)
+            if silence_trim.trimmed:
+                asr_input_wav_bytes = silence_trim.wav_bytes
+                self.recorder.record(
+                    TraceKind.SYSTEM,
+                    "oneshot_final_audio_silence_trimmed",
+                    {"utterance_id": uid, **silence_trim.to_dict()},
+                )
+
         # 1. Capability gate -------------------------------------------------
         if self.capability_gate is not None:
             try:
@@ -836,7 +857,7 @@ class OneShotDictationPipeline:
                 )
             else:
                 result = self.transcriber.transcribe_wav(
-                    wav_bytes,
+                    asr_input_wav_bytes,
                     language=requested_language,
                     language_policy=language_policy,
                     initial_prompt=plan.initial_prompt,
@@ -933,13 +954,25 @@ class OneShotDictationPipeline:
                 transcript_stage=stage,
             )
 
+        # ``decode_span_end_ms`` is where the audio the backend actually saw
+        # ends, expressed in the ORIGINAL recording's timebase. The
+        # trailing-silence guard below compares segment ends against it to
+        # spot segments whose timing overruns the decoded audio (whisper
+        # pads short buffers to 30 s), so it must track the decoded span,
+        # not the recording length. Without a trim the two are identical.
+        decoded_audio_duration_ms = float(getattr(result, "audio_duration_ms", 0.0) or 0.0)
+        decode_span_end_ms = decoded_audio_duration_ms
+        if silence_trim is not None and silence_trim.trimmed:
+            decode_span_end_ms = silence_trim.leading_trimmed_ms + decoded_audio_duration_ms
+            result = _restore_pretrim_audio_timebase(result, silence_trim)
+
         raw_text = (result.transcript or "").strip()
         stripped_tail_text = raw_text
         if not live_adjudication and raw_text:
             stripped_tail_text = strip_trailing_silence_hallucination(
                 raw_text,
                 segments=getattr(result, "segments", ()),
-                audio_duration_ms=result.audio_duration_ms,
+                audio_duration_ms=decode_span_end_ms,
             ).strip()
             if stripped_tail_text and stripped_tail_text != raw_text:
                 self.recorder.record(
@@ -2358,6 +2391,8 @@ class OneShotDictationPipeline:
             meta_out["shell_timeline"] = shell_timeline
         if audio_diag is not None:
             meta_out["audio_diagnostics"] = audio_diag.to_dict()
+        if silence_trim is not None and silence_trim.trimmed:
+            meta_out["audio_silence_trim"] = silence_trim.to_dict()
         if final_asr_hallucination_fallback is not None:
             meta_out["final_asr_hallucination_fallback"] = final_asr_hallucination_fallback
         if adjudication_result is not None:
@@ -2908,6 +2943,54 @@ class OneShotDictationPipeline:
 # ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
+
+def _shift_segment_ms(segment: Any, offset_ms: float) -> Any:
+    """Return *segment* with its start/end shifted by ``offset_ms``.
+
+    Tolerates dicts and objects without timestamps (non-whisper backends and
+    test doubles): anything we cannot shift is passed through unchanged.
+    """
+
+    if isinstance(segment, dict):
+        shifted = dict(segment)
+        for key in ("start_ms", "end_ms"):
+            value = shifted.get(key)
+            if isinstance(value, (int, float)):
+                shifted[key] = float(value) + offset_ms
+        return shifted
+    start = getattr(segment, "start_ms", None)
+    end = getattr(segment, "end_ms", None)
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return segment
+    try:
+        return replace(segment, start_ms=float(start) + offset_ms, end_ms=float(end) + offset_ms)
+    except TypeError:
+        return segment
+
+
+def _restore_pretrim_audio_timebase(
+    result: TranscribeResult,
+    trim: SilenceTrimResult,
+) -> TranscribeResult:
+    """Re-express a decode of trimmed audio in the original recording's timebase.
+
+    Edge-silence trimming changes what the backend decodes, never what the
+    user recorded. Everything downstream — history ``duration_ms``, stats,
+    the long-utterance gates in the hallucination guards, and the result the
+    shell renders — must keep describing the recording, so we put the
+    original duration back and shift segment timestamps by the amount that
+    was cut off the front.
+    """
+
+    segments = tuple(getattr(result, "segments", ()) or ())
+    if trim.leading_trimmed_ms:
+        segments = tuple(_shift_segment_ms(seg, trim.leading_trimmed_ms) for seg in segments)
+    return replace(
+        result,
+        audio_duration_ms=trim.original_duration_ms,
+        segments=segments,
+    )
+
 
 def _normalize_transcript_stage(value: str | None) -> str:
     stage = (value or "final_delivery").strip().lower()
