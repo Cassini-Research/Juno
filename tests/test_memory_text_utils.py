@@ -14,6 +14,9 @@ from juno_v2.memory.ai_dictionary import AI_GLOSSARY, is_ai_glossary_term
 from juno_v2.memory.correction_diff import diff_pasted_segment
 from juno_v2.memory.fold import fold_key, fold_match_pattern
 from juno_v2.memory.hallucination import (
+    LOOP_RUN_MIN_ALNUM_REPEATS,
+    LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+    _has_repeated_unit_run,
     looks_like_hallucination,
     strip_adjacent_low_signal_word_duplicates,
     strip_repeated_stock_hallucination_tail,
@@ -270,6 +273,146 @@ def test_hallucination_normal_sentence_is_legitimate() -> None:
     assert not looks_like_hallucination(
         "The quick brown fox jumps over the lazy dog while we record audio"
     )
+
+
+# --------------------------------------------------------------------- #
+# looks_like_hallucination — case (7): repeated-unit runs (issue #69)
+# --------------------------------------------------------------------- #
+#
+# Two shapes escaped every guard above:
+#   1. punctuation-only loops — _has_substring_loop strips punctuation
+#      before looking for a loop, and the run contributes no \w+ tokens;
+#   2. any loop inside a long mixed utterance — the confidence-gated
+#      checks switch themselves off because the whole-buffer avg_logprob
+#      is dominated by the real speech that preceded the degenerate tail.
+# Every assertion below is on synthetic text.
+
+_REAL_PREFIX_25_WORDS = (
+    "so the plan for tomorrow is to review the pricing deck with the team "
+    "and then send the summary out to everyone before lunch"
+)
+_REAL_PREFIX_80_WORDS = (
+    "the meeting went well and we discussed the roadmap for the next quarter "
+    "with the team about pricing and packaging as well as the hiring plan for "
+    "engineering and design roles across both offices while also reviewing the "
+    "customer feedback from last month and the support backlog which has grown "
+    "considerably since the launch of the new onboarding flow that we shipped "
+    "in june and the follow up items that came out of that conversation"
+)
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+def test_hallucination_punctuation_only_loop_any_confidence(
+    confidence: float | None,
+) -> None:
+    # A `","` run long enough to replace the spoken words, but with enough
+    # surrounding real text that the alnum-ratio check stays above 0.4 —
+    # the exact shape that reached the user's app as pasted garbage.
+    text = _REAL_PREFIX_25_WORDS + " " + '","' * 40
+    assert sum(1 for c in text if c.isalnum()) / len(text) > 0.4
+    assert looks_like_hallucination(text, confidence=confidence)
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+def test_hallucination_short_token_loop_survives_good_confidence(
+    confidence: float | None,
+) -> None:
+    # ~80 words of ordinary prose then 220 repeats of a two-letter token.
+    # The whole-buffer avg_logprob is good (-0.3), which used to disable
+    # every loop check.
+    text = _REAL_PREFIX_80_WORDS + " " + "CU" * 220
+    assert looks_like_hallucination(text, confidence=confidence)
+
+
+@pytest.mark.parametrize(
+    "loop",
+    [
+        "," * LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+        ", " * LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+        '","' * LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+        "!" * LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+        "?!" * LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+    ],
+)
+def test_hallucination_punctuation_loop_shapes(loop: str) -> None:
+    assert looks_like_hallucination(
+        _REAL_PREFIX_25_WORDS + " " + loop, confidence=-0.2
+    )
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["CU", "ansa", "aba"],
+)
+def test_hallucination_spaceless_token_loop_at_threshold(unit: str) -> None:
+    at_threshold = _REAL_PREFIX_25_WORDS + " " + unit * LOOP_RUN_MIN_ALNUM_REPEATS
+    below = _REAL_PREFIX_25_WORDS + " " + unit * (LOOP_RUN_MIN_ALNUM_REPEATS - 1)
+    assert looks_like_hallucination(at_threshold, confidence=-0.2)
+    assert not looks_like_hallucination(below, confidence=-0.2)
+
+
+def test_hallucination_punctuation_loop_below_threshold_is_spared() -> None:
+    below = "," * (LOOP_RUN_MIN_PUNCTUATION_REPEATS - 1)
+    assert not looks_like_hallucination(
+        _REAL_PREFIX_25_WORDS + " " + below, confidence=-0.2
+    )
+
+
+_LEGITIMATE_REPEATED_UNIT_TEXTS = [
+    # Ellipses and pauses.
+    "I was thinking... maybe we should wait... I really don't know",
+    "hold on ........... let me check that file for you right now",
+    "the summary is complete " + "…" * 20,
+    # Horizontal rules and separators, well past any sane length.
+    "section one " + "=" * 80 + " section two body text goes here now",
+    "section one " + "-" * 80 + " section two body text goes here now",
+    "section one " + "_" * 80 + " section two body text goes here now",
+    "a thematic break " + "* " * 20 + " and then the next paragraph here",
+    "a markdown table |---|---|---|---|---|---|---|---| with columns",
+    # Repeated short words in ordinary speech (spaced repeats stay visible
+    # to the word-level checks; the run detector must not double-judge them).
+    "and then he said ha ha ha ha ha ha ha ha and everyone laughed hard",
+    "we sang " + "na " * 30 + "hey jude until the very end of the song",
+    "no no no that is not at all what I meant when I said it earlier",
+    "that is a very very very good idea and we should do it soon",
+    # Elongation and dictated numbers: single-character runs are real.
+    "he shouted aaaaaaaaaaaaaaaaaaaa across the room at the whole team",
+    "the account number is 11111111111111111111 for the test fixture",
+    # Code-ish text.
+    'the payload was {"a": 1, "b": 2, "c": 3, "d": 4} which we parsed',
+    "run cat file.txt | grep foo | sort | uniq | head to see the output",
+    "the emoji wall was " + "🎉" * 20 + " which everyone found funny",
+]
+
+
+@pytest.mark.parametrize("text", _LEGITIMATE_REPEATED_UNIT_TEXTS)
+def test_repeated_unit_run_spares_legitimate_text(text: str) -> None:
+    # Asserted on the detector itself: some of these strings are flagged by
+    # OTHER (pre-existing, confidence-gated) checks in the guard — long "="
+    # rules trip the alnum-ratio rule, "ha ha ha…" trips word repetition at
+    # unknown/low confidence. Case (7) is unconditional, so it is the one
+    # that must never fire on legitimate text.
+    assert not _has_repeated_unit_run(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I was thinking... maybe we should wait... I really don't know",
+        "hold on ........... let me check that file for you right now",
+        "no no no that is not at all what I meant when I said it earlier",
+        "that is a very very very good idea and we should do it soon",
+        'the payload was {"a": 1, "b": 2, "c": 3, "d": 4} which we parsed',
+        "run cat file.txt | grep foo | sort | uniq | head to see the output",
+    ],
+)
+def test_hallucination_spares_legitimate_repetition_at_any_confidence(
+    text: str,
+) -> None:
+    for confidence in (None, -0.3, -1.2):
+        assert not looks_like_hallucination(text, confidence=confidence), (
+            f"false positive at confidence={confidence}"
+        )
 
 
 # --------------------------------------------------------------------- #
