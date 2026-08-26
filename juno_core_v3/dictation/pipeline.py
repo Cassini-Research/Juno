@@ -62,6 +62,7 @@ import difflib
 import os
 from datetime import datetime, timezone
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol
@@ -176,6 +177,17 @@ class UtteranceRecord:
     final_text: str = ""
     writer_action: str | None = None
     learn_from_commit: bool = True
+    # Verbatim ASR transcript for this utterance, kept separately from
+    # ``raw_text`` (which can hold the post-wake action surface). Commit-time
+    # learning uses it as the ground truth for "did the user actually say
+    # this?" — see ``_repair_introduced_surfaces``.
+    raw_transcript: str = ""
+    # Per-replacement provenance produced by the normalization/repair passes
+    # (``{"rule", "scope", "replacements": [{"from", "to", "source"}]}`` and
+    # flat ``NormalizationChange`` dicts). Commit-time promotion reads the
+    # ``source`` of each replacement so tokens a repair pass wrote into the
+    # committed text are never learned as user vocabulary.
+    normalization_applied: tuple[dict[str, Any], ...] = ()
     created_at: float = field(default_factory=time.time)
     # Set when the utterance was parsed as a Juno action ("hey juno take a
     # note…"). Memory learning must not observe action wrappers as
@@ -2243,6 +2255,8 @@ class OneShotDictationPipeline:
             writer_action=writer_action,
             learn_from_commit=_should_learn_from_oneshot_record(writer_outcome, adjudicated_text, writer_text),
             is_action=bool(parsed_actions_payload or action_attempt_rejected),
+            raw_transcript=raw_text,
+            normalization_applied=tuple(all_applied),
         )
         self.records.put(record)
 
@@ -2535,9 +2549,38 @@ class OneShotDictationPipeline:
                 "utterance_id": record.utterance_id,
             }
 
+        # Provenance gate (issue #80): tokens that reached the committed text
+        # only because a reconciliation/repair pass rewrote the ASR are the
+        # pipeline's own guess, not user evidence. Learning them turns one
+        # screen-derived OCR artifact into permanent vocabulary that then
+        # rewrites more utterances.
+        provenance_raw = (record.raw_transcript or raw_text or "").strip()
+        repair_introduced = _repair_introduced_surfaces(
+            record.normalization_applied,
+            raw_transcript=provenance_raw,
+        )
+
         learned_correction = False
         correction_promo: dict[str, Any] = {}
-        if correction_suppressed_reason is None and raw_text and raw_text != committed:
+        repair_only_rewrite = _commit_rewrite_is_repair_only(
+            raw_transcript=provenance_raw,
+            committed_text=committed,
+            repair_introduced=repair_introduced,
+        )
+        if repair_only_rewrite:
+            # Only the correction pair is suppressed here — entity extraction
+            # below still runs so genuinely spoken terms in the same utterance
+            # remain learnable; the per-token filter drops the repaired ones.
+            self.recorder.record(
+                TraceKind.MEMORY,
+                "oneshot_memory_learn_suppressed",
+                {
+                    "utterance_id": record.utterance_id,
+                    "reason": "repair_introduced_rewrite",
+                    "repair_introduced": list(repair_introduced[:8]),
+                },
+            )
+        if correction_suppressed_reason is None and not repair_only_rewrite and raw_text and raw_text != committed:
             learned_correction = bool(self.memory_store.record_correction(raw_text, committed))
             if learned_correction and self.juno_seed_runtime is not None:
                 correction_promo = self.juno_seed_runtime.promotion.maybe_promote_correction_to_lexicon(
@@ -2595,6 +2638,23 @@ class OneShotDictationPipeline:
             for token in dict.fromkeys(entities)
             if self.bias_engine.is_session_entity_candidate(token)
         ]
+        # Applied last so canonicalization against memory cannot smuggle a
+        # repair-written surface back in.
+        repair_rejected = [
+            token for token in entities if _entity_repair_introduced(token, repair_introduced)
+        ]
+        if repair_rejected:
+            entities = [token for token in entities if token not in repair_rejected]
+            self.recorder.record(
+                TraceKind.MEMORY,
+                "oneshot_memory_entity_promotion_rejected",
+                {
+                    "utterance_id": record.utterance_id,
+                    "reason": "repair_introduced_token",
+                    "tokens": repair_rejected[:8],
+                    "repair_introduced": list(repair_introduced[:8]),
+                },
+            )
         self.memory_store.upsert_session_entities(entities, source="oneshot_commit")
 
         context_promotions: list[dict[str, Any]] = []
@@ -2630,6 +2690,9 @@ class OneShotDictationPipeline:
                 "correction_suppressed_reason": correction_suppressed_reason,
                 "correction_promotion": correction_promo,
                 "context_promotions": context_promotions,
+                "repair_introduced": list(repair_introduced[:8]),
+                "repair_rejected_entities": repair_rejected[:8],
+                "repair_only_rewrite": repair_only_rewrite,
             },
         )
         learned_anything = learned_correction or bool(entities)
@@ -4005,6 +4068,139 @@ def _canonicalize_session_entities_against_memory(
                 break
         out.append(replacement or token)
     return out
+
+
+_COMMIT_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+# Replacement sources that rewrite one surface into another because a
+# reconciliation/repair pass decided the ASR was wrong — screen/lexicon/context
+# evidence, not the user's voice. A token that only reaches the committed text
+# through one of these is a pipeline artifact: promoting it into memory teaches
+# Juno its own guess (issue #80). Sources that merely reflect what was already
+# spoken (ITN, casing, self-correction retakes, user-taught corrections) are
+# deliberately absent.
+_REPAIR_INTRODUCED_REPLACEMENT_SOURCES = frozenset(
+    {
+        "protected_term_near_miss",
+        "protected_term_split_phrase",
+        "explicit_candidate",
+        "explicit_candidate_phrase",
+        "terminal_command_protected_term",
+        "terminal_protected_phrase_separator",
+        "terminal_protected_phrase_glued",
+        "writer_context_term_preservation",
+        "lexicon_canonical",
+        "lexicon_term",
+        "lexicon_alias",
+        "context_candidate",
+        "selected_text",
+    }
+)
+
+
+def _repair_replacement_pairs(
+    normalization_applied: Sequence[dict[str, Any]] | None,
+) -> list[tuple[str, str]]:
+    """Yield ``(from, to)`` pairs written by reconciliation/repair passes.
+
+    ``normalization_applied`` carries two shapes: flat ``NormalizationChange``
+    dicts (``kind``/``source``/``before``/``after``) from memory + language
+    normalization, and grouped rule entries whose ``replacements`` list holds
+    ``from``/``to``/``source``. Both record ``source``, so both are read here.
+    """
+
+    pairs: list[tuple[str, str]] = []
+    for entry in normalization_applied or ():
+        if not isinstance(entry, dict):
+            continue
+        replacements = entry.get("replacements")
+        if isinstance(replacements, list):
+            for replacement in replacements:
+                if not isinstance(replacement, dict):
+                    continue
+                if str(replacement.get("source") or "") not in _REPAIR_INTRODUCED_REPLACEMENT_SOURCES:
+                    continue
+                observed = str(replacement.get("from") or "").strip()
+                written = str(replacement.get("to") or "").strip()
+                if written:
+                    pairs.append((observed, written))
+            continue
+        if str(entry.get("source") or "") not in _REPAIR_INTRODUCED_REPLACEMENT_SOURCES:
+            continue
+        observed = str(entry.get("before") or "").strip()
+        written = str(entry.get("after") or "").strip()
+        if written:
+            pairs.append((observed, written))
+    return pairs
+
+
+def _repair_introduced_surfaces(
+    normalization_applied: Sequence[dict[str, Any]] | None,
+    *,
+    raw_transcript: str,
+) -> tuple[str, ...]:
+    """Surfaces a repair pass wrote that the raw ASR never produced.
+
+    A repair target that the user demonstrably *did* say (it is present in the
+    raw transcript) stays learnable — the repair only fixed another occurrence
+    or the casing. Everything else is the pipeline's own invention.
+    """
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for observed, written in _repair_replacement_pairs(normalization_applied):
+        key = written.casefold()
+        if key in seen or key == observed.casefold():
+            continue
+        if raw_transcript and term_present_in_text(written, raw_transcript):
+            continue
+        seen.add(key)
+        out.append(written)
+    return tuple(out)
+
+
+def _entity_repair_introduced(token: str, repair_introduced: Sequence[str]) -> bool:
+    """True when ``token`` is (or contains) a surface only a repair pass wrote."""
+
+    value = (token or "").strip()
+    if not value or not repair_introduced:
+        return False
+    folded = value.casefold()
+    for surface in repair_introduced:
+        if folded == surface.casefold() or term_present_in_text(surface, value):
+            return True
+    return False
+
+
+def _commit_rewrite_is_repair_only(
+    *,
+    raw_transcript: str,
+    committed_text: str,
+    repair_introduced: Sequence[str],
+) -> bool:
+    """True when every word the commit added to the raw ASR came from a repair.
+
+    Such a raw→committed pair is not a user correction: recording it would
+    teach the lexicon the repair pass's own output.
+    """
+
+    if not repair_introduced or not raw_transcript.strip() or not committed_text.strip():
+        return False
+    raw_units = {match.group(0).casefold() for match in _COMMIT_WORD_RE.finditer(raw_transcript)}
+    novel_units = [
+        match.group(0).casefold()
+        for match in _COMMIT_WORD_RE.finditer(committed_text)
+        if match.group(0).casefold() not in raw_units
+    ]
+    if not novel_units:
+        return False
+    repair_units = {
+        unit.casefold()
+        for surface in repair_introduced
+        for unit in _COMMIT_WORD_RE.findall(surface)
+    }
+    return all(unit in repair_units for unit in novel_units)
 
 
 def _commit_session_entity_allowed(
