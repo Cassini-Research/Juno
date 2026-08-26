@@ -110,6 +110,16 @@ def validate_turn_plan(
             # 2026-06-11: one ungrounded note body rejected a five-action
             # utterance after the repair decode returned garbage).
             warnings.extend(_validate_action_dict(action, idx=idx, source_text=source_text))
+            # ...with one exception. A body that shares no meaningful content
+            # with the utterance was written from session context, not from
+            # what the user just said, and no per-action coercion can repair
+            # it: shipping it means a note/reminder whose text the user never
+            # spoke (issue #77 — a six-word follow-up produced a paragraph
+            # summarising the *previous* utterances). That is plan-fatal so
+            # the writer falls back to plain text.
+            ungrounded = _ungrounded_action_body(action, idx=idx, source_text=source_text)
+            if ungrounded:
+                errors.append(ungrounded)
 
     transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
     if transform:
@@ -183,6 +193,99 @@ def _validate_action_dict(action: Any, *, idx: int, source_text: str) -> list[st
         if kind == "alarm" and schedule_kind in {"none", ""}:
             errors.append(f"action_{idx}_alarm_missing_schedule")
     return errors
+
+
+# Grounding is measured over content words only: an action body is allowed to
+# re-word the utterance into an imperative ("Prepare a chart" for "…add a chart
+# as well"), which rewrites function words but keeps the nouns and verbs the
+# user actually spoke. A body fabricated from session context keeps neither.
+# Kept local and deliberately small, like the sibling sets in
+# juno_v2/transcript/validators.py and juno_v2/writer/final_formatter.py —
+# anything more aggressive starts masking real fabrication.
+_ACTION_BODY_STOPWORDS = frozenset(
+    {
+        "a", "about", "all", "an", "and", "any", "are", "as", "at", "be",
+        "been", "but", "by", "can", "could", "did", "do", "does", "for",
+        "from", "get", "had", "has", "have", "he", "her", "here", "him",
+        "his", "how", "i", "if", "in", "into", "is", "it", "its", "just",
+        "like", "may", "me", "more", "my", "no", "not", "now", "of", "on",
+        "one", "or", "our", "out", "over", "please", "she", "so", "some",
+        "such", "than", "that", "the", "their", "them", "then", "there",
+        "these", "they", "this", "those", "to", "too", "up", "us", "was",
+        "we", "well", "were", "what", "when", "where", "which", "while",
+        "who", "whom", "why", "will", "with", "would", "yes", "you", "your",
+    }
+)
+
+# Bodies shorter than this carry too little signal to judge: "Alarm", "Dentist
+# tomorrow" or a bare title can legitimately share one word with the utterance
+# or none at all, and failing the plan over them would trade a rare fabrication
+# for frequent false fallbacks. The fabrication this guards against (issue #77)
+# is always a summary — several sentences of prior-turn content.
+_ACTION_BODY_MIN_CONTENT_TOKENS = 4
+
+# At least a third of a body's distinct content words must come from the
+# utterance. Measured over the corpus in
+# tests/test_turn_plan_action_grounding.py: honest bodies long enough to be
+# judged score 0.86-1.00 even when reordered, compressed or rewritten into an
+# imperative, while bodies written from prior-turn context score 0.00. One
+# third sits in the empty middle of that band -- roughly three times the
+# headroom an honest body needs, so wording drift cannot trip it, and far
+# enough above fabrication that a summary would have to lift a third of its
+# vocabulary from the utterance to pass.
+_ACTION_BODY_MIN_GROUNDED_RATIO = 1.0 / 3.0
+
+
+def action_body_grounding_ratio(body: Any, source_text: str) -> float:
+    """Fraction of ``body``'s distinct content words present in the utterance.
+
+    Returns ``1.0`` for a body with no content words to judge.
+    """
+    body_tokens = _content_tokens(body)
+    if not body_tokens:
+        return 1.0
+    source_tokens = set(_content_tokens(source_text))
+    grounded = sum(1 for token in body_tokens if token in source_tokens)
+    return grounded / len(body_tokens)
+
+
+def _ungrounded_action_body(action: Any, *, idx: int, source_text: str) -> str | None:
+    if not isinstance(action, dict):
+        return None
+    body = str(action.get("body") or "").strip()
+    # Evidence spans are the plan's own record of what the body was drawn
+    # from, and _validate_action_dict already requires them to be present in
+    # the utterance -- so the utterance is the widest legitimate source of
+    # body content, and the span itself adds nothing to the token pool. A
+    # literal grounded body (span_present) is trivially grounded and skips the
+    # ratio entirely.
+    if not body or span_present(body, source_text):
+        return None
+    if len(_content_tokens(body)) < _ACTION_BODY_MIN_CONTENT_TOKENS:
+        return None
+    if action_body_grounding_ratio(body, source_text) >= _ACTION_BODY_MIN_GROUNDED_RATIO:
+        return None
+    return f"action_{idx}_body_ungrounded"
+
+
+def _content_tokens(text: Any) -> list[str]:
+    """Distinct, lightly stemmed content words, in first-seen order."""
+    out: dict[str, None] = {}
+    for match in re.finditer(r"[A-Za-z][A-Za-z0-9'-]*", str(text or "")):
+        token = match.group(0).casefold()
+        if len(token) < 3 or token in _ACTION_BODY_STOPWORDS:
+            continue
+        out.setdefault(_content_stem(token), None)
+    return list(out)
+
+
+def _content_stem(token: str) -> str:
+    """Fold the inflections a re-worded body reaches for (chart/charts, add/adding)."""
+    value = token[:-2] if token.endswith("'s") else token
+    for suffix in ("ing", "ed", "s"):
+        if value.endswith(suffix) and len(value) - len(suffix) >= 3:
+            return value[: -len(suffix)]
+    return value
 
 
 def span_present(span: Any, source_text: str) -> bool:
