@@ -10,10 +10,40 @@ MIN_LEARNED_TERM_CHARS = 3
 # (and therefore the Whisper ``initial_prompt`` "Prefer exact forms" list).
 MAX_LEARNED_TERM_TOKENS = 6
 
-# Sentence-final punctuation. ``.`` is included but guarded by
-# ``_token_is_abbreviation_like`` so terms such as "Node.js", "v1.2", "e.g."
-# and "Acme Corp." keep the punctuation that belongs to them.
+# Sentence-final punctuation. ``?``, ``!`` and ``…`` never end an abbreviation,
+# so they are stripped from any multi-token phrase. A trailing ``.`` is guarded
+# by ``_token_is_abbreviation_like`` so "Node.js", "v1.2", "e.g." and
+# "Acme Corp." keep the punctuation that belongs to them.
 _SENTENCE_TERMINATORS = ".?!…"
+_HARD_TERMINATORS = "?!…"
+
+# Explicit abbreviation list for the trailing-``.`` guard. A length/case
+# heuristic ("<=4 chars, uppercase initial") was tried first and was wrong: it
+# also matched ordinary sentence-final words and names, so "Please review the
+# PR.", "I asked Bob." and "Call the CEO." kept their periods. Only a closed
+# set of abbreviations may keep a trailing dot; everything else is prose.
+# Multi-dot forms ("e.g.", "i.e.", "U.S.") are covered by the internal-dot rule.
+_ABBREVIATIONS = frozenset(
+    {
+        "inc",
+        "corp",
+        "co",
+        "ltd",
+        "llc",
+        "jr",
+        "sr",
+        "st",
+        "dr",
+        "mr",
+        "mrs",
+        "ms",
+        "prof",
+        "vs",
+        "etc",
+        "no",
+        "dept",
+    }
+)
 
 
 def meaningful_char_count(value: str | None) -> int:
@@ -39,7 +69,10 @@ def _token_is_abbreviation_like(token: str) -> bool:
     Covers the two shapes that matter in practice:
 
     * internal dots — "e.g.", "U.S.", "Node.js.", "v1.2."
-    * short capitalised abbreviations — "Inc.", "Corp.", "Co.", "Jr."
+    * listed abbreviations — "Inc.", "Corp.", "Co.", "Jr.", "St.", "etc."
+
+    Only consulted for a trailing ``.``; ``?``/``!``/``…`` never end an
+    abbreviation.
     """
 
     core = token.rstrip(_SENTENCE_TERMINATORS)
@@ -47,7 +80,22 @@ def _token_is_abbreviation_like(token: str) -> bool:
         return True
     if "." in core:
         return True
-    return len(core) <= 4 and core[:1].isupper()
+    return core.casefold() in _ABBREVIATIONS
+
+
+def _token_ends_sentence(token: str) -> bool:
+    """True when *token*'s trailing punctuation is sentence-final, not part of it."""
+
+    if not token or token[-1] not in _SENTENCE_TERMINATORS:
+        return False
+    if token[-1] in _HARD_TERMINATORS:
+        # A term may legitimately end in "!" ("Yahoo!"), but only as a
+        # single-token phrase — callers gate on token count before asking.
+        # Inside a multi-token phrase, "Yahoo! Mail" is therefore treated as
+        # sentence-shaped; a rare, deliberate false reject that keeps the rule
+        # from letting "Where is Tom?" through.
+        return True
+    return not _token_is_abbreviation_like(token)
 
 
 def strip_terminal_sentence_punctuation(value: str | None) -> str:
@@ -57,21 +105,24 @@ def strip_terminal_sentence_punctuation(value: str | None) -> str:
     phrases with ``", "`` without stripping produced ``.,`` / ``?,`` runs that
     bled into raw ASR output (issue #79).
 
-    Rule: only a *multi-token* phrase can carry sentence punctuation, and only
-    when its last token is not abbreviation-like. Single-token phrases are
-    returned untouched, so terms whose punctuation is part of the term
-    ("Node.js", "v1.2", "C++", "e.g.") are never mangled.
+    Rule: only a *multi-token* phrase can carry sentence punctuation. Trailing
+    ``?``/``!``/``…`` are always stripped from such a phrase; a trailing ``.``
+    is stripped unless the final token is abbreviation-like. Single-token
+    phrases are returned untouched, so terms whose punctuation is part of the
+    term ("Node.js", "v1.2", "C++", "e.g.", "Yahoo!") are never mangled.
     """
 
     text = (value or "").rstrip()
     if not text:
         return ""
-    tokens = text.split()
-    if len(tokens) < 2:
+    if len(text.split()) < 2:
         return text
-    if _token_is_abbreviation_like(tokens[-1]):
-        return text
-    stripped = text.rstrip(_SENTENCE_TERMINATORS).rstrip()
+    stripped = text
+    while stripped:
+        tokens = stripped.split()
+        if not tokens or not _token_ends_sentence(tokens[-1]):
+            break
+        stripped = stripped[:-1].rstrip()
     return stripped or text
 
 
@@ -92,10 +143,7 @@ def learned_term_is_sentence_like(
         return True
     if strip_terminal_sentence_punctuation(text) != text:
         return True
-    return any(
-        token.endswith(tuple(_SENTENCE_TERMINATORS)) and not _token_is_abbreviation_like(token)
-        for token in tokens[:-1]
-    )
+    return any(_token_ends_sentence(token) for token in tokens[:-1])
 
 
 __all__ = [

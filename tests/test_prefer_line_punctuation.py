@@ -85,6 +85,34 @@ def test_bias_plan_initial_prompt_has_no_comma_spliced_punctuation() -> None:
     assert "?," not in plan.initial_prompt
 
 
+# Sentences whose final word is a short capitalised name or acronym. An
+# earlier "<=4 chars with an uppercase initial is an abbreviation" heuristic
+# let every one of these keep its terminator; the explicit abbreviation list
+# does not.
+SHORT_FINAL_WORD_SENTENCES = (
+    ("Please review the PR.", "Please review the PR"),
+    ("Where is Tom?", "Where is Tom"),
+    ("Let's ship Juno!", "Let's ship Juno"),
+    ("I asked Bob.", "I asked Bob"),
+    ("Call the CEO.", "Call the CEO"),
+    ("Send it to Ann?", "Send it to Ann"),
+)
+
+
+@pytest.mark.parametrize(("phrase", "expected"), SHORT_FINAL_WORD_SENTENCES)
+def test_short_final_word_sentences_are_stripped(phrase: str, expected: str) -> None:
+    assert strip_terminal_sentence_punctuation(phrase) == expected
+    assert learned_term_is_sentence_like(phrase) is True
+
+
+def test_short_final_word_sentences_leave_no_punctuation_in_prefer_line() -> None:
+    line = _pack_prefer_line(
+        ("Widget", "Please review the PR.", "Where is Tom?"), max_chars=768
+    )
+
+    assert line == "Prefer exact forms: Widget, Please review the PR, Where is Tom"
+
+
 @pytest.mark.parametrize(
     "phrase",
     [
@@ -92,7 +120,10 @@ def test_bias_plan_initial_prompt_has_no_comma_spliced_punctuation() -> None:
         "v1.2",
         "C++",
         "e.g.",
+        "Yahoo!",
         "Acme Corp.",
+        "Widget Inc.",
+        "St. Louis Co.",
         "made in the U.S.",
         "St. Louis",
         "Karvix",
@@ -148,7 +179,19 @@ def test_sentence_like_candidates_detected(candidate: str) -> None:
 
 @pytest.mark.parametrize(
     "candidate",
-    ["Karvix", "Node.js", "v1.2", "C++", "e.g.", "Acme Corp.", "Karvix Widget Platform"],
+    [
+        "Karvix",
+        "Node.js",
+        "v1.2",
+        "C++",
+        "e.g.",
+        "Yahoo!",
+        "Acme Corp.",
+        "Widget Inc.",
+        "St. Louis Co.",
+        "see the docs etc.",
+        "Karvix Widget Platform",
+    ],
 )
 def test_term_candidates_are_not_sentence_like(candidate: str) -> None:
     assert learned_term_is_sentence_like(candidate) is False
@@ -209,6 +252,23 @@ def test_context_promotion_rejects_sentence_candidates(tmp_path: Path) -> None:
 
     assert result == {"promoted": False, "reason": "term_sentence_like"}
     assert not [row for row in memory.vocabulary.raw() if "lazy dog" in str(row.get("term", ""))]
+
+
+def test_context_promotion_rejects_short_final_word_sentence(tmp_path: Path) -> None:
+    coordinator, memory = _coordinator(tmp_path)
+    learned = JunoPersonalizationLearnedStore(tmp_path / "memory")
+    token = "Please review the PR."
+    for _ in range(3):
+        learned.increment_observation(token, from_suppressed_context=False)
+    learned.increment_acceptance(token, from_suppressed_context=False)
+
+    result = coordinator.maybe_promote_context_entity_to_lexicon(
+        token=token,
+        durable_memory_suppressed=False,
+    )
+
+    assert result == {"promoted": False, "reason": "term_sentence_like"}
+    assert not [row for row in memory.vocabulary.raw() if "review the PR" in str(row.get("term", ""))]
 
 
 def test_context_promotion_still_promotes_real_terms(tmp_path: Path) -> None:
