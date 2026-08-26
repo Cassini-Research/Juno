@@ -13,6 +13,7 @@ from juno_v2.contracts.modes import ModePolicy, ModeSelection
 from juno_v2.memory.bias import screen_term_prompt_worthy
 from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.ranking import rank_memory_for_context
+from juno_v2.memory.term_policy import strip_terminal_sentence_punctuation
 from juno_v2.personalization.seed.models import SeedBiasAttachment
 from juno_v2.runtime.deployment import _env_int
 
@@ -822,10 +823,16 @@ def _pack_prefer_line(phrases: tuple[str, ...], *, max_chars: int) -> str:
     used = len(prefix)
     out: list[str] = []
     for phrase in phrases:
-        add = len(phrase) + (2 if out else 0)
+        # Issue #79 — strip sentence-final punctuation so the joined list never
+        # reads "... Widget., Does the lazy dog sleep?"; Whisper copies the
+        # prompt's punctuation style into the transcript.
+        piece = strip_terminal_sentence_punctuation(phrase)
+        if not piece:
+            continue
+        add = len(piece) + (2 if out else 0)
         if used + add > max_chars:
             break
-        out.append(phrase)
+        out.append(piece)
         used += add
     return prefix + ", ".join(out) if out else ""
 
