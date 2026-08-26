@@ -188,12 +188,15 @@ _GENERIC_SINGLE_CANONICALIZATION_ALIAS_WORDS = frozenset({"demo", "example"})
 # ``JsonMemoryStore.add_lexicon_entry`` callers). Provenance decides whether a
 # row may rewrite committed text or may only bias the recognizer.
 #
-# ``_USER_TAUGHT_LEXICON_SOURCES`` are rows the user is responsible for: typed
-# in the Memory UI, dictated as a "remember this word" command, or promoted
-# after the user corrected the same mishearing repeatedly. Those are the only
-# rows allowed to canonicalize a single lowercase spoken word on trust alone
-# ("kubernetes" -> "Kubernetes").
-_USER_TAUGHT_LEXICON_SOURCES = frozenset(
+# ``_TRUSTED_LEXICON_SOURCES`` are rows somebody vouched for: the user typed
+# them in the Memory UI, dictated them as a "remember this word" command, or
+# they were promoted after the user corrected the same mishearing repeatedly —
+# plus ``seed_promotion``, the curated vocabulary packs shipped inside the app
+# (``seed_data/packs``). Seed rows are authored by the project, not scraped off
+# the user's screen, and they are what makes "ask claude to fix it" commit as
+# "ask Claude to fix it". Trusted rows keep the pre-existing behaviour: a
+# one-word canonical form may fix the casing of a one-word spoken token.
+_TRUSTED_LEXICON_SOURCES = frozenset(
     {
         "user",
         "user_edit",
@@ -202,6 +205,7 @@ _USER_TAUGHT_LEXICON_SOURCES = frozenset(
         "voice_command",
         "voice_teach_turn_plan",
         "correction_promoted",
+        "seed_promotion",
     }
 )
 
@@ -624,10 +628,10 @@ class RecognitionBiasEngine:
         """Decide whether one lexicon rule may rewrite committed transcript text.
 
         ``source`` is the provenance of the lexicon row (see
-        :data:`_USER_TAUGHT_LEXICON_SOURCES` / :data:`_BIAS_ONLY_LEXICON_SOURCES`).
-        Screen-harvested rows never rewrite output; user-taught rows are trusted;
-        everything else (shipped seed packs, unknown provenance) has to earn the
-        rewrite through identifier shape or on-screen evidence.
+        :data:`_TRUSTED_LEXICON_SOURCES` / :data:`_BIAS_ONLY_LEXICON_SOURCES`).
+        Screen-harvested rows never rewrite output; user-taught and shipped-seed
+        rows keep the previous behaviour; rows of unknown provenance have to earn
+        a one-word rewrite through identifier shape or on-screen evidence.
         """
         t = (trigger or "").strip()
         r = (replacement or "").strip()
@@ -637,7 +641,8 @@ class RecognitionBiasEngine:
         replacement_tokens = re.findall(r"[A-Za-z0-9]+", r)
         if not trigger_tokens or not replacement_tokens:
             return False
-        if (source or "").strip().casefold() in _BIAS_ONLY_LEXICON_SOURCES:
+        origin = (source or "").strip().casefold()
+        if origin in _BIAS_ONLY_LEXICON_SOURCES:
             # Screen-harvested vocabulary biases the recognizer but never
             # rewrites what the user actually said.
             return False
@@ -645,19 +650,24 @@ class RecognitionBiasEngine:
             _LOW_SIGNAL_SESSION_ENTITY_WORDS | _GENERIC_SINGLE_CANONICALIZATION_ALIAS_WORDS
         ):
             return self._seed_phrase_visible_in_context(r, context)
-        if (source or "").strip().casefold() in _USER_TAUGHT_LEXICON_SOURCES:
-            return True
         if len(trigger_tokens) >= 2:
             return True
-        # A single-token trigger used to short-circuit to True whenever the
-        # replacement was also a single token, which made every rail below
-        # unreachable for one-word entries and force-cased ordinary spoken
-        # words. One-word entries now have to look like an identifier
-        # (digits/punctuation, an acronym, or internal caps) or be visible in
-        # the current context before they may rewrite the transcript.
+        # Below here the trigger is a single token. It used to short-circuit to
+        # True whenever the replacement was also a single token, which made
+        # every rail below unreachable for one-word rows *regardless of where
+        # they came from* — that is how screen-harvested rows force-cased
+        # ordinary spoken words. The short circuit is still right for rows
+        # somebody vouched for (user-taught, or a shipped seed pack): that is
+        # what turns "kubernetes" into "Kubernetes" and "claude" into "Claude".
+        # Rows of unknown provenance now have to earn it below.
+        if len(replacement_tokens) <= 1 and origin in _TRUSTED_LEXICON_SOURCES:
+            return True
         if any(ch.isdigit() for ch in t) or any(ch in t for ch in {"_", "-", ".", "/", "#"}):
             return True
-        if re.search(r"[a-z][A-Z]|\b[A-Z]{2,}\b", t):
+        # Identifier shapes: internal caps (LumaRay), a bare acronym (GPU), or a
+        # leading/internal acronym run followed by lowercase (SGLang, ESLint,
+        # OLMo, ROCm). The last form used to fall through and lose its rewrite.
+        if re.search(r"[a-z][A-Z]|[A-Z]{2,}[a-z]|\b[A-Z]{2,}\b", t):
             return True
         return self._seed_phrase_visible_in_context(r, context)
 

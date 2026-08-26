@@ -1,16 +1,24 @@
 """Lexicon canonicalization rails in juno_v2/memory/bias.py.
 
 Covers which lexicon rows are allowed to rewrite committed transcript text.
-The provenance of a row decides: screen-harvested rows only bias the
-recognizer, user-taught rows are trusted, and everything else has to look
-like an identifier or be visible on screen right now.
+The provenance of a row decides: rows harvested off the user's screen only
+bias the recognizer, rows somebody vouched for (user-taught, or the curated
+packs shipped in ``seed_data``) canonicalize as before, and rows of unknown
+provenance have to look like an identifier or be visible on screen right now.
 """
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from juno_v2.contracts.context import TypedContextBundle
 from juno_v2.contracts.memory import LexiconEntry, MemorySnapshot
-from juno_v2.memory.bias import RecognitionBiasEngine
+from juno_v2.memory import bias as bias_module
+from juno_v2.memory.bias import RecognitionBiasEngine, _is_low_signal_lexicon_pair
+from juno_v2.memory.store import JsonMemoryStore
+from juno_v2.personalization.seed.load_bundle import load_seed_bundle
+from juno_v2.personalization.seed.promotion import PromotionCoordinator
 
 
 def _plan(engine: RecognitionBiasEngine, snapshot: MemorySnapshot, context: TypedContextBundle):
@@ -87,6 +95,23 @@ def test_context_promoted_row_stays_visible_on_screen_without_rewriting() -> Non
     context = TypedContextBundle(app_name="Chrome", window_title="Leaderboard - Season 4")
 
     assert _normalize(lexicon, "open the leaderboard", context=context) == "open the leaderboard"
+
+
+def test_context_promoted_camel_case_identifier_stays_bias_only() -> None:
+    """Screen-harvested code identifiers are the same hazard as plain nouns.
+
+    ``useEffect`` scraped out of an editor used to pass the identifier-shape
+    rail, and ``_phrase_pattern`` tolerates the space, so dictating the
+    ordinary words "use effect" came back as "useEffect".
+    """
+    lexicon = [
+        LexiconEntry(term="useEffect", canonical_form="useEffect", source="context_promoted")
+    ]
+
+    assert (
+        _normalize(lexicon, "that had a strange use effect on the team")
+        == "that had a strange use effect on the team"
+    )
 
 
 def test_context_promoted_terms_still_bias_the_recognizer() -> None:
@@ -171,7 +196,7 @@ def test_default_source_rows_are_treated_as_user_taught() -> None:
 
 
 # --------------------------------------------------------------------- #
-# Shipped seed rows: identifier shape or on-screen evidence
+# Shipped seed packs are curated by the project, so they stay trusted
 # --------------------------------------------------------------------- #
 
 
@@ -183,17 +208,90 @@ def test_seed_promoted_mixed_case_identifier_still_canonicalizes() -> None:
     assert _normalize(lexicon, "install bitsandbytes first") == "install BitsAndBytes first"
 
 
-def test_seed_promoted_plain_word_needs_context_evidence() -> None:
-    lexicon = [LexiconEntry(term="Cursor", canonical_form="Cursor", source="seed_promotion")]
-
-    assert _normalize(lexicon, "put the cursor at the end") == "put the cursor at the end"
-
-
-def test_seed_promoted_plain_word_canonicalizes_with_context_evidence() -> None:
+def test_seed_promoted_plain_word_keeps_its_branded_casing() -> None:
     lexicon = [LexiconEntry(term="Qwen", canonical_form="Qwen", source="seed_promotion")]
-    context = TypedContextBundle(app_name="Terminal", window_title="Qwen benchmark")
 
-    assert _normalize(lexicon, "run qwen locally", context=context) == "run Qwen locally"
+    assert _normalize(lexicon, "run qwen locally") == "run Qwen locally"
+
+
+def _seed_lexicon(tmp_path: Path):
+    seed = load_seed_bundle(Path(__file__).resolve().parents[1] / "seed_data")
+    memory = JsonMemoryStore(tmp_path / "memory")
+    PromotionCoordinator(seed=seed, memory_store=memory, learned_store=None).run_initial_promotion(
+        memory
+    )
+    return memory.snapshot()
+
+
+def _rules(entry):
+    yield entry.canonical_form, entry.canonical_form
+    yield entry.term, entry.canonical_form
+    for alias in entry.aliases:
+        yield alias, entry.canonical_form
+
+
+def _allowed_before_provenance_gating(engine, trigger: str, replacement: str, context) -> bool:
+    """The predicate exactly as it read before provenance gating was added.
+
+    Kept here so the shipped-seed corpus can be pinned against the previous
+    behaviour: promoting ``seed_data`` must not cost a single rewrite rule.
+    """
+    t, r = (trigger or "").strip(), (replacement or "").strip()
+    if not t or not r:
+        return False
+    trigger_tokens = re.findall(r"[A-Za-z0-9]+", t)
+    replacement_tokens = re.findall(r"[A-Za-z0-9]+", r)
+    if not trigger_tokens or not replacement_tokens:
+        return False
+    if len(trigger_tokens) == 1 and trigger_tokens[0].casefold() in (
+        bias_module._LOW_SIGNAL_SESSION_ENTITY_WORDS  # noqa: SLF001
+        | bias_module._GENERIC_SINGLE_CANONICALIZATION_ALIAS_WORDS  # noqa: SLF001
+    ):
+        return engine._seed_phrase_visible_in_context(r, context)  # noqa: SLF001
+    if len(trigger_tokens) >= 2 or len(replacement_tokens) <= 1:
+        return True
+    if any(ch.isdigit() for ch in t) or any(ch in t for ch in {"_", "-", ".", "/", "#"}):
+        return True
+    if re.search(r"[a-z][A-Z]|\b[A-Z]{2,}\b", t):
+        return True
+    return engine._seed_phrase_visible_in_context(r, context)  # noqa: SLF001
+
+
+def test_shipped_seed_packs_keep_every_canonicalization_rule(tmp_path: Path) -> None:
+    snapshot = _seed_lexicon(tmp_path)
+    engine = RecognitionBiasEngine()
+    context = TypedContextBundle()
+    assert len(snapshot.lexicon) > 300
+
+    lost: list[tuple[str, str]] = []
+    identity_denied: list[str] = []
+    for entry in snapshot.lexicon:
+        assert entry.source == "seed_promotion"
+        if _is_low_signal_lexicon_pair(entry.term, entry.canonical_form):
+            continue
+        for trigger, replacement in _rules(entry):
+            allowed = engine._lexicon_canonicalization_allowed(  # noqa: SLF001
+                trigger, replacement, context, source=entry.source
+            )
+            if not allowed and _allowed_before_provenance_gating(
+                engine, trigger, replacement, context
+            ):
+                lost.append((trigger, replacement))
+            if not allowed and trigger == entry.canonical_form:
+                identity_denied.append(entry.canonical_form)
+
+    assert lost == []
+    assert identity_denied == []
+
+
+def test_shipped_seed_packs_still_fix_branded_casing(tmp_path: Path) -> None:
+    lexicon = _seed_lexicon(tmp_path).lexicon
+
+    assert _normalize(lexicon, "open juno settings") == "open Juno settings"
+    assert _normalize(lexicon, "build in xcode") == "build in Xcode"
+    assert _normalize(lexicon, "post it in slack") == "post it in Slack"
+    assert _normalize(lexicon, "run sglang on the box") == "run SGLang on the box"
+    assert _normalize(lexicon, "install rockm drivers") == "install ROCm drivers"
 
 
 # --------------------------------------------------------------------- #
@@ -212,11 +310,24 @@ def test_single_token_rows_reach_the_guard_rails() -> None:
     # Unknown provenance falls through to the shape/evidence rails instead of
     # the old "single replacement token -> always allowed" short circuit.
     assert not engine._lexicon_canonicalization_allowed(  # noqa: SLF001
-        "Leaderboard", "Leaderboard", context, source="seed_promotion"
+        "Leaderboard", "Leaderboard", context, source="imported_elsewhere"
     )
     assert engine._lexicon_canonicalization_allowed(  # noqa: SLF001
-        "GPU", "GPU", context, source="seed_promotion"
+        "GPU", "GPU", context, source="imported_elsewhere"
     )
-    assert engine._lexicon_canonicalization_allowed(  # noqa: SLF001
-        "Leaderboard", "Leaderboard", context, source="user"
-    )
+    # Vouched-for provenance keeps the plain-word rewrite.
+    for trusted in ("user", "seed_promotion"):
+        assert engine._lexicon_canonicalization_allowed(  # noqa: SLF001
+            "Leaderboard", "Leaderboard", context, source=trusted
+        )
+
+
+def test_leading_acronym_identifiers_pass_the_shape_rail() -> None:
+    """``SGLang``/``ESLint``/``OLMo``/``ROCm`` are identifiers, whoever stored them."""
+    engine = RecognitionBiasEngine()
+    context = TypedContextBundle(app_name="TextEdit")
+
+    for identifier in ("SGLang", "ESLint", "OLMo", "ROCm"):
+        assert engine._lexicon_canonicalization_allowed(  # noqa: SLF001
+            identifier, identifier, context, source="imported_elsewhere"
+        ), identifier
