@@ -17,6 +17,7 @@ from juno_core_v3.dictation.pipeline import (
     _reconcile_proper_nouns_from_live_hint,
     _reconcile_protected_term_near_misses,
     _reconcile_split_candidate_term,
+    _repair_terms_after_candidate_reconciliation,
     _unsafe_writer_surface_reason,
 )
 from juno_core_v3.dictation.transcriber import FinalBackendTranscriber, TranscribeResult
@@ -1306,6 +1307,174 @@ def test_static_ai_glossary_repairs_non_common_near_misses_without_app_gate() ->
 
     assert repaired == "Use Qwen for the local model layer."
     assert replacements == [{"from": "Quen", "to": "Qwen", "source": "protected_term_near_miss"}]
+
+
+# --- Issue #68: OCR-corrupted screen terms must not rewrite correct words ----
+
+
+def test_all_caps_screen_label_does_not_bypass_the_soundex_guard() -> None:
+    # Issue #68 sub-defect 1. The soundex guard was skipped whenever
+    # ``_single_token_has_identifier_shape(target)`` was true, and that is true
+    # for ANY all-caps token. An OCR-mangled all-caps UI label therefore
+    # rewrote a phonetically unrelated word purely on edit ratio.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="I clicked on paste diagnostic thing",
+        protected_terms=("PASTF",),
+    )
+
+    assert repaired == "I clicked on paste diagnostic thing"
+    assert replacements == []
+
+
+def test_token_that_is_itself_a_protected_term_is_never_rewritten() -> None:
+    # Issue #68 sub-defect 2. Identity only disqualifies the one candidate the
+    # token equals; the correctly spelled token was then matched against an
+    # OCR-corrupted twin sitting in the same term list and rewritten into it.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="we shipped Mixtral to production",
+        protected_terms=("Mixtral", "Mixtrai"),
+    )
+
+    assert repaired == "we shipped Mixtral to production"
+    assert replacements == []
+
+
+def test_phrase_token_that_is_itself_a_protected_term_is_never_rewritten() -> None:
+    # Same defect via the phrase-token expansion of a multi-word screen term:
+    # "Gamache" comes from the phrase, and the corrupted standalone twin
+    # "Gamashe" (same soundex) then rewrote the correctly spelled token.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="ask Gamache about the rollout",
+        protected_terms=("Silvia Gamache", "Gamashe"),
+    )
+
+    assert repaired == "ask Gamache about the rollout"
+    assert replacements == []
+
+
+def test_common_word_is_not_upgraded_to_longer_product_name() -> None:
+    # Issue #68 sub-defect 3. There was a guard for observed-longer-and-prefix
+    # -of-target but not the reverse, so an ordinary noun the user actually
+    # said got a suffix appended from a screen term.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="open the Widget of a single box",
+        protected_terms=("WidgetX",),
+    )
+
+    assert repaired == "open the Widget of a single box"
+    assert replacements == []
+
+
+def test_self_truncated_proper_noun_is_still_repaired_without_eating_next_word() -> None:
+    # The sub-defect 3 guard must stay narrow. The +/-1 length check already
+    # blocks "Kube" -> "Kubernetes", so an unconditional reverse-prefix guard
+    # only ever bit when observed is the target minus its final character --
+    # which for a plain proper noun is a real ASR/self-truncation that must
+    # still repair. Worse, blocking it in ``repl`` handed the token to
+    # ``_reconcile_split_candidate_term``, which glued it to the FOLLOWING word
+    # and deleted that word ("... Kubernete now" -> "... Kubernetes").
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="deploy to Kubernete now",
+        protected_terms=("Kubernetes",),
+    )
+
+    assert repaired == "deploy to Kubernetes now"
+    assert replacements == [
+        {"from": "Kubernete", "to": "Kubernetes", "source": "protected_term_near_miss"}
+    ]
+
+
+def test_self_truncated_product_name_repair_preserves_following_function_word() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="use Postgre so we can",
+        protected_terms=("Postgres",),
+    )
+
+    assert repaired == "use Postgres so we can"
+    assert replacements == [
+        {"from": "Postgre", "to": "Postgres", "source": "protected_term_near_miss"}
+    ]
+
+
+def test_near_miss_repair_terms_exclude_what_the_candidate_pass_canonicalised() -> None:
+    # Issue #68 sub-defect 4. The explicit-candidate pass canonicalises the
+    # corrupted twin back to the real term, then the near-miss pass runs on its
+    # output with the twin still on the repair list and reverts it — two
+    # replacements, zero net effect.
+    repair_terms = ("Mixtral", "Mixtrai")
+    reconciled, candidate_replacements = _reconcile_explicit_candidate_term_confusions(
+        text="we shipped Mixtrai to production",
+        explicit_candidate_terms=("Mixtral",),
+        protected_terms=repair_terms,
+    )
+
+    assert reconciled == "we shipped Mixtral to production"
+    assert candidate_replacements == [
+        {"from": "Mixtrai", "to": "Mixtral", "source": "explicit_candidate"}
+    ]
+
+    remaining_terms = _repair_terms_after_candidate_reconciliation(
+        repair_terms, candidate_replacements
+    )
+    assert remaining_terms == ("Mixtral",)
+
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text=reconciled,
+        protected_terms=remaining_terms,
+    )
+
+    assert repaired == "we shipped Mixtral to production"
+    assert replacements == []
+
+    # Belt and braces: even handed the unfiltered list, the near-miss pass must
+    # leave the canonicalised token alone rather than revert it.
+    unfiltered_repaired, unfiltered_replacements = _reconcile_protected_term_near_misses(
+        text=reconciled,
+        protected_terms=repair_terms,
+    )
+
+    assert unfiltered_repaired == "we shipped Mixtral to production"
+    assert unfiltered_replacements == []
+
+
+def test_repair_terms_after_candidate_reconciliation_is_a_no_op_without_edits() -> None:
+    repair_terms = ("Mixtral", "Mixtrai")
+
+    assert _repair_terms_after_candidate_reconciliation(repair_terms, []) == repair_terms
+    assert (
+        _repair_terms_after_candidate_reconciliation(
+            repair_terms,
+            [{"from": "Mixtral", "to": "Mixtral", "source": "explicit_candidate"}],
+        )
+        == repair_terms
+    )
+
+
+def test_genuine_misheard_product_name_is_still_repaired() -> None:
+    # The issue #68 guards must not weaken real near-miss repair: a genuinely
+    # misheard product name with matching soundex still gets fixed.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="we shipped Mixxtral last week",
+        protected_terms=("Mixtral",),
+    )
+
+    assert repaired == "we shipped Mixtral last week"
+    assert replacements == [
+        {"from": "Mixxtral", "to": "Mixtral", "source": "protected_term_near_miss"}
+    ]
+
+
+def test_near_miss_repair_still_fires_when_correct_term_appears_elsewhere() -> None:
+    # Skipping exact-match tokens must be per-token, not a whole-text bail-out.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="Mixtral first, then Mixxtral again",
+        protected_terms=("Mixtral",),
+    )
+
+    assert repaired == "Mixtral first, then Mixtral again"
+    assert replacements == [
+        {"from": "Mixxtral", "to": "Mixtral", "source": "protected_term_near_miss"}
+    ]
 
 
 def test_oneshot_salvages_qwen_self_correction_after_protected_phrase_repair() -> None:
