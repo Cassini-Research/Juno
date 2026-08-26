@@ -8,8 +8,6 @@ import struct
 import tempfile
 import wave
 
-import pytest
-
 from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
@@ -2376,13 +2374,6 @@ def _adjudication_result(
 # --------------------------------------------------------------------- #
 
 
-def _system_dictionary_available() -> bool:
-    """True when the platform word list backing the common-word policy loaded."""
-    from juno_v2.memory.entity_policy import common_english_single_word
-
-    return common_english_single_word("cloud")
-
-
 def test_screen_terms_filtered_before_whisper_prompt() -> None:
     from juno_v2.memory.bias import (
         _diversify_bias_phrases,
@@ -2489,10 +2480,6 @@ def test_ocr_letter_substitution_screen_terms_dropped() -> None:
         assert not is_biasable_runtime_context_candidate(junk), junk
 
 
-@pytest.mark.skipif(
-    not _system_dictionary_available(),
-    reason="letter-substitution repairs below need the system word list",
-)
 def test_ocr_letter_substitution_issue_examples_dropped() -> None:
     # The exact tokens reported in issue #78 — 2026-08-26, candidate lists
     # dominated by l/I/1 and o/e misreads of window text.
@@ -2510,6 +2497,12 @@ def test_ocr_letter_substitution_issue_examples_dropped() -> None:
         "Nurnber",         # rn/m  -> number
         "Modorn",          # o/e   -> modern
         "Docurnent",       # rn/m  -> document
+        "Cornputer",       # rn/m  -> computer
+        "Passvvord",       # vv/w  -> password
+        "Slgnature",       # i/l/1 -> signature
+        "Actlvity",        # i/l/1 -> activity
+        "Extenslons",      # i/l/1 -> extensions (plural of chrome vocabulary)
+        "Prefercnces",     # c/e   -> preferences (plural)
     ):
         assert not screen_term_prompt_worthy(junk), junk
         assert not is_biasable_runtime_context_candidate(junk), junk
@@ -2526,9 +2519,9 @@ def test_generic_window_chrome_screen_terms_dropped() -> None:
         "Sidebar", "Bookmark", "Bookmarks", "Separator", "Reading", "List",
         "Reload", "Back", "Forward", "Tab", "Tabs", "Toolbar", "Window",
         "Menu", "Settings", "Preferences", "Search", "History", "Downloads",
-        "Extensions", "Wallet", "Groups", "Help", "View", "Edit", "File",
+        "Extensions", "Groups", "Help", "View", "Edit", "File",
         "Insert", "Format", "Tools", "Terminal", "Console", "Output",
-        "Problems", "Debug", "Run", "Source", "Control", "Explorer",
+        "Problems", "Debug", "Run", "Source", "Control",
         "Untitled", "Save", "Open", "Close", "Cancel", "OK", "Done", "Next",
         "Previous", "Minimize", "Maximize", "Zoom", "Sign", "Log", "Account",
         "Profile", "Notifications", "Updates", "Recent", "Favorites", "Trash",
@@ -2566,6 +2559,73 @@ def test_product_names_survive_ocr_and_chrome_gates() -> None:
 
     for identifier in ("juno_v2", "app.py", "NovaDesk", "OpenAI"):
         assert is_biasable_runtime_context_candidate(identifier), identifier
+
+    # Chrome-ish words that are also product names stay biasable on purpose.
+    for product in ("Explorer", "Wallet"):
+        assert screen_term_prompt_worthy(product), product
+
+
+def test_ocr_gate_never_repairs_acronyms() -> None:
+    # An all-caps acronym is exactly the kind of term this gate exists to feed
+    # the prompt, and half of them sit one confusable read away from a word
+    # (LLM/lim, NLP/nip, URL/uri). The OCR check must not touch them.
+    from juno_v2.memory.bias import (
+        _looks_like_ocr_letter_substitution,
+        screen_term_prompt_worthy,
+    )
+
+    for acronym in (
+        "LLM", "NLP", "URL", "DOI", "IOU", "LOL", "ILM", "ALI", "API", "SDK",
+        "CLI", "GPU", "RAM", "SSD", "VPN", "OCR", "ASR", "TTS",
+    ):
+        assert not _looks_like_ocr_letter_substitution(acronym), acronym
+        assert screen_term_prompt_worthy(acronym), acronym
+
+
+def test_screen_term_gate_keeps_ordinary_names() -> None:
+    # Screen-harvested contact and product names are the whole point of the
+    # gate, and the platform word list is wide enough that one confusable read
+    # off almost any short name lands on some obscure entry ("Hari" -> harl,
+    # "Kunal" -> kunai, "Bharat" -> bharal, "Marlon" -> marion). None of these
+    # may be discarded as OCR damage.
+    from juno_v2.memory.bias import screen_term_prompt_worthy
+
+    names = (
+        # Names sitting one confusable read from a dictionary obscurity.
+        "Ali", "Hari", "Uma", "Kunal", "Hemant", "Bharat", "Lorna", "Marlon",
+        "Marlo", "Marnie", "Dara", "Cali", "Ilsa", "Ilse", "Nicola", "Barnes",
+        "Lilly", "Olly", "Oli", "Cloe", "Dio", "Deno", "Ghostty", "Teo",
+        "Coolio", "Koll", "Iolo", "Loli",
+        # Indian first names.
+        "Aarav", "Aditya", "Ananya", "Anjali", "Arjun", "Bhavna", "Chetan",
+        "Deepak", "Divya", "Gaurav", "Harsha", "Ishaan", "Jaya", "Kabir",
+        "Karthik", "Lakshmi", "Manish", "Meera", "Nandini", "Nilofar",
+        "Paresh", "Pooja", "Priya", "Rahul", "Rohan", "Sameer", "Sanjay",
+        "Shreya", "Sunita", "Tanvi", "Varun", "Vikram", "Yash", "Kavya",
+        "Nikhil", "Rajesh", "Swati", "Tarun", "Usha",
+        # Western first names.
+        "Aaron", "Adele", "Alan", "Alice", "Amelia", "Ava", "Beatrix", "Caleb",
+        "Chloe", "Clara", "Daniel", "Elena", "Emma", "Ezra", "Finn", "Freya",
+        "Gabriel", "Hazel", "Hugo", "Ingrid", "Isla", "Jonas", "Katya", "Lena",
+        "Liam", "Luca", "Maia", "Marcus", "Maya", "Milo", "Mira", "Nadia",
+        "Noah", "Nora", "Oscar", "Otto", "Petra", "Quinn", "Rosa", "Sasha",
+        "Sienna", "Simone", "Tara", "Theo", "Ulrich", "Vera", "Wren", "Yara",
+        "Zara", "Zoe",
+        # Product, company and tool names.
+        "Juno", "Figma", "Vercel", "Notion", "Slack", "Cursor", "Stripe",
+        "Cassini", "Sonos", "Spotify", "Airbnb", "Tesla", "Nvidia", "Telegram",
+        "Reddit", "Discord", "Asana", "Trello", "Datadog", "Snowflake",
+        "Databricks", "Postgres", "Redis", "Kafka", "Docker", "Kubernetes",
+        "Terraform", "Ansible", "Grafana", "Prometheus", "Twilio", "Shopify",
+        "Klarna", "Revolut", "Monzo", "Plaid", "Brex", "Rippling", "Gusto",
+        "Miro", "Loom", "Calendly", "Superhuman", "Fastmail", "Proton",
+        "Tailscale", "Cloudflare", "Netlify", "Heroku", "Supabase", "Firebase",
+        "Okta", "Yubikey", "Brave", "Firefox", "Vivaldi", "Neovim", "Emacs",
+        "Sublime", "Xcode", "Kotlin", "Golang", "Elixir", "Haskell", "Clojure",
+        "Whisper", "Qwen", "Mistral", "Perplexity", "Sora",
+    )
+    assert len(names) >= 100
+    assert [name for name in names if not screen_term_prompt_worthy(name)] == []
 
 
 def test_screen_ocr_junk_filtered_from_preview_repair_terms() -> None:
