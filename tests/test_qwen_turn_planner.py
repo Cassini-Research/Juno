@@ -4447,3 +4447,148 @@ def test_ordinal_expansion_noop_when_model_batch_complete() -> None:
     expanded, notes = P._expand_missing_ordinal_actions(complete, source_text=source)
     assert expanded == complete
     assert notes == []
+
+
+# --- Action-kind enum / synonym coercion (issue #76) -------------------------
+
+
+def _action_kind_plan(kind: str, *, source: str, body: str) -> dict[str, Any]:
+    return {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source, "corrections": [], "literal_spans": []},
+        "target": {"kind": "none", "confidence": 0.9},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None},
+        "actions": [
+            {
+                "kind": kind,
+                "operation": "create",
+                "body": body,
+                "evidence_span": body,
+                "schedule": {"kind": "none"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+
+def test_action_kind_synonyms_canonicalize() -> None:
+    from juno_v2.turn_plan.validators import canonical_action_kind
+
+    assert canonical_action_kind("note") == "note"
+    assert canonical_action_kind("Note") == "note"
+    assert canonical_action_kind("create_note") == "note"
+    assert canonical_action_kind("Create Note") == "note"
+    assert canonical_action_kind("createNote") == "note"
+    assert canonical_action_kind("notes") == "note"
+    assert canonical_action_kind("todo") == "reminder"
+    assert canonical_action_kind("task") == "reminder"
+    assert canonical_action_kind("add-reminder") == "reminder"
+    assert canonical_action_kind("Reminders") == "reminder"
+    assert canonical_action_kind("set_alarm") == "alarm"
+    assert canonical_action_kind("frobnicate") is None
+    assert canonical_action_kind("") is None
+    assert canonical_action_kind(None) is None
+
+
+def test_turn_plan_normalizer_coerces_action_kind_synonym() -> None:
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("create_note", source=source, body="about the release checklist")
+
+    normalized, notes = normalize_turn_plan(plan, source_text=source)
+
+    assert normalized["actions"][0]["kind"] == "note"
+    assert "action_kind_alias_normalized" in notes
+
+
+def test_turn_plan_synonym_kind_validates_and_ships_action() -> None:
+    """Regression for #76: a coerced plan must not be 'ok' and then discarded."""
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("create_note", source=source, body="about the release checklist")
+
+    normalized, _ = normalize_turn_plan(plan, source_text=source)
+    validation = validate_turn_plan(
+        normalized, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert validation.ok
+    assert not any("invalid_kind" in w for w in validation.warnings)
+
+    parsed = actions_from_turn_plan(normalized, source_text=source)
+    assert [a.kind.value for a in (parsed.actions or [])] == ["note"]
+    assert parsed.rejected_reason is None
+
+
+def test_turn_plan_actions_coerce_synonym_kind_without_normalizer() -> None:
+    source = "remind me to water the plants"
+    plan = _action_kind_plan("todo", source=source, body="water the plants")
+
+    parsed = actions_from_turn_plan(plan, source_text=source)
+
+    assert [a.kind.value for a in (parsed.actions or [])] == ["reminder"]
+
+
+def test_turn_plan_validation_fails_on_unknown_action_kind() -> None:
+    """Unknown kinds fail the plan so the extractor fallback runs immediately."""
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("frobnicate", source=source, body="about the release checklist")
+
+    validation = validate_turn_plan(
+        plan, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert not validation.ok
+    assert "action_0_invalid_kind" in validation.errors
+    assert "action_0_invalid_kind" not in validation.warnings
+
+
+def test_turn_plan_other_action_problems_stay_warnings() -> None:
+    """Only the kind became plan-fatal; ungrounded siblings still warn."""
+    source = "remind me to water the plants"
+    plan = _action_kind_plan("reminder", source=source, body="water the plants")
+    plan["actions"].append(
+        {
+            "kind": "note",
+            "operation": "create",
+            "body": "buy a completely different thing",
+            "evidence_span": "buy a completely different thing",
+            "schedule": {"kind": "none"},
+            "missing_fields": [],
+        }
+    )
+
+    validation = validate_turn_plan(
+        plan, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert validation.ok
+    assert "action_1_evidence_not_grounded" in validation.warnings
+
+
+def test_turn_plan_schema_hint_and_prompt_spell_out_action_kind_enum() -> None:
+    from juno_v2.turn_plan.planner import _turn_plan_schema_hint
+
+    hint = _turn_plan_schema_hint()
+    assert hint["allowed_values"]["actions.kind"] == ["note", "reminder", "alarm"]
+    assert hint["actions"]["kind"]["enum"] == ["note", "reminder", "alarm"]
+    for kind in ("note", "reminder", "alarm"):
+        assert kind in hint["actions"]["kind"]
+
+    prompt = _system_prompt(
+        WriterTransformRequest(
+            utterance_id="utt-action-kind-enum",
+            instruction="Plan the turn.",
+            source_text="take a note about the release checklist",
+            mode=WriterMode.DEFAULT_SURFACE,
+            context_payload={"task": "turn_planning_v1"},
+            metadata={"kind": "turn_planning_v1"},
+        )
+    )
+    assert "actions[].kind must be exactly one of three literals" in prompt
+    assert "'note'" in prompt and "'reminder'" in prompt and "'alarm'" in prompt
+    assert "create_note" in prompt
