@@ -3590,6 +3590,8 @@ def _reconcile_split_candidate_term(
                 ratio = difflib.SequenceMatcher(a=folded, b=target_folded, autojunk=False).ratio()
                 if ratio < 0.78:
                     continue
+                if not _split_candidate_tokens_all_consumed(observed_tokens, target_folded):
+                    continue
             start = spans[idx][1]
             end = spans[idx + width - 1][2]
             observed = " ".join(observed_tokens)
@@ -3659,6 +3661,54 @@ def _split_candidate_tokens_safe_for_term(observed_tokens: list[str], target: st
         return False
     if any(token == target_folded for token in token_norms) and "".join(token_norms) != target_folded:
         return False
+    return True
+
+
+def _split_candidate_tokens_all_consumed(observed_tokens: list[str], target_folded: str) -> bool:
+    """True when every token in the merged span is spelled out by the term.
+
+    ``_reconcile_split_candidate_term`` replaces the WHOLE span from the first
+    token to the last with the single term, so any token in that span the term
+    does not account for is deleted from the user's text. The span-wide
+    similarity ratio cannot catch that on its own: when the first token already
+    nearly spells the term ("Kubernet" for "Kubernetes"), the ±2 length budget
+    and the 0.78 ratio leave enough slack for a following dictated word
+    ("here", "also", "next") to ride along inside the replaced span and vanish.
+
+    A split repair is by definition the term itself broken across tokens, so
+    each token must be almost entirely accounted for by the term's characters.
+    One unmatched character per token is tolerated (that is the misheard letter
+    the repair exists to fix); tokens of one or two characters must match
+    exactly, since "one wrong out of two" is not evidence of anything. Failing
+    this check only skips a repair — it never deletes a word.
+    """
+
+    normalised = [
+        re.sub(r"[^A-Za-z0-9]+", "", token or "").casefold() for token in observed_tokens
+    ]
+    if not normalised or not all(normalised) or not target_folded:
+        return False
+    bounds: list[tuple[int, int]] = []
+    cursor = 0
+    for token in normalised:
+        bounds.append((cursor, cursor + len(token)))
+        cursor += len(token)
+    folded = "".join(normalised)
+    matched = [0] * len(normalised)
+    for block in difflib.SequenceMatcher(
+        a=folded, b=target_folded, autojunk=False
+    ).get_matching_blocks():
+        if not block.size:
+            continue
+        block_end = block.a + block.size
+        for index, (start, end) in enumerate(bounds):
+            overlap = min(end, block_end) - max(start, block.a)
+            if overlap > 0:
+                matched[index] += overlap
+    for count, token in zip(matched, normalised):
+        allowance = 1 if len(token) >= 3 else 0
+        if count < len(token) - allowance:
+            return False
     return True
 
 

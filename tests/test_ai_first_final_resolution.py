@@ -1146,6 +1146,79 @@ def test_split_candidate_repair_does_not_absorb_function_words() -> None:
     assert replacements == [{"from": "Luma Ray", "to": "LumaRay", "source": "explicit_candidate_split_phrase"}]
 
 
+# --- Issue #82: the split-phrase pass must not swallow a following word ------
+
+
+def test_split_candidate_repair_never_deletes_a_word_outside_the_term() -> None:
+    # The pass replaces the WHOLE span from the first token to the last with
+    # the term. "Kubernet" already nearly spells "Kubernetes", so the span-wide
+    # ratio stayed above threshold with a whole dictated word ("here") along
+    # for the ride -- and that word was deleted.
+    unchanged, replacements = _reconcile_split_candidate_term(
+        "we use Kubernet here in prod",
+        "Kubernetes",
+    )
+
+    assert unchanged == "we use Kubernet here in prod"
+    assert replacements == []
+
+
+def test_near_miss_split_pass_does_not_eat_the_word_after_a_truncated_term() -> None:
+    # Same defect through the real entry point, on an input the per-token
+    # ``repl`` declines: "Kubernet" is two characters shorter than
+    # "Kubernetes", so the +/-1 length guard in ``_protected_term_near_miss``
+    # rejects it and the token falls through to the split-phrase pass.
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="we use Kubernet here in prod",
+        protected_terms=("Kubernetes",),
+    )
+
+    assert repaired == "we use Kubernet here in prod"
+    assert replacements == []
+
+
+def test_near_miss_split_pass_keeps_trailing_words_of_every_shape() -> None:
+    for trailing in ("here", "also", "next", "soon", "well"):
+        text = f"we use Kubernet {trailing} in prod"
+        repaired, replacements = _reconcile_protected_term_near_misses(
+            text=text,
+            protected_terms=("Kubernetes",),
+        )
+
+        assert repaired == text
+        assert replacements == []
+
+
+def test_split_candidate_repair_still_merges_genuinely_split_terms() -> None:
+    two_tokens, two_replacements = _reconcile_split_candidate_term(
+        "run the Kuber netes upgrade",
+        "Kubernetes",
+    )
+    three_tokens, three_replacements = _reconcile_split_candidate_term(
+        "open Ku ber netes now",
+        "Kubernetes",
+    )
+    misheard, misheard_replacements = _reconcile_split_candidate_term(
+        "run the Kuber netis upgrade",
+        "Kubernetes",
+    )
+
+    assert two_tokens == "run the Kubernetes upgrade"
+    assert two_replacements == [
+        {"from": "Kuber netes", "to": "Kubernetes", "source": "explicit_candidate_split_phrase"}
+    ]
+    assert three_tokens == "open Kubernetes now"
+    assert three_replacements == [
+        {"from": "Ku ber netes", "to": "Kubernetes", "source": "explicit_candidate_split_phrase"}
+    ]
+    # A single misheard character inside one of the split tokens is exactly what
+    # this pass exists to repair, so the guard must tolerate it.
+    assert misheard == "run the Kubernetes upgrade"
+    assert misheard_replacements == [
+        {"from": "Kuber netis", "to": "Kubernetes", "source": "explicit_candidate_split_phrase"}
+    ]
+
+
 def test_live_hint_repair_does_not_rewrite_valid_word_to_context_app_name() -> None:
     text, replacements = _reconcile_proper_nouns_from_live_hint(
         live_hint="Hey Juno, add a reminder to go to disco with Ishita next week.",
