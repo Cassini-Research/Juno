@@ -683,18 +683,27 @@ def normalize_turn_plan(plan: dict[str, Any], *, source_text: str) -> tuple[dict
             if not isinstance(action, dict):
                 notes.append("action_non_object_dropped")
                 continue
+            raw_kind = str(action.get("kind") or "").strip()
+            kind = canonical_action_kind(raw_kind)
+            if kind is None:
+                # No sink can serve this kind, so it is dropped here rather
+                # than left for the validator. Failing the plan instead
+                # would buy a second turn_repair_v1 decode before any
+                # fallback runs, and would sink well-formed siblings;
+                # dropping keeps the 2026-06-11 ship-valid-siblings
+                # behaviour and leaves an all-bad batch on the existing
+                # no_valid_actions path (issue #76).
+                notes.append("action_kind_unknown_dropped")
+                continue
             action = deepcopy(action)
             if _coerce_span_field(action, "evidence_span", source_text):
                 notes.append("action_evidence_span_object_to_text")
-            kind = str(action.get("kind") or "").strip()
-            canonical_kind = canonical_action_kind(kind)
-            if canonical_kind is not None and canonical_kind != kind:
+            if kind != raw_kind:
                 # Same fix as the render_kind aliases above: the model
                 # emits "create_note"/"Reminders"/"todo" and the plan
                 # validated "ok" while every downstream consumer dropped
-                # the action (issue #76).
-                action["kind"] = canonical_kind
-                kind = canonical_kind
+                # the action.
+                action["kind"] = kind
                 notes.append("action_kind_alias_normalized")
             body = str(action.get("body") or "").strip()
             evidence = str(action.get("evidence_span") or "").strip()

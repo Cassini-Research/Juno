@@ -35,6 +35,7 @@ _ACTION_KIND_ALIASES = {
     "note_create": "note",
     "note_action": "note",
     "create_note": "note",
+    "create_notes": "note",
     "new_note": "note",
     "add_note": "note",
     "make_note": "note",
@@ -48,6 +49,7 @@ _ACTION_KIND_ALIASES = {
     "reminder_create": "reminder",
     "reminder_action": "reminder",
     "create_reminder": "reminder",
+    "create_reminders": "reminder",
     "new_reminder": "reminder",
     "add_reminder": "reminder",
     "set_reminder": "reminder",
@@ -58,6 +60,7 @@ _ACTION_KIND_ALIASES = {
     "tasks": "reminder",
     "todo": "reminder",
     "todos": "reminder",
+    "todo_item": "reminder",
     "to_do": "reminder",
     "to_dos": "reminder",
     # Alarm synonyms.
@@ -68,6 +71,7 @@ _ACTION_KIND_ALIASES = {
     "new_alarm": "alarm",
     "add_alarm": "alarm",
     "set_alarm": "alarm",
+    "alarm_set": "alarm",
     "make_alarm": "alarm",
     "wake_up_alarm": "alarm",
 }
@@ -78,11 +82,15 @@ def canonical_action_kind(value: Any) -> str | None:
 
     The planner prompt lists three kinds, but the model routinely emits
     verb-prefixed, plural, camelCase, or spaced variants ("create_note",
-    "Reminders", "createAlarm"). Those used to survive validation as a
-    warning and were then dropped by ``actions_from_turn_plan`` after the
-    full decode had been paid for; every such plan was "ok" and
-    un-shippable at once. Coerce what is unambiguous here and let callers
-    reject the rest outright so the extractor fallback runs immediately.
+    "Reminders", "createAlarm"). Those survived validation as a warning
+    and were then dropped by ``actions_from_turn_plan`` after the full
+    decode had been paid for; every such plan was "ok" and un-shippable
+    at once (issue #76).
+
+    Returns ``None`` for a kind no sink can serve. Callers must treat
+    that as "drop this action", never as "fail this plan": ok=False in
+    ``WriterService._turn_plan_result`` costs a second turn_repair_v1
+    decode before any fallback runs.
     """
     raw = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", str(value or ""))
     key = re.sub(r"[^a-z0-9]+", "_", raw.casefold()).strip("_")
@@ -176,12 +184,13 @@ def validate_turn_plan(
             # plan that coercion could already salvage (production
             # 2026-06-11: one ungrounded note body rejected a five-action
             # utterance after the repair decode returned garbage).
-            # An unrecognized action kind is the exception: nothing
-            # downstream can build an Action from it, so warning here only
-            # bought an "ok" plan that was discarded later.
-            action_errors, action_warnings = _validate_action_dict(action, idx=idx, source_text=source_text)
-            errors.extend(action_errors)
-            warnings.extend(action_warnings)
+            # An unrecognized kind is no exception: ok=False here costs a
+            # second turn_repair_v1 decode in WriterService before any
+            # fallback runs, and it would sink a batch whose siblings are
+            # fine. The normalizer drops uncoercible actions instead, so a
+            # plan that reaches here with only bad kinds has an empty
+            # actions list and takes the existing no_valid_actions path.
+            warnings.extend(_validate_action_dict(action, idx=idx, source_text=source_text))
 
     transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
     if transform:
@@ -228,14 +237,13 @@ def _memory_candidate_is_common_phrase(value: str) -> bool:
     return bool(tokens) and all(common_english_single_word(token) for token in tokens)
 
 
-def _validate_action_dict(action: Any, *, idx: int, source_text: str) -> tuple[list[str], list[str]]:
-    """Return ``(plan_fatal_errors, per_action_warnings)`` for one action."""
+def _validate_action_dict(action: Any, *, idx: int, source_text: str) -> list[str]:
     warnings: list[str] = []
     if not isinstance(action, dict):
-        return [], [f"action_{idx}_not_object"]
+        return [f"action_{idx}_not_object"]
     kind = canonical_action_kind(action.get("kind"))
     if kind is None:
-        return [f"action_{idx}_invalid_kind"], warnings
+        return [f"action_{idx}_invalid_kind"]
     operation = str(action.get("operation") or "create").strip()
     if operation not in {"create", "update", "delete", "complete", "query", "append_to", "remove_from"}:
         warnings.append(f"action_{idx}_invalid_operation")
@@ -255,7 +263,7 @@ def _validate_action_dict(action: Any, *, idx: int, source_text: str) -> tuple[l
             warnings.append(f"action_{idx}_schedule_not_grounded")
         if kind == "alarm" and schedule_kind in {"none", ""}:
             warnings.append(f"action_{idx}_alarm_missing_schedule")
-    return [], warnings
+    return warnings
 
 
 def span_present(span: Any, source_text: str) -> bool:
