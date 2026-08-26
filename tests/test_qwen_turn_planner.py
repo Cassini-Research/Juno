@@ -4718,15 +4718,20 @@ def test_reported_command_utterance_costs_one_decode() -> None:
 
 
 def test_turn_plan_other_action_problems_stay_warnings() -> None:
-    """Only the kind became plan-fatal; ungrounded siblings still warn."""
+    """The kind stayed warning-level, and so did every other per-action check.
+
+    The sibling here is fully grounded and fails only on its operation, so
+    this stays independent of the evidence-grounding policy (which #77 makes
+    plan-fatal on its own branch).
+    """
     source = "remind me to water the plants"
     plan = _action_kind_plan("reminder", source=source, body="water the plants")
     plan["actions"].append(
         {
             "kind": "note",
-            "operation": "create",
-            "body": "buy a completely different thing",
-            "evidence_span": "buy a completely different thing",
+            "operation": "frobnicate",
+            "body": "water the plants",
+            "evidence_span": "water the plants",
             "schedule": {"kind": "none"},
             "missing_fields": [],
         }
@@ -4737,7 +4742,8 @@ def test_turn_plan_other_action_problems_stay_warnings() -> None:
     )
 
     assert validation.ok
-    assert "action_1_evidence_not_grounded" in validation.warnings
+    assert validation.errors == []
+    assert "action_1_invalid_operation" in validation.warnings
 
 
 def test_turn_plan_schema_hint_and_prompt_spell_out_action_kind_enum() -> None:
