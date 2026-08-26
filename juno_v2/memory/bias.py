@@ -184,6 +184,34 @@ _LOW_SIGNAL_SESSION_ENTITY_WORDS = frozenset(
 
 _GENERIC_SINGLE_CANONICALIZATION_ALIAS_WORDS = frozenset({"demo", "example"})
 
+# Lexicon rows record where the term came from (see
+# ``JsonMemoryStore.add_lexicon_entry`` callers). Provenance decides whether a
+# row may rewrite committed text or may only bias the recognizer.
+#
+# ``_USER_TAUGHT_LEXICON_SOURCES`` are rows the user is responsible for: typed
+# in the Memory UI, dictated as a "remember this word" command, or promoted
+# after the user corrected the same mishearing repeatedly. Those are the only
+# rows allowed to canonicalize a single lowercase spoken word on trust alone
+# ("kubernetes" -> "Kubernetes").
+_USER_TAUGHT_LEXICON_SOURCES = frozenset(
+    {
+        "user",
+        "user_edit",
+        "explicit",
+        "explicit_teach",
+        "voice_command",
+        "voice_teach_turn_plan",
+        "correction_promoted",
+    }
+)
+
+# ``_BIAS_ONLY_LEXICON_SOURCES`` are rows harvested from whatever happened to
+# be on screen. The user never confirmed them, so they are ASR bias hints only.
+# Applying them as deterministic rewrites capitalized ordinary nouns
+# ("a leaderboard" -> "a Leaderboard") and swapped spoken phrases for on-screen
+# acronyms ("peer-to-peer" -> "P2P").
+_BIAS_ONLY_LEXICON_SOURCES = frozenset({"context_promoted"})
+
 
 @dataclass(slots=True)
 class RecognitionBiasEngine:
@@ -551,12 +579,18 @@ class RecognitionBiasEngine:
         for entry in snapshot.lexicon:
             if _is_low_signal_lexicon_pair(entry.term, entry.canonical_form):
                 continue
-            if self._lexicon_canonicalization_allowed(entry.canonical_form, entry.canonical_form, plan.context):
+            if self._lexicon_canonicalization_allowed(
+                entry.canonical_form, entry.canonical_form, plan.context, source=entry.source
+            ):
                 canonical_map.append((entry.canonical_form, entry.canonical_form, 'lexicon_canonical'))
-            if self._lexicon_canonicalization_allowed(entry.term, entry.canonical_form, plan.context):
+            if self._lexicon_canonicalization_allowed(
+                entry.term, entry.canonical_form, plan.context, source=entry.source
+            ):
                 canonical_map.append((entry.term, entry.canonical_form, 'lexicon_term'))
             for alias in entry.aliases:
-                if self._lexicon_canonicalization_allowed(alias, entry.canonical_form, plan.context):
+                if self._lexicon_canonicalization_allowed(
+                    alias, entry.canonical_form, plan.context, source=entry.source
+                ):
                     canonical_map.append((alias, entry.canonical_form, 'lexicon_alias'))
         # Most context candidates are ASR bias hints, not deterministic rewrite
         # rules. Treating every screen/live candidate as a canonical form
@@ -584,7 +618,17 @@ class RecognitionBiasEngine:
         trigger: str,
         replacement: str,
         context: TypedContextBundle,
+        *,
+        source: str = "user",
     ) -> bool:
+        """Decide whether one lexicon rule may rewrite committed transcript text.
+
+        ``source`` is the provenance of the lexicon row (see
+        :data:`_USER_TAUGHT_LEXICON_SOURCES` / :data:`_BIAS_ONLY_LEXICON_SOURCES`).
+        Screen-harvested rows never rewrite output; user-taught rows are trusted;
+        everything else (shipped seed packs, unknown provenance) has to earn the
+        rewrite through identifier shape or on-screen evidence.
+        """
         t = (trigger or "").strip()
         r = (replacement or "").strip()
         if not t or not r:
@@ -593,12 +637,24 @@ class RecognitionBiasEngine:
         replacement_tokens = re.findall(r"[A-Za-z0-9]+", r)
         if not trigger_tokens or not replacement_tokens:
             return False
+        if (source or "").strip().casefold() in _BIAS_ONLY_LEXICON_SOURCES:
+            # Screen-harvested vocabulary biases the recognizer but never
+            # rewrites what the user actually said.
+            return False
         if len(trigger_tokens) == 1 and trigger_tokens[0].casefold() in (
             _LOW_SIGNAL_SESSION_ENTITY_WORDS | _GENERIC_SINGLE_CANONICALIZATION_ALIAS_WORDS
         ):
             return self._seed_phrase_visible_in_context(r, context)
-        if len(trigger_tokens) >= 2 or len(replacement_tokens) <= 1:
+        if (source or "").strip().casefold() in _USER_TAUGHT_LEXICON_SOURCES:
             return True
+        if len(trigger_tokens) >= 2:
+            return True
+        # A single-token trigger used to short-circuit to True whenever the
+        # replacement was also a single token, which made every rail below
+        # unreachable for one-word entries and force-cased ordinary spoken
+        # words. One-word entries now have to look like an identifier
+        # (digits/punctuation, an acronym, or internal caps) or be visible in
+        # the current context before they may rewrite the transcript.
         if any(ch.isdigit() for ch in t) or any(ch in t for ch in {"_", "-", ".", "/", "#"}):
             return True
         if re.search(r"[a-z][A-Z]|\b[A-Z]{2,}\b", t):
