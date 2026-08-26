@@ -122,6 +122,53 @@ def test_multi_sentence_question_tail_still_gets_question_mark() -> None:
         assert result.rules_applied == ["terminal_question"], text
 
 
+def test_single_sentence_questions_survive_internal_dots() -> None:
+    # A "." that is not followed by whitespace is never a sentence boundary, so
+    # decimals, filenames and domains must not truncate the clause that the
+    # question heuristics inspect.
+    cases = [
+        "Can you run 1.5 miles",
+        "Do you have 2.5 hours free tomorrow",
+        "Can you bump the version to 1.2.3 before release",
+        "do you want v2.0 or the old one",
+        "Is it around 5.30 or later",
+        "Could you open config.json and check the port",
+        "Can you look at main.py for me",
+        "What is the deal with node.js these days",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + "?", text
+        assert result.rules_applied == ["terminal_question"], text
+
+
+def test_single_sentence_questions_survive_abbreviations() -> None:
+    # These dots *are* followed by whitespace, so they need the abbreviation
+    # and initialism guards to avoid being read as sentence ends.
+    cases = [
+        "Do you mean St. Louis or the other one",
+        "Do you think Mr. Jones will call back",
+        "Can you send it at 3 p.m. today",
+        "Would you use e.g. the second option",
+        "Did you push to origin i.e. the shared remote",
+    ]
+
+    for text in cases:
+        result = _apply(text)
+        assert result.text == text + "?", text
+        assert result.rules_applied == ["terminal_question"], text
+
+
+def test_real_sentence_boundary_after_an_abbreviation_still_splits() -> None:
+    # "Mr." is skipped over, but the "Jones." that ends the first sentence is a
+    # genuine boundary, so the trailing question still wins.
+    result = _apply("I met Mr. Jones. Can you call him back")
+
+    assert result.text == "I met Mr. Jones. Can you call him back?"
+    assert result.rules_applied == ["terminal_question"]
+
+
 def test_inline_marker_shaped_prose_still_gets_terminal_period() -> None:
     cases = [
         "option a. should remain available",
