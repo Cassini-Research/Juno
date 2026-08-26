@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from juno_v2.memory.store import JsonMemoryStore
-from juno_v2.memory.term_policy import learned_term_allowed
+from juno_v2.memory.term_policy import learned_term_allowed, learned_term_is_sentence_like
 from juno_v2.personalization.seed.learned_state import JunoPersonalizationLearnedStore
 from juno_v2.personalization.seed.models import JunoPersonalizationSeedLayer, PromotionPolicy
 
@@ -56,6 +56,15 @@ class PromotionCoordinator:
                     return {"promoted": False, "reason": "below_threshold", "count": int(pair.count)}
                 if not learned_term_allowed(pair.corrected):
                     return {"promoted": False, "reason": "term_too_short"}
+                # Issue #79 — the lexicon is a term list; whole sentences
+                # promoted here were served verbatim in the Whisper prompt.
+                if learned_term_is_sentence_like(pair.corrected):
+                    _LOG.info(
+                        "juno_promotion: correction_rejected_sentence_like corrected=%r count=%s",
+                        pair.corrected,
+                        pair.count,
+                    )
+                    return {"promoted": False, "reason": "term_sentence_like"}
                 self._memory.add_lexicon_entry(
                     term=pair.corrected.strip(),
                     canonical_form=pair.corrected.strip(),
@@ -89,6 +98,10 @@ class PromotionCoordinator:
             pass  # explicit gate: we require acceptance_count >= min before promote
         if not learned_term_allowed(token):
             return {"promoted": False, "reason": "term_too_short"}
+        # Issue #79 — see ``maybe_promote_correction_to_lexicon``.
+        if learned_term_is_sentence_like(token):
+            _LOG.info("juno_promotion: context_entity_rejected_sentence_like token=%r", token)
+            return {"promoted": False, "reason": "term_sentence_like"}
         snap = self._learned.observation_snapshot(token)
         if snap is None:
             return {"promoted": False, "reason": "no_observation_state"}

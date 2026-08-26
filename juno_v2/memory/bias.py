@@ -14,7 +14,7 @@ from juno_v2.memory.ranking import rank_memory_for_context
 from juno_v2.memory.entity_policy import session_entity_allowed
 from juno_v2.memory.store import _looks_like_hallucination
 from juno_v2.memory.stores.corrections import is_safe_correction_pair
-from juno_v2.memory.term_policy import learned_term_allowed
+from juno_v2.memory.term_policy import learned_term_allowed, strip_terminal_sentence_punctuation
 from juno_v2.runtime.deployment import _env_int
 
 # Issue #28 — PII guard for ``recent_finals`` before they enter
@@ -404,7 +404,10 @@ class RecognitionBiasEngine:
         out: list[str] = []
         used = len(prefix)
         for p in phrases:
-            piece = p.strip()
+            # Issue #79 — same strip as ``_pack_prefer_line``: sentence-final
+            # punctuation would otherwise join into ".," / "?," runs that
+            # Whisper reproduces in the transcript.
+            piece = strip_terminal_sentence_punctuation(p.strip())
             if not piece:
                 continue
             add_len = len(piece) if not out else len(piece) + 2
