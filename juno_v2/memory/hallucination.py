@@ -9,6 +9,7 @@ identical.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 
 
@@ -56,98 +57,33 @@ _LOOPABLE_PUNCTUATION: frozenset[str] = frozenset(",\"'!?;:")
 #: space at least as often as without one, and the spaced shape is invisible to
 #: :func:`_has_repeated_unit_run` (which requires whitespace-free alnum units)
 #: *and* to every confidence-gated word check when the whole-buffer
-#: ``avg_logprob`` is good. Twelve is the count below which deliberate
-#: repetition is still plausible ("no no no no", "ha ha ha ha ha").
-LOOP_SPACED_TOKEN_MIN_REPEATS = 12
+#: ``avg_logprob`` is good.
+#:
+#: Set high on purpose. The first cut of this check used twelve repeats plus a
+#: list of words allowed to repeat ("ha", "no", "okay", …), and the 2026-08-26
+#: review destroyed it: the list can never be complete for English
+#: (``"please" × 12``, ``"hello" × 12``, ``"test" × 15`` from a mic check,
+#: ``"hahaha" × 12`` while ``"haha"`` was exempt) let alone for the twelve
+#: languages Juno supports (``"sí" × 30``, ``"はい" × 30``, ``"لا" × 30``).
+#: A word list is the wrong instrument. The right one is a bar so high that no
+#: deliberate repetition reaches it, which makes the list unnecessary: real
+#: Whisper loops run to *hundreds* of repeats, so they clear 24 by an order of
+#: magnitude while a frustrated speaker saying "no" twenty times does not.
+LOOP_SPACED_TOKEN_MIN_REPEATS = 24
 
-#: Repeated characters a spaced run must also reach before it counts, i.e.
+#: Repeated characters a spaced run must *also* reach, i.e.
 #: ``repeats × len(token)``. The count alone is not conservative enough for
-#: two- and three-character tokens, where long legitimate runs do occur
-#: (laughter, chants, a dictated digit sequence): sixty characters means a
-#: two-character token needs 30 repeats, a three-character token 20, and a
-#: five-character token the bare 12. Whisper's real loops run to hundreds of
-#: repeats, so they clear this bar by an order of magnitude.
-LOOP_SPACED_TOKEN_MIN_CHARS = 60
+#: short tokens, where long legitimate runs do occur (laughter, chants,
+#: one-word answers, a dictated digit sequence): 120 characters means a
+#: two-character token needs 60 repeats, a four-character token 30, and a
+#: five-character-or-longer token the bare 24. Both bars must be cleared.
+LOOP_SPACED_TOKEN_MIN_CHARS = 120
 
-#: Tokens a speaker (or the audio itself) legitimately produces many times in
-#: a row, exempt from the spaced-run check at any repeat count. Laughter and
-#: song syllables transcribed literally (``"ha ha ha …"``, ``"na na na …"``),
-#: onomatopoeia, fillers, and one-word answers are the shapes that reach
-#: double-digit runs in real transcripts. Deliberately an allow-list of the
-#: known-legitimate side: an unknown token repeated 12+ times with 60+
-#: characters of repetition is the thing we are trying to catch.
-_LEGITIMATE_REPEAT_TOKENS: frozenset[str] = frozenset(
-    {
-        # Laughter, song syllables, vocalizations and fillers.
-        "aah",
-        "ah",
-        "aw",
-        "ba",
-        "bla",
-        "blah",
-        "da",
-        "dum",
-        "ha",
-        "haha",
-        "he",
-        "hee",
-        "heh",
-        "hey",
-        "hi",
-        "hm",
-        "hmm",
-        "ho",
-        "hoho",
-        "huh",
-        "la",
-        "lala",
-        "mm",
-        "mmm",
-        "na",
-        "nana",
-        "oh",
-        "ooh",
-        "ow",
-        "ta",
-        "tra",
-        "uh",
-        "um",
-        "woo",
-        "wow",
-        "ya",
-        "yay",
-        # One-word answers and chants.
-        "bye",
-        "go",
-        "hooray",
-        "hurray",
-        "no",
-        "nope",
-        "ok",
-        "okay",
-        "stop",
-        "yeah",
-        "yep",
-        "yes",
-        "yup",
-        # Onomatopoeia, which repeats by nature.
-        "bang",
-        "beep",
-        "boo",
-        "boom",
-        "clap",
-        "ding",
-        "dong",
-        "knock",
-        "meow",
-        "moo",
-        "pop",
-        "tap",
-        "tick",
-        "tock",
-        "woof",
-    }
-)
+#: Unicode general-category initials allowed inside a word-like token core:
+#: letters, numbers, and **combining marks**. Marks matter — ``"बहुत"`` is
+#: ``ब ह ु त`` where ``ु`` is ``Mn``, so ``str.isalnum()`` is False for the
+#: whole word and a category-blind check silently excluded most Hindi.
+_WORD_CORE_CATEGORIES: frozenset[str] = frozenset({"L", "N", "M"})
 
 
 def looks_like_hallucination(text: str, *, confidence: float | None = None) -> bool:
@@ -463,18 +399,31 @@ def _has_repeated_unit_run(
 
 
 def _spaced_token_core(token: str) -> str:
-    """Strip wrapping punctuation from *token* and casefold what is left.
+    """Strip wrapping *punctuation* from *token* and casefold what is left.
 
-    ``"CU,"`` -> ``"cu"``, ``'"CU"'`` -> ``"cu"``, ``"---"`` -> ``""``. Only
-    the *outer* punctuation goes: ``"1,alpha,10"`` keeps its commas and is
-    rejected downstream, which is what keeps dictated CSV/code rows out of
-    the spaced-run check.
+    ``"CU,"`` -> ``"cu"``, ``'"CU"'`` -> ``"cu"``, ``"---"`` -> ``""``,
+    ``"नहीं।"`` -> ``"नहीं"``.
+
+    Only characters in Unicode general category ``P*`` are stripped, and only
+    from the ends. Stripping "everything ``str.isalnum()`` says is not
+    alphanumeric" — the first cut of this function — silently ate combining
+    marks (``Mn``/``Mc``), turning ``"नहीं"`` into ``"नह"`` and ``"चलो"`` into
+    ``"चल"``, which both mangled Hindi and made two *different* words compare
+    equal. Category ``P*`` also covers the punctuation the other scripts
+    actually use — ``।``, ``。``, ``、``, ``؟``, ``«»`` — which an ASCII
+    strip-list would have missed.
+
+    Inner punctuation is deliberately left in place: ``"1,alpha,10"`` keeps
+    its commas and is rejected by :func:`_spaced_token_is_loopable`, which is
+    what keeps dictated CSV/code/URL rows out of the spaced-run check.
     """
+    if token.isascii() and token.isalnum():
+        return token.casefold()  # fast path: a plain ASCII word
     start = 0
     end = len(token)
-    while start < end and not token[start].isalnum():
+    while start < end and unicodedata.category(token[start])[0] == "P":
         start += 1
-    while end > start and not token[end - 1].isalnum():
+    while end > start and unicodedata.category(token[end - 1])[0] == "P":
         end -= 1
     return token[start:end].casefold()
 
@@ -482,26 +431,40 @@ def _spaced_token_core(token: str) -> str:
 def _spaced_token_is_loopable(core: str) -> bool:
     """Return True if a long run of *core* would mean a loop, not speech.
 
-    Four exclusions, each covering a real thing people dictate:
+    A core qualifies when it is *word-like*: every character is a letter, a
+    number or a combining mark (:data:`_WORD_CORE_CATEGORIES`) and at least
+    one is a letter. That single rule carries three exclusions:
 
-    * empty / single-character cores — punctuation runs (``"- - - -"``),
-      spelled-out letters (``"a b c …"``) and dictated digit sequences;
-    * cores that are not purely alphanumeric — a repeated CSV row
-      (``"1,alpha,10"`` × 12), a repeated code fragment, a repeated URL: the
-      internal punctuation is the tell that this is structured text being
-      dictated or pasted, not a decoder loop;
-    * all-digit cores — reading a matrix row or a long account number aloud
-      produces ``"0 0 0 0 …"`` legitimately;
-    * :data:`_LEGITIMATE_REPEAT_TOKENS` — laughter, song syllables,
-      onomatopoeia and one-word answers, which really do run to a dozen-plus
-      identical tokens in an honest transcript.
+    * **punctuation or symbol runs** — ``"- - - -"``, ``"| | |"``, ``"* * *"``
+      have no letters at all;
+    * **structured text** — a repeated CSV row (``"1,alpha,10"``), code
+      fragment (``"get_value"``), URL (``"https://example.com/a"``) or
+      dotted path (``"user.name"``) carries inner ``P*`` characters. That
+      inner punctuation is the tell: this is structured text being dictated
+      or pasted, not a decoder loop;
+    * **number-only cores** — reading a matrix row or an account number
+      aloud produces ``"0 0 0 0 …"`` legitimately, in any script
+      (``"२ २ २"`` too).
+
+    Note what is deliberately *absent*: a list of words allowed to repeat.
+    See :data:`LOOP_SPACED_TOKEN_MIN_REPEATS` for why — such a list cannot be
+    completed for one language, never mind twelve, so the repeat/character
+    bars carry the whole load instead.
     """
-    return (
-        len(core) >= 2
-        and core.isalnum()
-        and not core.isdigit()
-        and core not in _LEGITIMATE_REPEAT_TOKENS
-    )
+    if not core:
+        return False
+    if core.isascii():
+        # Equivalent to the loop below for ASCII (no combining marks exist in
+        # that range), but ~10x cheaper on the overwhelmingly common case.
+        return core.isalnum() and not core.isdigit()
+    has_letter = False
+    for char in core:
+        category = unicodedata.category(char)[0]
+        if category not in _WORD_CORE_CATEGORIES:
+            return False
+        if category == "L":
+            has_letter = True
+    return has_letter
 
 
 def _has_spaced_token_run(
@@ -523,10 +486,16 @@ def _has_spaced_token_run(
 
     Like case (7) this judges on **count**, not coverage or confidence:
     a run of ``min_repeats`` identical consecutive tokens totalling
-    ``min_chars`` repeated characters. Tokens are compared by their
-    punctuation-stripped, casefolded core, so ``"CU, CU, CU,"`` reads as one
-    run; :func:`_spaced_token_is_loopable` then rejects the cores whose long
-    runs are legitimate.
+    ``min_chars`` repeated characters. Both bars must be cleared, and both
+    are set far above deliberate repetition rather than just above it — see
+    :data:`LOOP_SPACED_TOKEN_MIN_REPEATS`. The deliberate consequence is that
+    a *short* loop (``"CU " × 30``) is let through: a guard that discards a
+    real utterance is worse than one that misses a short degenerate tail, and
+    the confidence-gated checks still cover the low-confidence case.
+
+    Tokens are compared by their punctuation-stripped, casefolded core, so
+    ``"CU, CU, CU,"`` reads as one run; :func:`_spaced_token_is_loopable`
+    then rejects cores that are not word-like.
 
     Cost is O(len(text)): one split, one pass.
     """

@@ -21,6 +21,7 @@ from juno_v2.memory.hallucination import (
     LOOP_SPACED_TOKEN_MIN_REPEATS,
     _has_repeated_unit_run,
     _has_spaced_token_run,
+    _spaced_token_core,
     looks_like_hallucination,
     strip_adjacent_low_signal_word_duplicates,
     strip_repeated_stock_hallucination_tail,
@@ -493,13 +494,132 @@ def test_spaced_token_run_ignores_punctuation_around_the_token() -> None:
     assert _has_spaced_token_run("CU, CU. CU; " * 80)
 
 
+# --------------------------------------------------------------------- #
+# case (8): no word allow-list, and Unicode-correct token cores
+# --------------------------------------------------------------------- #
+#
+# The 2026-08-26 re-review rejected the first cut of case (8), which paired a
+# 12-repeat bar with a list of words allowed to repeat. Two independent
+# faults, both fixed by the same move (raise the bars, delete the list):
+#   1. the list cannot be completed for English, let alone for the twelve
+#      languages in DEFAULT_SUPPORTED_LANGUAGES;
+#   2. a list is the wrong instrument for "is this deliberate repetition" —
+#      the repeat count is.
+# Separately, the core extractor stripped every character str.isalnum() calls
+# false, which ate Devanagari combining marks ("नहीं" -> "नह") and made
+# different words compare equal.
+
+_NO_ALLOW_LIST_TOKENS = [
+    # English: every one of these was a false positive under the old bars.
+    "please", "sorry", "hello", "test", "check", "again", "wait", "more",
+    "sure", "help", "right", "really", "never", "next", "amen", "run",
+    "shh", "brr", "hehe", "hahaha", "lol", "bravo", "encore",
+    # Identifier-ish words a developer dictates or types.
+    "null", "cell", "true", "TODO", "END",
+    # Laughter spellings, which cannot be enumerated.
+    "ha", "haha", "hahaha", "hehe", "heh",
+    # Non-English one-word answers: es, de, fr, ja, ar, hi, zh, ko, pt, id.
+    "sí", "vale", "muy", "ja", "nein", "oui", "non", "はい", "لا",
+    "नहीं", "हाँ", "不", "네", "sim", "não", "ya", "tidak",
+]
+
+
+@pytest.mark.parametrize("token", _NO_ALLOW_LIST_TOKENS)
+@pytest.mark.parametrize("repeats", [12, 15, 20])
+def test_deliberate_repetition_is_spared_without_an_allow_list(
+    token: str, repeats: int
+) -> None:
+    # Nothing here is on any list; the bars alone must spare all of it.
+    text = _REAL_PREFIX_80_WORDS + " " + (token + " ") * repeats
+    assert not _has_spaced_token_run(text)
+    assert not looks_like_hallucination(text, confidence=-0.3)
+
+
+def test_spaced_token_run_has_no_word_allow_list() -> None:
+    # Guard against the allow-list creeping back in: an ordinary English word
+    # and a Spanish one must both be judged purely on the bars, so each fires
+    # once repeated far enough and not before.
+    for token in ("hello", "sí"):
+        needed = _spaced_repeats_needed(token)
+        assert not _has_spaced_token_run((token + " ") * (needed - 1))
+        assert _has_spaced_token_run((token + " ") * needed)
+
+
+@pytest.mark.parametrize("confidence", [None, -0.3, -1.2])
+@pytest.mark.parametrize(
+    "token",
+    ["बहुत", "नहीं", "हाँ", "لا", "はい", "不", "sí", "Dagmengdola"],
+)
+def test_non_latin_spaced_loops_are_detected(
+    token: str, confidence: float | None
+) -> None:
+    # The whole point of the category-based core: a Hindi/Arabic/Japanese
+    # loop must be caught, not silently excluded because str.isalnum() is
+    # False for a word carrying a combining mark.
+    #
+    # Repeats are derived from the thresholds rather than hardcoded, because
+    # the character bar makes the needed count depend on token length: a
+    # 4-char word like "बहुत" needs 30, a single glyph like "不" needs 120.
+    # Real loops run to hundreds either way (the issue's own example is 220).
+    repeats = _spaced_repeats_needed(token) * 2
+    text = _REAL_PREFIX_80_WORDS + " " + (token + " ") * repeats
+    assert _has_spaced_token_run(text)
+    assert looks_like_hallucination(text, confidence=confidence)
+
+
+@pytest.mark.parametrize(
+    "token,expected_core",
+    [
+        ("CU,", "cu"),
+        ('"CU"', "cu"),
+        ("«CU»", "cu"),
+        ("---", ""),
+        ("नहीं", "नहीं"),  # combining marks preserved
+        ("नहीं।", "नहीं"),  # Devanagari danda is P*, so it goes
+        ("हाँ", "हाँ"),
+        ("चलो", "चलो"),
+        ("はい。", "はい"),
+        ("不、", "不"),
+    ],
+)
+def test_spaced_token_core_strips_only_punctuation(
+    token: str, expected_core: str
+) -> None:
+    assert _spaced_token_core(token) == expected_core
+
+
+def test_spaced_token_core_keeps_distinct_words_distinct() -> None:
+    # "चल" and "चलो" are different words. The old isalnum()-based strip
+    # reduced both to "चल" and fused them into one 30-token "run".
+    assert _spaced_token_core("चल") != _spaced_token_core("चलो")
+    assert not _has_spaced_token_run("चल चलो " * 15)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "cu cu- " * 15,  # 30-token run, but only 60 chars: under the bar
+        "get_value " * 30,  # inner P* -> not word-like
+        "user.name " * 30,
+        "1,alpha,10 " * 40,
+        "https://example.com/a " * 30,
+        "50% " * 40,
+        "0 " * 120,  # number-only core
+        "२ " * 120,  # ... in any script
+        "2026 " * 40,
+    ],
+)
+def test_spaced_token_run_rejects_non_word_and_numeric_cores(text: str) -> None:
+    assert not _has_spaced_token_run(text)
+
+
 # Legitimate repetition-heavy text. Asserted on the detector itself because
 # case (8) is unconditional: some of these strings are flagged by OTHER
 # (pre-existing, confidence-gated) checks, but the new one must never fire.
 _LEGITIMATE_SPACED_REPEAT_TEXTS = [
     # Laughter, song syllables and chants transcribed literally.
     "and then he said ha ha ha ha ha ha ha ha and everyone laughed hard",
-    "he was laughing for ages " + "ha " * 60 + "and then finally stopped",
+    "he was laughing for ages " + "ha " * 40 + "and then finally stopped",
     "we sang " + "na " * 40 + "hey jude until the very end of the song",
     "the chorus goes " + "la " * 30 + "and then it repeats one more time",
     "the crowd chanted " + "go " * 24 + "as the runners came round the bend",
@@ -511,7 +631,7 @@ _LEGITIMATE_SPACED_REPEAT_TEXTS = [
     "that is a very very very good idea and we should do it soon",
     # Onomatopoeia.
     "the alarm went " + "beep " * 20 + "until somebody finally unplugged it",
-    "the clock went " + "tick " * 30 + "all night long and I could not sleep",
+    "the clock went " + "tick " * 20 + "all night long and I could not sleep",
     "he kept saying " + "blah " * 20 + "and none of it meant anything at all",
     # Dictated digits and spelled-out letters.
     "the row reads " + "0 " * 40 + "and then a single one at the very end",
