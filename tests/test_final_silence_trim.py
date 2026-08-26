@@ -22,9 +22,14 @@ from juno_core_v3.dictation.pipeline import (
 )
 from juno_core_v3.dictation.transcriber import TranscribeResult
 from juno_v2.asr.wav import encode_wav_bytes
+from juno_v2.audio.diagnostics import (
+    DEFAULT_FRAME_RMS_THRESHOLD,
+    SPEECH_LIKELY_RMS_FLOOR,
+)
 from juno_v2.audio.silence_trim import (
     DEFAULT_EDGE_PADDING_MS,
     DEFAULT_MIN_TRIM_MS,
+    SPEECH_FRAME_RMS_THRESHOLD,
     trim_wav_edge_silence,
 )
 from juno_v2.contracts.final import FinalSegment
@@ -53,6 +58,25 @@ def room_tone(duration_s: float, *, seed: int = 7, amplitude: float = 0.0008) ->
     rng = np.random.default_rng(seed)
     n = int(round(duration_s * SR))
     return (rng.uniform(-1.0, 1.0, size=n) * amplitude).astype(np.float32)
+
+
+def noise_at_rms(duration_s: float, rms: float, *, seed: int = 3) -> np.ndarray:
+    """Uniform noise scaled to exactly ``rms``. Uniform(-a, a) has RMS a/sqrt(3)."""
+    rng = np.random.default_rng(seed)
+    n = int(round(duration_s * SR))
+    return (rng.uniform(-1.0, 1.0, size=n) * (rms * np.sqrt(3.0))).astype(np.float32)
+
+
+def steady_tone_at_rms(duration_s: float, rms: float, freq_hz: float = 200.0) -> np.ndarray:
+    """A sine at exactly ``rms``, so every 20 ms frame reads the same level.
+
+    Unmodulated on purpose: these fixtures probe the frame threshold, and an
+    envelope would put some frames either side of it for reasons unrelated
+    to the constant under test.
+    """
+    n = int(round(duration_s * SR))
+    t = np.arange(n, dtype=np.float32) / SR
+    return (rms * np.sqrt(2.0) * np.sin(2.0 * np.pi * freq_hz * t)).astype(np.float32)
 
 
 def wav_of(*parts: np.ndarray) -> bytes:
@@ -158,6 +182,75 @@ def test_internal_silence_survives_an_edge_trim() -> None:
     # Speech span (2 + 30 + 2 = 34 s) plus 1.5 s padding on each side. The
     # internal 30 s pause is fully inside the retained span.
     assert trim.trimmed_duration_ms == pytest.approx(37_000.0, abs=120.0)
+
+
+# ------------------------------------------------------------------ #
+# Speech-frame threshold: quiet words must survive a long pause
+# ------------------------------------------------------------------ #
+
+def _quiet_trailing_word_recording() -> bytes:
+    """3 s of speech, a 6 s pause, then a quiet 0.4 s word, then 0.5 s.
+
+    The tail word sits at RMS 0.004: above the noise floor and above the
+    trimmer's admit threshold, but *below* the 0.006 the diagnostics module
+    uses to count loud frames. Trimming at 0.006 cuts 5.4 s here and takes
+    the word with it.
+    """
+    return wav_of(
+        speech_like(3.0, amplitude=0.3),
+        noise_at_rms(6.0, 0.001),
+        steady_tone_at_rms(0.4, 0.004),
+        noise_at_rms(0.5, 0.001, seed=11),
+    )
+
+
+def test_quiet_trailing_word_after_a_long_pause_is_kept() -> None:
+    trim = trim_wav_edge_silence(_quiet_trailing_word_recording())
+
+    # Nothing is cut: the last speech frame is the quiet word at ~9.4 s, and
+    # only 0.5 s follows it — far inside the padding.
+    assert trim.trimmed is False
+    assert trim.reason == "no_long_edge_silence"
+    assert trim.trailing_trimmed_ms == 0.0
+    assert trim.original_duration_ms == pytest.approx(9_900.0, abs=1.0)
+
+
+def test_the_old_diagnostics_threshold_would_have_cut_that_word() -> None:
+    # Pins why SPEECH_FRAME_RMS_THRESHOLD is not DEFAULT_FRAME_RMS_THRESHOLD.
+    # At 0.006 the quiet word is invisible, speech "ends" at 3 s, and the
+    # trim removes 5.4 s — including the word the user actually said.
+    blob = _quiet_trailing_word_recording()
+    too_strict = trim_wav_edge_silence(blob, frame_rms_threshold=DEFAULT_FRAME_RMS_THRESHOLD)
+
+    assert too_strict.trimmed is True
+    assert too_strict.trailing_trimmed_ms == pytest.approx(5_400.0, abs=60.0)
+    assert too_strict.trimmed_duration_ms == pytest.approx(4_500.0, abs=60.0)
+
+
+def test_trimmer_is_never_stricter_than_the_diagnostics_speech_floor() -> None:
+    # The invariant the module asserts at import: anything analyze_audio_signal
+    # is willing to call speech_likely must be visible to the trimmer.
+    assert SPEECH_FRAME_RMS_THRESHOLD <= SPEECH_LIKELY_RMS_FLOOR
+
+    quiet_speech = wav_of(steady_tone_at_rms(2.0, SPEECH_LIKELY_RMS_FLOOR), room_tone(30.0))
+    trim = trim_wav_edge_silence(quiet_speech)
+    assert trim.trimmed is True
+    # The quiet speech was detected and retained, not cut away as silence.
+    assert trim.trimmed_duration_ms == pytest.approx(3_500.0, abs=60.0)
+    assert trim.leading_trimmed_ms == 0.0
+
+
+def test_loud_noise_floor_fails_safe_and_trims_nothing() -> None:
+    # A desk fan / close AC puts the noise floor above the energy threshold,
+    # so every frame reads as speech. The trimmer finds no edge silence and
+    # does nothing — it never deletes audio it cannot confidently call
+    # silence, but noisy-floor users get no benefit from this change.
+    blob = wav_of(speech_like(2.0), noise_at_rms(30.0, 0.01, seed=5))
+    trim = trim_wav_edge_silence(blob)
+
+    assert trim.trimmed is False
+    assert trim.reason == "no_long_edge_silence"
+    assert trim.wav_bytes == blob
 
 
 def test_all_silence_is_returned_untouched() -> None:

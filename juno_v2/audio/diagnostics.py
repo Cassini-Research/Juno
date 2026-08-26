@@ -11,12 +11,19 @@ import numpy.typing as npt
 
 #: Frame size used for the per-frame RMS "is this frame speech?" test.
 #: Shared by :func:`analyze_audio_signal` and the final-lane silence
-#: trimmer so both lanes agree on what counts as a non-silent frame.
+#: trimmer so both measure the signal on the same grid.
 DEFAULT_FRAME_MS = 20
-#: Per-frame RMS above which a frame counts as non-silent. Deliberately
-#: low (quiet speech must never read as silence); the trimmer compensates
-#: by keeping a generous padding around the detected speech span.
+#: Per-frame RMS above which a frame counts toward ``non_silent_ms``.
+#: This is a *diagnostics* threshold: ``non_silent_ms`` only ever makes
+#: ``low_signal`` less likely (see ``below_speech_floor``), so erring high
+#: here is safe. It is NOT safe as a "may I delete this audio?" test —
+#: the silence trimmer deliberately uses its own, lower floor.
 DEFAULT_FRAME_RMS_THRESHOLD = 0.006
+#: Whole-buffer RMS at or above which a long buffer is called
+#: ``speech_likely``. Any audio-dropping decision elsewhere must use a
+#: threshold at or below this, or it would discard audio this module is
+#: willing to call speech.
+SPEECH_LIKELY_RMS_FLOOR = 0.0045
 
 
 class AudioDiagnosticsPayload(TypedDict):
@@ -137,7 +144,7 @@ def analyze_audio_signal(
     speech_likely = not low_signal and (
         non_silent_ms >= 160
         or peak >= 0.018
-        or (duration_ms >= 700 and rms >= 0.0045)
+        or (duration_ms >= 700 and rms >= SPEECH_LIKELY_RMS_FLOOR)
     )
     return AudioDiagnostics(
         duration_ms=duration_ms,

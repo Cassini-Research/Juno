@@ -17,13 +17,18 @@ What it does
 ------------
 Cut silence off the **edges** of the buffer, and only the edges:
 
-* Speech is located with the same per-frame RMS test
-  :func:`~juno_v2.audio.diagnostics.analyze_audio_signal` already uses for
-  ``non_silent_ms`` (20 ms frames, RMS > 0.006). Reusing that analysis
-  keeps one definition of "non-silent frame" in the final lane and adds no
-  new dependency — Silero is a streaming-shaped API (stateful
-  ``VADIterator`` over sequential chunks) and is the preview lane's tool;
-  a one-shot buffer needs a single offline pass, not a state machine.
+* Speech is located with the same per-frame RMS pass
+  :func:`~juno_v2.audio.diagnostics.analyze_audio_signal` uses for
+  ``non_silent_ms`` — 20 ms frames on the shared
+  :func:`~juno_v2.audio.diagnostics.frame_rms` grid — but with its own,
+  lower admit threshold (:data:`SPEECH_FRAME_RMS_THRESHOLD`, 0.003). The
+  diagnostics threshold answers "how much of this buffer is loud?", where
+  guessing high is harmless; this one answers "may I delete this audio?",
+  where guessing high deletes words. See that constant for the full
+  argument. Adds no new dependency — Silero is a streaming-shaped API
+  (stateful ``VADIterator`` over sequential chunks) and is the preview
+  lane's tool; a one-shot buffer needs a single offline pass, not a state
+  machine.
 * ``edge_padding_ms`` of silence is deliberately **kept** at each end, so a
   soft word onset or a trailing consonant can never be clipped and Whisper
   still gets the leading/trailing context it decodes better with.
@@ -38,6 +43,19 @@ Cut silence off the **edges** of the buffer, and only the edges:
 If no speech frame is found at all the buffer is returned untouched — the
 ``low_signal`` reject upstream owns that case, and handing the backend an
 empty buffer would be strictly worse than handing it silence.
+
+Who this does *not* help
+------------------------
+The detector is an energy floor, so a noise floor that is itself above
+:data:`SPEECH_FRAME_RMS_THRESHOLD` — a loud desk fan, close AC, a noisy
+mic preamp — reads as speech from the first frame to the last. The
+trimmer then finds nothing to cut and returns ``no_long_edge_silence``,
+i.e. it fails **safe**: it never deletes audio it cannot confidently call
+silence, but it also does nothing for those users, whose trailing room
+tone still reaches Whisper. They remain covered only by the downstream
+hallucination guards. Fixing that needs a real speech/noise
+discriminator (spectral flatness, or Silero run offline over the whole
+buffer), which is a larger change than this one.
 
 The caller is responsible for keeping user-facing duration and segment
 timestamps in the *original* recording's timebase; :class:`SilenceTrimResult`
@@ -55,9 +73,41 @@ import numpy as np
 
 from juno_v2.audio.diagnostics import (
     DEFAULT_FRAME_MS,
-    DEFAULT_FRAME_RMS_THRESHOLD,
+    SPEECH_LIKELY_RMS_FLOOR,
     decode_wav_bytes,
     frame_rms,
+)
+
+#: Per-frame RMS at or below which a frame is treated as silence *for the
+#: purpose of deleting it*. This is deliberately NOT
+#: ``diagnostics.DEFAULT_FRAME_RMS_THRESHOLD`` (0.006). That constant only
+#: feeds ``non_silent_ms``, where over-estimating silence merely makes the
+#: ``low_signal`` reject slightly more eager; here, over-estimating silence
+#: deletes the user's words. The two jobs need opposite biases.
+#:
+#: The value must sit at or below
+#: :data:`~juno_v2.audio.diagnostics.SPEECH_LIKELY_RMS_FLOOR` (0.0045) —
+#: the trimmer must never call "silence" a signal that ``analyze_audio_
+#: signal`` is willing to call ``speech_likely``. We go lower still, to
+#: 0.003, for two reasons:
+#:
+#:   * It matches ``preview.vad_gate.VadGate.energy_fallback_rms`` (0.003),
+#:     the energy floor the preview lane already uses to decide "is this
+#:     chunk voice?" when Silero is unavailable. Both lanes now admit audio
+#:     at the same level.
+#:   * It sits just under the ``below_speech_floor`` low-signal ceiling
+#:     (``rms <= 0.0032``), so any buffer quiet enough to survive as speech
+#:     past the low-signal gate is still loud enough for the trimmer to see.
+#:
+#: A quiet trailing word at RMS 0.004 — a real transcript in the field —
+#: is kept at 0.003 and would be deleted at 0.006.
+SPEECH_FRAME_RMS_THRESHOLD = 0.003
+
+# Enforced at import, not merely documented: a trimmer floor above the
+# diagnostics speech floor would delete audio this codebase is elsewhere
+# willing to call speech.
+assert SPEECH_FRAME_RMS_THRESHOLD <= SPEECH_LIKELY_RMS_FLOOR, (
+    "silence trimmer must never be stricter about speech than analyze_audio_signal"
 )
 
 #: Silence kept on each side of the detected speech span. Generous on
@@ -126,7 +176,7 @@ def trim_wav_edge_silence(
     edge_padding_ms: float = DEFAULT_EDGE_PADDING_MS,
     min_trim_ms: float = DEFAULT_MIN_TRIM_MS,
     frame_ms: int = DEFAULT_FRAME_MS,
-    frame_rms_threshold: float = DEFAULT_FRAME_RMS_THRESHOLD,
+    frame_rms_threshold: float = SPEECH_FRAME_RMS_THRESHOLD,
 ) -> SilenceTrimResult:
     """Trim long leading/trailing silence from a WAV blob.
 
@@ -160,6 +210,10 @@ def trim_wav_edge_silence(
         # family, which the pipeline rejects upstream; trimming here would
         # hand the backend an empty buffer instead of silence.
         return _untouched(wav_bytes, "no_speech_detected", duration_ms)
+    # The converse case needs no branch but is worth naming: when the noise
+    # floor itself clears the threshold (loud fan/AC), every frame is
+    # "speech", the span below covers the whole buffer, and we fall out at
+    # ``no_long_edge_silence``. Failing safe, and doing nothing.
 
     pad_samples = max(0, int(round(edge_padding_ms * sample_rate / 1000.0)))
     speech_start = int(speech_frames[0]) * frame_len
@@ -205,6 +259,7 @@ def trim_wav_edge_silence(
 __all__ = [
     "DEFAULT_EDGE_PADDING_MS",
     "DEFAULT_MIN_TRIM_MS",
+    "SPEECH_FRAME_RMS_THRESHOLD",
     "SilenceTrimResult",
     "trim_wav_edge_silence",
 ]
