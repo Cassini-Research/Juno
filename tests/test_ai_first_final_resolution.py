@@ -8,6 +8,8 @@ import struct
 import tempfile
 import wave
 
+import pytest
+
 from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
@@ -2374,6 +2376,13 @@ def _adjudication_result(
 # --------------------------------------------------------------------- #
 
 
+def _system_dictionary_available() -> bool:
+    """True when the platform word list backing the common-word policy loaded."""
+    from juno_v2.memory.entity_policy import common_english_single_word
+
+    return common_english_single_word("cloud")
+
+
 def test_screen_terms_filtered_before_whisper_prompt() -> None:
     from juno_v2.memory.bias import (
         _diversify_bias_phrases,
@@ -2450,6 +2459,113 @@ def test_common_ui_action_words_dropped_but_names_kept() -> None:
 
     for name in ("Maia", "Maya", "River", "Grace", "Nilofar", "Cassini Research", "OpenAI"):
         assert screen_term_prompt_worthy(name), name
+
+
+def test_ocr_letter_substitution_screen_terms_dropped() -> None:
+    # Issue #78: letter-substitution OCR damage keeps word shape, so every
+    # shape gate admitted it. A token that turns back into an ordinary word
+    # once a confusable read is undone is the screen misread, not speech.
+    # These repairs land on words the policy knows without a system
+    # dictionary, so the assertion holds on any machine.
+    from juno_v2.memory.bias import (
+        is_biasable_runtime_context_candidate,
+        screen_term_prompt_worthy,
+    )
+
+    for junk in (
+        "Ihe",        # i/t     -> the
+        "Reguest",    # g/q     -> request
+        "Contoxt",    # o/e     -> context
+        "Diffcrent",  # c/e     -> different
+        "Instali",    # i/l/1   -> install
+        "Revlew",     # i/l/1   -> review
+        "Learnlng",   # i/l/1   -> learning
+        "Forrnat",    # rn/m    -> format
+        "Comrnon",    # rn/m    -> common
+        "Exarnple",   # rn/m    -> example
+        "Vvork",      # vv/w    -> work
+    ):
+        assert not screen_term_prompt_worthy(junk), junk
+        assert not is_biasable_runtime_context_candidate(junk), junk
+
+
+@pytest.mark.skipif(
+    not _system_dictionary_available(),
+    reason="letter-substitution repairs below need the system word list",
+)
+def test_ocr_letter_substitution_issue_examples_dropped() -> None:
+    # The exact tokens reported in issue #78 — 2026-08-26, candidate lists
+    # dominated by l/I/1 and o/e misreads of window text.
+    from juno_v2.memory.bias import (
+        is_biasable_runtime_context_candidate,
+        screen_term_prompt_worthy,
+    )
+
+    for junk in (
+        "Commlt",          # i/l/1 -> commit
+        "Cioud",           # i/l/1 -> cloud
+        "Authorlzatlon",   # i/l/1 (twice) -> authorization
+        "Advancod",        # o/e   -> advanced
+        "Cornmand",        # rn/m  -> command
+        "Nurnber",         # rn/m  -> number
+        "Modorn",          # o/e   -> modern
+        "Docurnent",       # rn/m  -> document
+    ):
+        assert not screen_term_prompt_worthy(junk), junk
+        assert not is_biasable_runtime_context_candidate(junk), junk
+
+    assert not screen_term_prompt_worthy("Authorlzatlon Bearer")
+
+
+def test_generic_window_chrome_screen_terms_dropped() -> None:
+    # Issue #78: browser / editor / OS chrome is on screen in every app and is
+    # ordinary English, so biasing toward it only crowds out useful terms.
+    from juno_v2.memory.bias import screen_term_prompt_worthy
+
+    for chrome in (
+        "Sidebar", "Bookmark", "Bookmarks", "Separator", "Reading", "List",
+        "Reload", "Back", "Forward", "Tab", "Tabs", "Toolbar", "Window",
+        "Menu", "Settings", "Preferences", "Search", "History", "Downloads",
+        "Extensions", "Wallet", "Groups", "Help", "View", "Edit", "File",
+        "Insert", "Format", "Tools", "Terminal", "Console", "Output",
+        "Problems", "Debug", "Run", "Source", "Control", "Explorer",
+        "Untitled", "Save", "Open", "Close", "Cancel", "OK", "Done", "Next",
+        "Previous", "Minimize", "Maximize", "Zoom", "Sign", "Log", "Account",
+        "Profile", "Notifications", "Updates", "Recent", "Favorites", "Trash",
+    ):
+        assert not screen_term_prompt_worthy(chrome), chrome
+
+    # Clock / calendar chrome: fixed abbreviations, never worth biasing.
+    for stamp in (
+        "AM", "PM", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+        "Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Sept",
+        "Oct", "Nov", "Dec",
+    ):
+        assert not screen_term_prompt_worthy(stamp), stamp
+
+
+def test_product_names_survive_ocr_and_chrome_gates() -> None:
+    # The other half of issue #78: the gate must still admit the terms it
+    # exists for. Product names, CamelCase and acronym identifiers, dotted /
+    # underscored technical tokens and AI-glossary words all stay biasable.
+    from juno_v2.memory.bias import (
+        is_biasable_runtime_context_candidate,
+        screen_term_prompt_worthy,
+    )
+
+    for name in (
+        "Juno", "Figma", "Vercel", "Notion", "Slack", "Cursor", "Stripe",
+        "Cassini", "Nilofar", "Maia", "Sonos", "Okta", "Trello",
+        "Datadog", "Snowflake", "Databricks", "Postgres", "Kubernetes",
+        "Terraform", "Grafana", "Twilio", "Shopify", "Klarna", "Tailscale",
+        "Cloudflare", "Netlify", "Supabase", "Clojure", "Kotlin", "Neovim",
+        "Whisper", "Qwen", "Mistral", "Paresh", "Ananya",
+        "NovaDesk", "OpenAI", "VPN", "Cassini Research",
+    ):
+        assert screen_term_prompt_worthy(name), name
+
+    for identifier in ("juno_v2", "app.py", "NovaDesk", "OpenAI"):
+        assert is_biasable_runtime_context_candidate(identifier), identifier
 
 
 def test_screen_ocr_junk_filtered_from_preview_repair_terms() -> None:
