@@ -1365,6 +1365,37 @@ def test_common_word_is_not_upgraded_to_longer_product_name() -> None:
     assert replacements == []
 
 
+def test_self_truncated_proper_noun_is_still_repaired_without_eating_next_word() -> None:
+    # The sub-defect 3 guard must stay narrow. The +/-1 length check already
+    # blocks "Kube" -> "Kubernetes", so an unconditional reverse-prefix guard
+    # only ever bit when observed is the target minus its final character --
+    # which for a plain proper noun is a real ASR/self-truncation that must
+    # still repair. Worse, blocking it in ``repl`` handed the token to
+    # ``_reconcile_split_candidate_term``, which glued it to the FOLLOWING word
+    # and deleted that word ("... Kubernete now" -> "... Kubernetes").
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="deploy to Kubernete now",
+        protected_terms=("Kubernetes",),
+    )
+
+    assert repaired == "deploy to Kubernetes now"
+    assert replacements == [
+        {"from": "Kubernete", "to": "Kubernetes", "source": "protected_term_near_miss"}
+    ]
+
+
+def test_self_truncated_product_name_repair_preserves_following_function_word() -> None:
+    repaired, replacements = _reconcile_protected_term_near_misses(
+        text="use Postgre so we can",
+        protected_terms=("Postgres",),
+    )
+
+    assert repaired == "use Postgres so we can"
+    assert replacements == [
+        {"from": "Postgre", "to": "Postgres", "source": "protected_term_near_miss"}
+    ]
+
+
 def test_near_miss_repair_terms_exclude_what_the_candidate_pass_canonicalised() -> None:
     # Issue #68 sub-defect 4. The explicit-candidate pass canonicalises the
     # corrupted twin back to the real term, then the near-miss pass runs on its

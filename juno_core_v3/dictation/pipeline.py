@@ -4035,12 +4035,20 @@ def _protected_term_near_miss(
         and not _single_token_has_identifier_shape(target)
     ):
         return False
-    if len(obs_folded) < len(target_folded) and target_folded.startswith(obs_folded):
-        # Mirror of the guard above. A word that is simply a shorter prefix of
-        # the target is not a near-miss, it is a different (usually ordinary)
-        # word: "Widget" is not a mishearing of "WidgetX", it is the noun the
-        # user said. Appending a suffix to what the user actually spoke is an
-        # upgrade, never a repair, so no target shape may unlock it.
+    if (
+        len(obs_folded) < len(target_folded)
+        and target_folded.startswith(obs_folded)
+        and _single_token_has_identifier_shape(target)
+    ):
+        # Mirror of the guard above, but deliberately narrow. The ±1 length
+        # check below already blocks "Kube" -> "Kubernetes", so this only ever
+        # bites when observed is the target minus its final character — and for
+        # a plain proper noun that shape is a real ASR/self-truncation
+        # ("Kubernete", "Postgre", "Claud") that must still repair. Restricting
+        # it to identifier-shaped targets keeps the case this guard exists for:
+        # a bare common noun must not be silently upgraded by appending a
+        # camelCase/all-caps/digit suffix scraped off the screen
+        # ("Widget" -> "WidgetX"), which is an upgrade, never a repair.
         return False
     if obs_folded[:1] != target_folded[:1] or abs(len(obs_folded) - len(target_folded)) > 1:
         return False
