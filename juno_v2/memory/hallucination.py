@@ -20,6 +20,34 @@ from collections import Counter
 # text-only heuristics to stay conservative.
 HALLUCINATION_CONFIDENCE_FLOOR = -1.0
 
+#: Longest repeating unit :func:`_has_repeated_unit_run` considers. Whisper's
+#: degenerate loops repeat units of one to four characters (``","``, ``", "``,
+#: ``"CU"``). Longer repeated units are phrase-level loops, already covered by
+#: the distinct-ratio and n-gram checks.
+LOOP_RUN_MAX_UNIT_LEN = 4
+
+#: Consecutive repeats of a punctuation-only unit that mark a loop. Eight
+#: back-to-back copies of ``","`` / ``", "`` / ``,`` has no legitimate
+#: dictation analogue — a speaker cannot dictate that, and the writer never
+#: emits it. Punctuation runs that ARE legitimate (``"..."``, ``"----"``,
+#: ``"===="`` rules, ``"* * *"`` breaks) are excluded by unit allow-list
+#: rather than by this count, so this can stay low.
+LOOP_RUN_MIN_PUNCTUATION_REPEATS = 8
+
+#: Consecutive repeats of a whitespace-free alphanumeric unit that mark a
+#: loop (``"CUCUCU…"`` × 220 in the 2026-08-26 review). Higher than the
+#: punctuation bar because short alnum repeats do occur in real speech
+#: (laughter "hahaha", chants "nanana"): sixteen back-to-back copies is
+#: 32-64 characters of pure repetition, which real dictation does not reach.
+LOOP_RUN_MIN_ALNUM_REPEATS = 16
+
+#: Punctuation marks whisper actually loops on. Deliberately an allow-list,
+#: not a deny-list: ``.``/``-``/``=``/``_``/``*``/``~``/``#``/``…`` and any
+#: non-ASCII symbol form legitimate long runs (ellipses, horizontal rules,
+#: markdown separators, emoji), so they are simply never treated as loop
+#: units no matter how long the run gets.
+_LOOPABLE_PUNCTUATION: frozenset[str] = frozenset(",\"'!?;:")
+
 
 def looks_like_hallucination(text: str, *, confidence: float | None = None) -> bool:
     """Return True if *text* looks like ASR hallucination, not real speech.
@@ -48,6 +76,14 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
        ``"Hellодом"``). Whisper occasionally emits these on near-silent
        audio. Real speakers segment scripts with whitespace
        (``"Hello мир"``, not ``"Hellомир"``).
+    7. A long back-to-back run of one short unit — including a
+       punctuation-only unit (``'","' × 150``, ``"CU" × 220``). This check
+       is deliberately confidence-independent, unlike cases (2), (4) and
+       (6): the backend reports one duration-weighted ``avg_logprob`` for
+       the whole buffer, so 90 s of confident speech followed by a
+       degenerate tail averages to ~-0.27 and every confidence-gated check
+       switches itself off exactly when the loop is present. See
+       :func:`_has_repeated_unit_run`.
 
     And two legitimate shapes it spares:
 
@@ -113,6 +149,24 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
     if _has_numeric_marker_loop(text):
         return True
 
+    # Case (7): a long back-to-back run of one short unit. Structural and
+    # confidence-independent by design — it is the only loop check that
+    # survives a good whole-buffer avg_logprob, and the only one that can
+    # see punctuation-only loops at all (``_has_substring_loop`` deletes
+    # punctuation before it looks for a loop, so a ``'","'`` run leaves it
+    # nothing to find, and the run contributes zero ``\w+`` tokens to the
+    # word-level checks above).
+    #
+    # Whisper's own loop signal, ``compression_ratio``, would corroborate
+    # this nicely (clean speech ~1.2-1.5, degenerate tail 2.2+). It reaches
+    # the one-shot call site as ``result.compression_ratio``
+    # (``juno_core_v3/dictation/pipeline.py``) but is not plumbed into this
+    # guard, which is also called from memory paths that have no ASR
+    # metadata at all. Left as a follow-up: this check is purely structural
+    # and needs no audio-side signal to be safe.
+    if _has_repeated_unit_run(text):
+        return True
+
     # Case (4): substring loops. Whisper hallucinates patterns like
     # "ansaansaansa..." (no whitespace) on continuous low-information
     # audio. These slip past the word-repetition heuristic because the
@@ -175,6 +229,112 @@ def _has_token_ngram_loop(words: list[str]) -> bool:
         _, count = Counter(grams).most_common(1)[0]
         if count >= 8 and (count * n) / total >= 0.55:
             return True
+    return False
+
+
+def _primitive_unit(unit: str) -> str:
+    """Return the shortest string whose repetition rebuilds *unit*.
+
+    ``"=="`` -> ``"="``, ``"CUCU"`` -> ``"CU"``, ``"CU"`` -> ``"CU"``.
+    Without this a 60-character ``"===="`` rule would be read as 15 repeats
+    of the two-character unit ``"=="`` and dodge the separator allow-list.
+    """
+    length = len(unit)
+    for period in range(1, length):
+        if length % period == 0 and unit == unit[:period] * (length // period):
+            return unit[:period]
+    return unit
+
+
+def _repeated_unit_is_loop(
+    unit: str,
+    repeats: int,
+    *,
+    min_punctuation_repeats: int,
+    min_alnum_repeats: int,
+) -> bool:
+    """Decide whether ``repeats`` back-to-back copies of *unit* are a loop.
+
+    Two shapes qualify, and nothing else does:
+
+    * **Punctuation-only** units built solely from
+      :data:`_LOOPABLE_PUNCTUATION` (plus spaces). Legitimate long runs of
+      punctuation are all made of characters outside that set — ``"..."``,
+      ``"----"``, ``"===="``, ``"* * *"``, ``"…"``, repeated emoji — so they
+      never reach the count test.
+    * **Multi-character, whitespace-free alphanumeric** units (``"CU"``,
+      ``"ansa"``). The whitespace-free requirement is what separates this
+      from ordinary speech: a spaced repeat (``"na na na …"``) is fully
+      visible to the word-repetition and distinct-token-ratio checks above,
+      whereas a spaceless run is exactly the shape that collapses into one
+      giant ``\\b\\w+\\b`` token and evades them. Single-character units are
+      excluded because their legitimate long runs are real — an elongated
+      vowel (``"Aaaaaaaaaaaaaaah"``) or a repeated digit in a dictated
+      number (``"1111111111111111"``) — and the single-character
+      hallucination shape is already covered by the char-dominance check.
+    """
+    core = unit.strip()
+    if not core:
+        return False  # whitespace-only "unit"
+    if any(char.isalnum() for char in core):
+        if len(unit) < 2 or any(char.isspace() for char in unit):
+            return False
+        return repeats >= min_alnum_repeats
+    if all(char in _LOOPABLE_PUNCTUATION for char in core):
+        return repeats >= min_punctuation_repeats
+    return False
+
+
+def _has_repeated_unit_run(
+    text: str,
+    *,
+    max_unit_len: int = LOOP_RUN_MAX_UNIT_LEN,
+    min_punctuation_repeats: int = LOOP_RUN_MIN_PUNCTUATION_REPEATS,
+    min_alnum_repeats: int = LOOP_RUN_MIN_ALNUM_REPEATS,
+) -> bool:
+    """Return True if *text* contains a long back-to-back run of one short unit.
+
+    Unlike :func:`_has_substring_loop` this looks at *contiguous* runs in the
+    raw (punctuation-preserving) text and asks only how many times the unit
+    repeats in a row — not what fraction of the utterance it covers. That is
+    what makes it usable on mixed utterances: 200 real words followed by 220
+    copies of ``"CU"`` never reaches ``_has_substring_loop``'s 60 % coverage
+    bar, and 25 real words followed by a ``'","'`` run is invisible to it
+    entirely because it strips punctuation first.
+
+    Whitespace runs are collapsed to a single space so a loop rendered with
+    irregular spacing (``"CU CU  CU"``) still reads as contiguous.
+
+    Cost is O(len(text) × max_unit_len): each detected run is skipped past
+    rather than rescanned at every offset.
+    """
+    collapsed = re.sub(r"\s+", " ", text)
+    length = len(collapsed)
+    for unit_len in range(1, max_unit_len + 1):
+        index = 0
+        while index + 2 * unit_len <= length:
+            unit = collapsed[index : index + unit_len]
+            cursor = index + unit_len
+            repeats = 1
+            while collapsed[cursor : cursor + unit_len] == unit:
+                repeats += 1
+                cursor += unit_len
+            if repeats < 2:
+                index += 1
+                continue
+            primitive = _primitive_unit(unit)
+            effective_repeats = repeats * (unit_len // len(primitive))
+            if _repeated_unit_is_loop(
+                primitive,
+                effective_repeats,
+                min_punctuation_repeats=min_punctuation_repeats,
+                min_alnum_repeats=min_alnum_repeats,
+            ):
+                return True
+            # Resume just inside the tail of the run we just consumed so a
+            # phase-shifted run starting mid-unit is still seen, without
+            # rescanning the whole run from every offset.
+            index = cursor - unit_len + 1
     return False
 
 
@@ -789,6 +949,9 @@ def _stock_tail_has_impossible_timing(
 
 __all__ = [
     "HALLUCINATION_CONFIDENCE_FLOOR",
+    "LOOP_RUN_MAX_UNIT_LEN",
+    "LOOP_RUN_MIN_ALNUM_REPEATS",
+    "LOOP_RUN_MIN_PUNCTUATION_REPEATS",
     "LOW_YIELD_CONFIDENCE_FLOOR",
     "LOW_YIELD_MAX_WORDS",
     "LOW_YIELD_MIN_AUDIO_MS",
