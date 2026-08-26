@@ -34,7 +34,11 @@ from juno_v2.turn_plan import (
     render_turn_plan,
     validate_turn_plan,
 )
-from juno_v2.turn_plan.planner import structural_instruction_present
+from juno_v2.turn_plan.planner import (
+    instruction_head_present,
+    planner_intent_cue_present,
+    structural_instruction_present,
+)
 from juno_v2.writer.dictation_editor import (
     DICTATION_EDIT_TASK,
     FILLER_STRIP_MODES,
@@ -94,6 +98,27 @@ _SPOKEN_STRUCTURE_LITERAL_PREV = {
     "their", "its", "his", "her", "word", "words", "term", "terms", "literal",
     "called", "named", "say", "saying", "means", "mean", "use", "using",
 }
+
+
+_RETARGET_REFERENT_RE = re.compile(
+    r"\b(?:that|this|it|these|those|above|previous|last|selection|selected)\b",
+    re.IGNORECASE,
+)
+
+
+def _plan_may_reshape_paste(text: str) -> bool:
+    """True when the plan could change what lands on screen.
+
+    Two shapes qualify even with nothing selected: a transform verb aimed at
+    a referent ("make that shorter", "rewrite this"), which produces a
+    TRANSFORM_COMMIT against the recent commit or the focused text; and an
+    instruction head the plan trims off the paste ("write hello world" ->
+    ``hello world``). Everything else pastes the transcript itself.
+    """
+    current = str(text or "")
+    if _TRANSFORM_VERB_RE.search(current) and _RETARGET_REFERENT_RE.search(current):
+        return True
+    return instruction_head_present(current)
 
 
 def _mentions_recent_transform_target(text: str) -> bool:
@@ -251,11 +276,13 @@ class WriterService:
     ) -> TurnPlanResult | None:
         if not self.config.enable_turn_planner or self.backend is None or not self.config.enable_model_transforms:
             return None
-        if self._skip_model_planner_for_dictation(
+        skip_reason = self._model_planner_skip_reason(
             final_text=final_text,
             context=context,
             wake_verified=wake_verified,
-        ):
+            language_hint=language_hint,
+        )
+        if skip_reason is not None:
             structural = self._structural_turn_plan_for_dictation(
                 utterance_id=utterance_id,
                 final_text=final_text,
@@ -269,7 +296,7 @@ class WriterService:
                     "turn_plan_skipped",
                     {
                         "utterance_id": utterance_id,
-                        "reason": "long_dictation_without_structure",
+                        "reason": skip_reason,
                         "words": _approx_word_count(final_text),
                     },
                 )
@@ -298,14 +325,63 @@ class WriterService:
             wake_verified=wake_verified,
             now_iso=now_iso,
         )
-        planner = TurnPlanner(self)
+        text_delivery_guaranteed = self._text_delivery_guaranteed(
+            final_text=final_text,
+            context=context,
+            wake_verified=wake_verified,
+        )
+        planner = TurnPlanner(
+            self,
+            deadline_ms=int(self.config.turn_plan_paste_deadline_ms or 0)
+            if self._on_paste_critical_path(context=context, wake_verified=wake_verified)
+            else None,
+        )
         result = planner.plan(packet)
         validation_after_plan = None
         if result.ok and isinstance(result.plan, dict):
             validation_after_plan = validate_turn_plan(result.plan, source_text=final_text, context=context)
-        if result.plan is None or result.status == "invalid_json" or (
+        needs_repair = result.plan is None or result.status == "invalid_json" or (
             validation_after_plan is not None and not validation_after_plan.ok
-        ):
+        )
+        if needs_repair and result.plan is None and text_delivery_guaranteed:
+            # The planner produced nothing parseable and this turn already
+            # commits the transcript whatever the plan says. The repair pass
+            # is a second full decode of the same prompt — in production it
+            # returned invalid_json again and added ~6s to a paste that was
+            # always going to be pass_through_commit (issue #75). Take the
+            # zero-cost deterministic structural plan if the utterance has
+            # one, otherwise commit the text now.
+            self.recorder.record(
+                TraceKind.WRITER,
+                "turn_plan_repair_skipped",
+                {
+                    "utterance_id": utterance_id,
+                    "reason": "text_delivery_guaranteed",
+                    "status": result.status,
+                    "decode_ms": result.decode_ms,
+                },
+            )
+            fallback = fallback_structural_turn_plan(final_text)
+            if fallback is not None:
+                fallback_validation = validate_turn_plan(fallback, source_text=final_text, context=context)
+                if fallback_validation.ok:
+                    result = TurnPlanResult(
+                        plan=fallback,
+                        status="ok",
+                        backend_name=result.backend_name,
+                        decode_ms=result.decode_ms,
+                        raw_output=result.raw_output,
+                        errors=[],
+                        initial_status=result.status,
+                        initial_errors=list(result.errors),
+                        normalization_notes=[
+                            *result.normalization_notes,
+                            "structural_render_fallback_without_repair",
+                        ],
+                    )
+                    validation_after_plan = fallback_validation
+            needs_repair = False
+        if needs_repair:
             result = planner.repair(
                 packet,
                 result,
@@ -381,31 +457,83 @@ class WriterService:
         self.recorder.record(TraceKind.WRITER, "turn_plan_generated", payload)
         return result
 
-    def _skip_model_planner_for_dictation(
+    def _on_paste_critical_path(
+        self,
+        *,
+        context: TypedContextBundle,
+        wake_verified: bool,
+    ) -> bool:
+        """True when the user is waiting on a paste for this planner decode.
+
+        Wake-verified turns dispatch native actions and selection-anchored
+        turns rewrite the selection; both spend the decode on work the user
+        asked for. Everything else is a paste the decode is holding up.
+        """
+        if wake_verified:
+            return False
+        return not (getattr(context, "selected_text", "") or "").strip()
+
+    def _text_delivery_guaranteed(
         self,
         *,
         final_text: str,
         context: TypedContextBundle,
         wake_verified: bool,
     ) -> bool:
-        """Decide whether this utterance is long plain dictation.
+        """True when this turn commits the transcript whatever the plan says.
 
-        Wake-verified turns (actions), short utterances (where transforms,
-        memory mutations, and message rendering live), and selection-anchored
-        commands keep the model planner. Long plain dictation skips it: the
-        renderer never uses planner text for plain dictation, and the decode
-        cost (8-28s observed on Qwen3-4B) lands on the paste critical path.
+        On the paste critical path an actions plan is discarded
+        (``turn_plan_actions_fell_back_to_text``) and an unusable plan falls
+        through to the deterministic lanes, which paste the text — so an
+        unparseable plan costs nothing. The exception is a turn that could
+        still re-target text already on screen ("make that shorter",
+        "rewrite this"): there the plan decides what gets replaced, so a
+        repair pass can still change the outcome and is worth its decode.
+        """
+        if not self._on_paste_critical_path(context=context, wake_verified=wake_verified):
+            return False
+        return not _plan_may_reshape_paste(final_text)
+
+    def _model_planner_skip_reason(
+        self,
+        *,
+        final_text: str,
+        context: TypedContextBundle,
+        wake_verified: bool,
+        language_hint: str | None = None,
+    ) -> str | None:
+        """Reason to skip the model planner for this utterance, or ``None``.
+
+        Wake-verified turns (actions) and selection-anchored commands always
+        keep the model planner. Everything else is on the paste critical path
+        and skips it in two cases:
+
+        ``long_dictation_without_structure``
+            Long plain dictation — the renderer never uses planner text for
+            plain dictation and the decode cost scales with utterance length
+            (8-28s observed on Qwen3-4B).
+
+        ``plain_dictation_without_intent``
+            Short dictation carrying no action / transform / structure /
+            memory cue. The planner can only echo it back, so the decode is
+            pure paste-path latency (issue #75).
         """
         if wake_verified or self.config.turn_plan_dictation_enabled:
-            return False
-        limit = int(self.config.turn_plan_max_dictation_words or 0)
-        if limit <= 0:
-            return False
-        if _approx_word_count(final_text) <= limit:
-            return False
+            return None
         if (getattr(context, "selected_text", "") or "").strip():
-            return False
-        return True
+            return None
+        limit = int(self.config.turn_plan_max_dictation_words or 0)
+        if 0 < limit < _approx_word_count(final_text):
+            return "long_dictation_without_structure"
+        if not self.config.turn_plan_plain_dictation_skip:
+            return None
+        # The cue lexicon is English; a non-English turn keeps the planner.
+        hint = str(language_hint or "").strip().casefold()
+        if hint and not hint.startswith("en"):
+            return None
+        if planner_intent_cue_present(final_text):
+            return None
+        return "plain_dictation_without_intent"
 
     def _structural_turn_plan_for_dictation(
         self,

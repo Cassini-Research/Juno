@@ -3119,13 +3119,15 @@ def test_turn_planner_uses_generic_structural_fallback_after_bad_qwen_json() -> 
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
     assert result.output_text == "1. remove patches\n2. make Qwen plan\n3. validate spans"
     assert result.learn_from_commit is False
-    assert result.metadata["turn_plan"]["repair_attempted"] is True
-    assert result.metadata["turn_plan"]["repair_status"] == "fallback"
     assert result.metadata["turn_plan"]["render"]["claimed_item_count"] == 10
     assert result.metadata["turn_plan"]["render"]["spoken_item_count"] == 3
+    # Issue #75: this turn pastes its transcript whatever the plan says (no
+    # wake, no selection, no instruction head), so the unparseable plan goes
+    # straight to the deterministic structural fallback instead of paying a
+    # second full decode that produced the same fallback anyway.
+    assert result.metadata["turn_plan"]["repair_attempted"] is False
     assert [str((req.context_payload or {}).get("task")) for req in backend.requests] == [
         "turn_planning_v1",
-        "turn_repair_v1",
     ]
 
 
@@ -4447,3 +4449,218 @@ def test_ordinal_expansion_noop_when_model_batch_complete() -> None:
     expanded, notes = P._expand_missing_ordinal_actions(complete, source_text=source)
     assert expanded == complete
     assert notes == []
+
+
+# --- issue #75: paste-path planner latency -----------------------------------
+
+
+def _paste_path_service(backend: Any, recorder: Any) -> WriterService:
+    return WriterService(
+        config=WriterConfig(
+            enable_model_transforms=True,
+            enable_turn_planner=True,
+            dictation_editor_enabled=False,
+        ),
+        recorder=recorder,
+        backend=backend,
+    )
+
+
+def _plan_turn(
+    service: WriterService,
+    text: str,
+    *,
+    wake_verified: bool = False,
+    selected_text: str = "",
+    language_hint: str | None = None,
+) -> Any:
+    return service.plan_turn(
+        utterance_id="utt-75",
+        final_text=text,
+        raw_text=text,
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            selected_text=selected_text,
+        ),
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        language_hint=language_hint,
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+        wake_verified=wake_verified,
+    )
+
+
+def _tasks(backend: Any) -> list[str]:
+    return [str((req.context_payload or {}).get("task") or "") for req in backend.requests]
+
+
+def _trace_payload(recorder: Any, event: str) -> dict[str, Any] | None:
+    for args, _kwargs in recorder.events:
+        if len(args) > 2 and args[1] == event:
+            return dict(args[2])
+    return None
+
+
+def test_paste_path_invalid_json_commits_without_a_repair_decode() -> None:
+    # Non-wake imperative: the pipeline never dispatches its actions, so the
+    # writer always falls back to text delivery. A second full decode of the
+    # same prompt cannot change that — it only delays the paste (issue #75).
+    source = "Remind me to call the bank at four."
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json either"})
+    recorder = _Recorder()
+    result = _plan_turn(_paste_path_service(backend, recorder), source)
+
+    assert _tasks(backend) == ["turn_planning_v1"]
+    assert result is not None and result.status == "invalid_json"
+    assert result.repair_attempted is False
+    assert _trace_payload(recorder, "turn_plan_repair_skipped") == {
+        "utterance_id": "utt-75",
+        "reason": "text_delivery_guaranteed",
+        "status": "invalid_json",
+        "decode_ms": result.decode_ms,
+    }
+
+
+def test_paste_path_invalid_json_still_renders_a_spoken_list_without_repair() -> None:
+    source = "Note down three points First alpha Second beta Third gamma"
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json either"})
+    result = _plan_turn(_paste_path_service(backend, _Recorder()), source)
+
+    assert _tasks(backend) == ["turn_planning_v1"]
+    assert result is not None and result.ok
+    assert result.repair_attempted is False
+    assert "structural_render_fallback_without_repair" in result.normalization_notes
+    assert (result.plan["render_plan"] or {})["render_kind"] == "numbered_list"
+
+
+def test_wake_verified_invalid_json_still_repairs() -> None:
+    source = "set an alarm for six thirty tomorrow"
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json either"})
+    _plan_turn(_paste_path_service(backend, _Recorder()), source, wake_verified=True)
+
+    assert _tasks(backend) == ["turn_planning_v1", "turn_repair_v1"]
+
+
+def test_selection_transform_invalid_json_still_repairs() -> None:
+    source = "make it more formal"
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json either"})
+    _plan_turn(
+        _paste_path_service(backend, _Recorder()),
+        source,
+        selected_text="hey can you take a look at this",
+    )
+
+    assert _tasks(backend) == ["turn_planning_v1", "turn_repair_v1"]
+
+
+def test_recent_target_transform_invalid_json_still_repairs() -> None:
+    # No selection, but "make that shorter" rewrites the previous commit —
+    # the plan decides what is replaced, so the repair pass earns its decode.
+    source = "make that shorter"
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json either"})
+    _plan_turn(_paste_path_service(backend, _Recorder()), source)
+
+    assert _tasks(backend) == ["turn_planning_v1", "turn_repair_v1"]
+
+
+def test_plain_dictation_without_intent_skips_the_model_planner() -> None:
+    backend = _TaskBackend({"turn_planning_v1": "not json"})
+    recorder = _Recorder()
+    result = _plan_turn(_paste_path_service(backend, recorder), "And prepare a summary as well.")
+
+    assert result is None
+    assert backend.requests == []
+    payload = _trace_payload(recorder, "turn_plan_skipped")
+    assert payload is not None and payload["reason"] == "plain_dictation_without_intent"
+
+
+def test_plain_dictation_gate_keeps_action_transform_and_structure_utterances() -> None:
+    planned: list[bool] = []
+    for text in (
+        # plain narration -> skip
+        "I think the deployment went fine yesterday.",
+        "The customer said the latency was much better today.",
+        "It rained all afternoon in the valley.",
+        # action / transform / structure / memory cues -> plan
+        "Remind me to call the bank at four.",
+        "Send an email to Priya about the launch.",
+        "Make this a bulleted list of the two risks.",
+        "Rewrite the last sentence more formally.",
+        "Fix the grammar in that.",
+        "New paragraph. We shipped the fix this morning.",
+        "First alpha, second beta, third gamma.",
+        "Juno, remember that Aurora is our launch codename.",
+    ):
+        backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+        _plan_turn(_paste_path_service(backend, _Recorder()), text)
+        planned.append(bool(backend.requests))
+
+    assert planned == [False, False, False, True, True, True, True, True, True, True, True]
+
+
+def test_plain_dictation_gate_does_not_apply_to_non_english_turns() -> None:
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+    _plan_turn(
+        _paste_path_service(backend, _Recorder()),
+        "Creo que el despliegue salio bien ayer.",
+        language_hint="es",
+    )
+
+    assert _tasks(backend) == ["turn_planning_v1"]
+
+
+def test_plain_dictation_gate_can_be_disabled_by_config() -> None:
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+    service = WriterService(
+        config=WriterConfig(
+            enable_model_transforms=True,
+            enable_turn_planner=True,
+            dictation_editor_enabled=False,
+            turn_plan_plain_dictation_skip=False,
+        ),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    _plan_turn(service, "And prepare a summary as well.")
+
+    assert _tasks(backend) == ["turn_planning_v1"]
+
+
+def test_paste_path_planner_decode_carries_a_wall_clock_budget() -> None:
+    source = "Remind me to call the bank at four."
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+    _plan_turn(_paste_path_service(backend, _Recorder()), source)
+
+    assert [(req.metadata or {}).get("deadline_ms") for req in backend.requests] == [6000]
+
+
+def test_wake_and_selection_planner_decodes_have_no_budget() -> None:
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+    _plan_turn(_paste_path_service(backend, _Recorder()), "set an alarm for six", wake_verified=True)
+    _plan_turn(
+        _paste_path_service(backend, _Recorder()),
+        "make it more formal",
+        selected_text="hey can you take a look at this",
+    )
+
+    assert [(req.metadata or {}).get("deadline_ms") for req in backend.requests] == [None] * 4
+
+
+def test_planner_budget_is_configurable() -> None:
+    backend = _TaskBackend({"turn_planning_v1": "not json", "turn_repair_v1": "not json"})
+    service = WriterService(
+        config=WriterConfig(
+            enable_model_transforms=True,
+            enable_turn_planner=True,
+            dictation_editor_enabled=False,
+            turn_plan_paste_deadline_ms=0,
+        ),
+        recorder=_Recorder(),
+        backend=backend,
+    )
+    _plan_turn(service, "Remind me to call the bank at four.")
+
+    assert [(req.metadata or {}).get("deadline_ms") for req in backend.requests] == [None]
