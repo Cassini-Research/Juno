@@ -35,6 +35,15 @@ _PERSONAL_SUBJECTS = {
 }
 _DEMONSTRATIVE_SUBJECTS = {"it", "this", "that", "these", "those"}
 _QUESTION_SUBJECTS = _PERSONAL_SUBJECTS | _DEMONSTRATIVE_SUBJECTS
+# A sentence boundary is a terminal mark followed by whitespace. Requiring the
+# whitespace is what keeps decimals ("1.5 miles"), filenames ("config.json")
+# and domains ("node.js") from being mistaken for the end of a sentence.
+_SENTENCE_BOUNDARY = re.compile(r"[.?!…？！。]\s+")
+# Dotted forms that do end in "." + space yet are not sentence ends.
+_INITIALISM = re.compile(r"^(?:[A-Za-z]\.)+[A-Za-z]$")
+_ABBREVIATIONS = {
+    "dr", "etc", "jr", "mr", "mrs", "ms", "prof", "sr", "st", "vs",
+}
 _WH_NOUN_BRIDGES = {
     "branch", "build", "command", "commit", "file", "model", "option", "pr",
     "release", "repo", "repository", "setting", "version",
@@ -118,7 +127,10 @@ def apply_final_punctuation_floor(
     if category == "messaging" or formatting == "messaging" or policy == "light":
         return _skip(original, "messaging_light")
 
-    mark = "?" if _looks_like_question(words, stripped) else "."
+    # Only the trailing sentence decides the terminal mark. A buffer that opens
+    # with "Can you ...?" and closes with an imperative must still end in ".".
+    tail = _trailing_sentence(stripped)
+    mark = "?" if _looks_like_question(_words(tail), tail) else "."
     rule = "terminal_question" if mark == "?" else "terminal_period"
     return PunctuationFloorResult(text=original.rstrip() + mark, changed=True, rules_applied=[rule])
 
@@ -129,6 +141,44 @@ def _skip(text: str, reason: str) -> PunctuationFloorResult:
 
 def _words(text: str) -> list[str]:
     return re.findall(r"[A-Za-z][A-Za-z']*", (text or "").casefold())
+
+
+def _trailing_sentence(text: str) -> str:
+    """Return the final sentence of a buffer.
+
+    The question heuristics below all inspect the opening words of a clause, so
+    for a multi-sentence buffer they must be given the final sentence rather
+    than the whole buffer.
+
+    Splitting is not harmless in either direction, so both are guarded. A split
+    that fires too eagerly truncates the clause and loses a legitimate "?" --
+    "Can you run 1.5 miles" must not be cut at the decimal point -- which is
+    why a terminator only counts when whitespace (or end of text) follows it,
+    and why the dotted forms that do pass that test but are not sentence ends
+    (initialisms like "p.m." and abbreviations like "St.") are skipped over. A
+    split that fires too late leaves the opening clause in view and is what
+    this helper exists to prevent. Anything still ambiguous falls through to
+    the whole buffer, which is the pre-existing behaviour.
+    """
+    body = (text or "").strip()
+    for match in reversed(list(_SENTENCE_BOUNDARY.finditer(body))):
+        if _ends_with_abbreviation(body[: match.start() + 1]):
+            continue
+        return body[match.end():].strip()
+    return body
+
+
+def _ends_with_abbreviation(head: str) -> bool:
+    """Return true when the trailing "." of `head` abbreviates a word."""
+    if not head.endswith("."):
+        return False
+    match = re.search(r"([A-Za-z][A-Za-z.]*)\.$", head)
+    if match is None:
+        return False
+    token = match.group(1)
+    if _INITIALISM.fullmatch(token):
+        return True
+    return token.casefold() in _ABBREVIATIONS
 
 
 def _looks_like_question(words: list[str], text: str) -> bool:
