@@ -1340,7 +1340,9 @@ class OneShotDictationPipeline:
             )
         protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
             text=normalized_text,
-            protected_terms=repair_term_values,
+            protected_terms=_repair_terms_after_candidate_reconciliation(
+                repair_term_values, protected_term_replacements
+            ),
         )
         if protected_near_miss_replacements:
             normalized_text = protected_text
@@ -1527,7 +1529,9 @@ class OneShotDictationPipeline:
 
                     protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
                         text=repaired_text,
-                        protected_terms=repair_term_values,
+                        protected_terms=_repair_terms_after_candidate_reconciliation(
+                            repair_term_values, protected_term_replacements
+                        ),
                     )
                     if protected_near_miss_replacements:
                         repaired_text = protected_text
@@ -1617,7 +1621,9 @@ class OneShotDictationPipeline:
             )
             protected_text, protected_near_miss_replacements = _reconcile_protected_term_near_misses(
                 text=protected_text,
-                protected_terms=repair_term_values,
+                protected_terms=_repair_terms_after_candidate_reconciliation(
+                    repair_term_values, protected_term_replacements
+                ),
             )
             all_protected_replacements = protected_term_replacements + protected_near_miss_replacements
             if all_protected_replacements:
@@ -3558,6 +3564,39 @@ def _reconcile_explicit_candidate_term_confusions(
     return out, replacements
 
 
+def _repair_terms_after_candidate_reconciliation(
+    repair_terms: tuple[str, ...],
+    candidate_replacements: list[dict[str, str]],
+) -> tuple[str, ...]:
+    """Drop repair targets that the explicit-candidate pass just canonicalised.
+
+    ``_reconcile_explicit_candidate_term_confusions`` runs first and rewrites a
+    corrupted screen twin back to the real term. The near-miss pass then runs on
+    its output — with that same corrupted twin still on the repair term list —
+    and happily reverts the repair, producing a trace with two replacements and
+    zero net effect. A term the previous stage just rewrote *away from* is known
+    bad spelling and must not be a repair target for the text that stage
+    produced.
+    """
+
+    if not candidate_replacements:
+        return repair_terms
+    rewritten_away = {
+        str(item.get("from") or "").strip().casefold()
+        for item in candidate_replacements
+        if str(item.get("from") or "").strip()
+        and str(item.get("from") or "").strip().casefold()
+        != str(item.get("to") or "").strip().casefold()
+    }
+    if not rewritten_away:
+        return repair_terms
+    return tuple(
+        term
+        for term in repair_terms
+        if str(term or "").strip().casefold() not in rewritten_away
+    )
+
+
 def _reconcile_split_candidate_term(
     text: str,
     term: str,
@@ -3788,9 +3827,17 @@ def _reconcile_protected_term_near_misses(
         candidates.append((token, source, allow_common_target))
 
     ai_glossary_keys = {term.casefold() for term in ai_glossary}
+    # Every single-token surface form that is itself a known term. A token that
+    # already spells one of these is correct by definition and must never be
+    # rewritten — see ``repl`` below.
+    known_term_forms: set[str] = set(ai_glossary_keys)
     for term in protected_terms[:32]:
-        _add(term, source="protected", allow_common_target=str(term or "").casefold() in ai_glossary_keys)
+        folded = str(term or "").strip().casefold()
+        if folded:
+            known_term_forms.add(folded)
+        _add(term, source="protected", allow_common_target=folded in ai_glossary_keys)
         for token in _protected_phrase_repair_tokens(term):
+            known_term_forms.add(token.casefold())
             _add(token, source="protected", allow_common_target=True)
     for term in ai_glossary:
         _add(term, source="ai_glossary", allow_common_target=True)
@@ -3803,16 +3850,21 @@ def _reconcile_protected_term_near_misses(
     # "Mixxtral" matching the lower-similarity "Mistral" before "Mixtral" had
     # a chance) and lets the targets be a frozenset (unordered) safely.
     #
-    # Tokens that already match a candidate verbatim are short-circuited by
-    # ``_protected_term_near_miss`` itself, which returns False when observed
-    # casefolds to a candidate. So we don't need a per-term "already present"
-    # pre-skip; near-miss repair should still work when the correct term
-    # appears elsewhere in the same text.
+    # ``_protected_term_near_miss`` short-circuits on identity, but identity
+    # only disqualifies the ONE candidate the token equals. When the term list
+    # also holds an OCR-corrupted twin of that term ("Mixtral" plus a screen-
+    # scraped "Mixtrai"), the correctly spelled token is still matched against
+    # the twin and rewritten into gibberish. A token that already spells a known
+    # term is correct by definition, so skip it against every candidate.
+    # Near-miss repair still works when the correct term appears elsewhere in
+    # the same text — only the exact-match token itself is left alone.
 
     replacements: list[dict[str, str]] = []
 
     def repl(match: re.Match[str]) -> str:
         observed = match.group(0)
+        if observed.casefold() in known_term_forms:
+            return observed
         best_target: str | None = None
         best_ratio = 0.0
         for term, source, allow_common_target in candidates:
@@ -3953,15 +4005,17 @@ def _protected_term_near_miss(
     observed_is_common = common_english_single_word(obs_folded)
     if static_glossary and observed_is_common:
         return False
-    if (
-        not allow_common_target
-        and not _single_token_has_identifier_shape(target)
-        and _soundex(obs_folded) != _soundex(target_folded)
-    ):
+    if not allow_common_target and _soundex(obs_folded) != _soundex(target_folded):
         # Screen/context terms are useful for names, but edit distance alone is
         # too weak for single-token protected repairs: OCR-like variants can
         # rewrite ordinary words or unrelated names. Keep real phonetic repairs;
         # block spelling-only rewrites without phonetic support.
+        #
+        # Target *shape* is deliberately not an escape hatch here.
+        # ``_single_token_has_identifier_shape`` is True for ANY all-caps token,
+        # so exempting it let an OCR-mangled all-caps screen label ("PASTF")
+        # rewrite a phonetically unrelated word ("paste") purely on edit ratio.
+        # Genuine ASR near-misses are phonetic, so they clear soundex anyway.
         return False
     if (
         observed_is_common
@@ -3980,6 +4034,13 @@ def _protected_term_near_miss(
         and obs_folded.startswith(target_folded)
         and not _single_token_has_identifier_shape(target)
     ):
+        return False
+    if len(obs_folded) < len(target_folded) and target_folded.startswith(obs_folded):
+        # Mirror of the guard above. A word that is simply a shorter prefix of
+        # the target is not a near-miss, it is a different (usually ordinary)
+        # word: "Widget" is not a mishearing of "WidgetX", it is the noun the
+        # user said. Appending a suffix to what the user actually spoke is an
+        # upgrade, never a repair, so no target shape may unlock it.
         return False
     if obs_folded[:1] != target_folded[:1] or abs(len(obs_folded) - len(target_folded)) > 1:
         return False
