@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import typing
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from juno_v2.contracts.context import RecognitionBiasPlan, TypedContextBundle
 from juno_v2.contracts.memory import MemoryServingPacket, MemorySnapshot, NormalizationChange, TranscriptNormalization
@@ -11,7 +13,12 @@ from juno_v2.contracts.modes import ModePolicy
 from juno_v2.memory.fold import fold_match_pattern
 from juno_v2.memory.profile import build_personalization_profile
 from juno_v2.memory.ranking import rank_memory_for_context
-from juno_v2.memory.entity_policy import session_entity_allowed
+from juno_v2.memory.ai_dictionary import is_ai_glossary_term
+from juno_v2.memory.entity_policy import (
+    _FALLBACK_COMMON_SINGLE_WORDS,
+    common_english_single_word,
+    session_entity_allowed,
+)
 from juno_v2.memory.store import _looks_like_hallucination
 from juno_v2.memory.stores.corrections import is_safe_correction_pair
 from juno_v2.memory.term_policy import learned_term_allowed
@@ -927,6 +934,75 @@ _SCREEN_SINGLE_WORD_BLOCKLIST = {
     "upload",
     "uploads",
     "videos",
+    # Generic browser / editor / OS window chrome. Production 2026-08-26: the
+    # candidate list for most utterances was dominated by these labels — they
+    # are on screen in every app, they are ordinary English words (so ASR hears
+    # them without help), and they crowd genuinely useful terms out of the
+    # prompt. Same rule as above: chrome words only, never a word that is
+    # plausibly a product name or a person's name in this user base.
+    "accounts",
+    "bookmark",
+    "console",
+    "control",
+    "debug",
+    "details",
+    "extensions",
+    "format",
+    "groups",
+    "history",
+    "insert",
+    "list",
+    "lists",
+    "log",
+    "maximize",
+    "minimize",
+    "ok",
+    "output",
+    "previous",
+    "problems",
+    "reading",
+    "recent",
+    "recents",
+    "run",
+    "separator",
+    "sidebar",
+    "sign",
+    "source",
+    "tabs",
+    "terminal",
+    "toolbar",
+    "untitled",
+    "updates",
+    "zoom",
+    # "Explorer" and "Wallet" are deliberately absent: both read as chrome in a
+    # file manager or a phone mirror, but both are also product names a user
+    # may well dictate.
+    # Date chrome. Clocks, mail lists and calendar grids paint these on screen
+    # constantly; every one is a fixed abbreviation, never a term worth biasing.
+    "am",
+    "pm",
+    "mon",
+    "tue",
+    "tues",
+    "wed",
+    "thu",
+    "thur",
+    "thurs",
+    "fri",
+    "sat",
+    "sun",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
 }
 _SCREEN_TERM_ALLOWLIST = {"codex"}
 _OCR_CONFUSABLES = str.maketrans({
@@ -939,6 +1015,132 @@ _OCR_CONFUSABLES = str.maketrans({
     "8": "b",
     "9": "g",
 })
+
+# Letter-substitution OCR damage ("Ihe", "Commlt", "Cioud", "Advancod",
+# "Authorlzatlon"). These read as word-shaped tokens, so every shape gate
+# admits them; what gives them away is that undoing a screen-reader
+# confusion turns them back into an ordinary English word while the token
+# itself is not one.
+#
+# Two levers of confusion: character classes and digraphs are near-certain
+# reads, so any number of them may be undone at once (Authorlzatlon ->
+# authorization, Cornrnand -> command); the single-character pairs are weaker,
+# so exactly one may be undone (Advancod -> advanced).
+#
+# Both levers answer to the same floor: the repaired word must be one this
+# module already treats as high-frequency English or as ordinary screen
+# vocabulary. Matching the platform word list instead would be far too loose —
+# it carries 234k entries including "harl", "kunai", "bharal", "marion" and
+# "bornes", so ordinary contact names (Hari, Kunal, Bharat, Marlon, Barnes)
+# would be discarded as OCR damage, and screen-harvested names are the
+# main thing this gate exists to keep.
+_OCR_CHAR_CLASSES = ("il1", "o0")
+_OCR_DIGRAPH_REWRITES = (
+    ("rn", "m"),
+    ("m", "rn"),
+    ("vv", "w"),
+    ("w", "vv"),
+    ("cl", "d"),
+    ("d", "cl"),
+)
+_OCR_CONFUSABLE_PAIRS = (
+    ("e", "o"),
+    ("e", "c"),
+    ("c", "o"),
+    ("i", "t"),
+    ("l", "t"),
+    ("n", "h"),
+    ("m", "n"),
+    ("u", "v"),
+    ("v", "w"),
+    ("v", "y"),
+    ("a", "o"),
+    ("s", "z"),
+    ("h", "b"),
+    ("f", "t"),
+    ("g", "q"),
+)
+_OCR_MIN_TOKEN_LEN = 3
+_OCR_MAX_CLASS_VARIANTS = 512
+# Short tokens are mostly first names and handles, and at three or four
+# letters almost anything is one confusion away from something — "Ali" reads
+# as "all", "Uma" as "urna", "Cloe" as "doe", "Teo" as "too". Only a top
+# function word is decisive at that length, and "all" and "too" are left out
+# for exactly the collisions above; both stay available to longer tokens
+# through the vocabulary below.
+_OCR_SHORT_TOKEN_LEN = 4
+_OCR_SHORT_REPAIR_WORDS = frozenset(
+    """
+    and are been both but can each for from had has have her him his how into
+    its just like may much need not now once only our out over see should some
+    such than that the their them then there these they this those two use
+    very was way were what when which who will with would you your
+    """.split()
+)
+# Ordinary screen vocabulary: the words window chrome, editors, browsers and
+# business apps actually paint, plus the high-frequency English the memory
+# policy already recognises. A repair that lands outside this set is not
+# evidence of OCR damage — it is a name that happens to resemble a word.
+_OCR_REPAIR_VOCABULARY = _FALLBACK_COMMON_SINGLE_WORDS | frozenset(
+    """
+    account action active activity address admin advanced agent alert allow
+    analytics answer appear application apply archive article assign attach
+    audio author authentication authorization available background backup
+    balance banner basic battery before begin below billing block board book
+    bookmark border bottom branch break browser bucket budget buffer build
+    builder bundle button cache calendar camera cancel capture category center
+    chain change channel chapter chart chat check choose class clean clear
+    click client clock clone close cloud cluster collection color column
+    combine command comment commit community company compare compile complete
+    component compose computer config configuration confirm connect connection
+    console contact container content continue contract control convert cookie
+    copy count country course create credit cursor custom customer daily
+    dashboard data database debug decline define delete deliver deploy
+    deployment description design desktop detail details develop developer
+    device dialog digital direct directory disable discover discussion display
+    document documentation domain double download drive duplicate during
+    editor education element email embed employee empty enable encoding engine
+    enter entry environment error event exception execute existing expand
+    expire explore export express extension external failed feature feedback
+    field filter finance folder follow footer frame friend function gallery
+    general generate global grant graph group growth guide handle header
+    health height hidden history holiday hosting hours human icon identity
+    image import index industry input insert insight instance integration
+    interface internal internet interval invalid invite invoice item journal
+    keyboard label language laptop latest launch layer layout leave legal
+    length letter level library license limit link listen loading location
+    login logout machine manage manager manual market master match material
+    matrix media medium member memory menu merge message method metric minute
+    mobile modern module moment monitor month native navigate network notice
+    notification number object offer office online operation option order
+    organization origin output overview package panel parameter parent partner
+    password patch path pattern payment people percent performance period
+    permission person personal phone photo picture platform player plugin
+    pointer policy portal position power practice preference preview price
+    primary priority privacy private problem process product profile program
+    progress
+    project prompt property protocol provider public publish purchase query
+    question queue quick range rating reason receive recent record recovery
+    redirect reference refresh region register release reload remote remove
+    rename render repeat replace reply report repository require research
+    resource response restart restore result return revision reward route
+    router runtime sample sandbox schedule schema scope screen script scroll
+    search second secret section secure security segment select selection
+    sender series server service session setting settings share shared shell
+    shipping short shortcut sidebar signal signature simple single slider
+    small social
+    software solution sound space speaker special speed split sponsor staff
+    stage standard state statement static station status storage store stream
+    string structure student studio submit subscribe success summary support
+    surface survey switch symbol system table tablet target template terminal
+    testing theme thread ticket timeline timer toggle token toolbar total
+    track traffic transaction transfer translate trigger trusted tutorial
+    unable undo unknown update upgrade upload usage value variable vendor verify
+    version video viewer virtual visible vision visual volume wallet warning
+    watch weather website weekly weight welcome widget width window within
+    worker workflow workspace world writer yesterday zone
+    """.split()
+)
 
 
 def screen_term_prompt_worthy(text: str) -> bool:
@@ -1018,7 +1220,117 @@ def _looks_like_screen_ocr_junk(text: str) -> bool:
         return True
     if _near_screen_noise_word(normalized):
         return True
+    if _looks_like_ocr_letter_substitution(token):
+        return True
     return False
+
+
+@lru_cache(maxsize=4096)
+def _looks_like_ocr_letter_substitution(token: str) -> bool:
+    """True when undoing a screen-reader confusion turns ``token`` into a word.
+
+    Issue #78: the shape gates only reject tokens that are not word-shaped,
+    but letter-substitution OCR damage preserves word shape, so "Ihe",
+    "Commlt", "Advancod", "Cioud" and "Authorlzatlon" all reached the Whisper
+    prompt and the candidate-entity list. A token whose only difference from
+    an ordinary English word is a confusable read is not a term the user could
+    have said; it is the screen misread.
+
+    Anything that carries its own identity — an acronym, a CamelCase or
+    dotted/underscored identifier, a digit, a known tech term — is left alone:
+    those are the product names this gate exists to admit.
+    """
+
+    word = token.casefold()
+    if len(word) < _OCR_MIN_TOKEN_LEN or not word.isalpha():
+        return False
+    if word in _SCREEN_TERM_ALLOWLIST or token.isupper():
+        return False
+    if re.search(r"[a-z][A-Z]", token) or is_ai_glossary_term(token):
+        return False
+    if common_english_single_word(word):
+        return False
+    variants = _ocr_class_variants(word) | _ocr_single_substitution_variants(word)
+    return any(_ocr_repair_is_ordinary_word(word, variant) for variant in variants)
+
+
+def _ocr_repair_is_ordinary_word(word: str, variant: str) -> bool:
+    """Is ``variant`` a word the screen would plausibly have been showing?
+
+    Short tokens answer to a much smaller set: see ``_OCR_SHORT_REPAIR_WORDS``.
+    Plurals are matched through their singular, because window chrome is full
+    of them ("Extenslons", "Prefercnces", "Notificatlons").
+    """
+
+    if variant == word:
+        return False
+    if len(word) <= _OCR_SHORT_TOKEN_LEN:
+        return variant in _OCR_SHORT_REPAIR_WORDS
+    if variant in _OCR_REPAIR_VOCABULARY:
+        return True
+    if variant.endswith("s") and variant[:-1] in _OCR_REPAIR_VOCABULARY:
+        return True
+    return variant.endswith("es") and variant[:-2] in _OCR_REPAIR_VOCABULARY
+
+
+def _ocr_class_variants(word: str) -> set[str]:
+    """Every reading of ``word`` under the near-certain OCR confusions.
+
+    Digraph rewrites (rn/m, vv/w, cl/d) and the l-I-1 / O-0 character classes
+    compose freely: "Authorlzatlon" needs two class swaps at once, "Cornrnand"
+    two digraph rewrites.
+
+    A reading with more than ``_OCR_MAX_CLASS_VARIANTS`` combinations is
+    dropped rather than enumerated, so a token that is almost all confusables
+    ("lllooolll") cannot blow up the screen-term gate. That fails open by
+    design: such a token is not word-shaped either, and the shape gates in
+    :func:`_screen_term_prompt_worthy` reject it anyway.
+    """
+
+    out: set[str] = set()
+    for rewritten in _ocr_digraph_variants(word):
+        choices = []
+        combinations = 1
+        for ch in rewritten:
+            group = next((cls for cls in _OCR_CHAR_CLASSES if ch in cls), ch)
+            combinations *= len(group)
+            if combinations > _OCR_MAX_CLASS_VARIANTS:
+                break
+            choices.append(group)
+        else:
+            out.update("".join(combo) for combo in itertools.product(*choices))
+    return out
+
+
+def _ocr_digraph_variants(word: str) -> set[str]:
+    out = {word}
+    for _ in range(2):
+        grown = set()
+        for value in out:
+            for source, target in _OCR_DIGRAPH_REWRITES:
+                start = 0
+                while True:
+                    at = value.find(source, start)
+                    if at < 0:
+                        break
+                    grown.add(value[:at] + target + value[at + len(source):])
+                    start = at + 1
+        if grown <= out:
+            break
+        out |= grown
+    return out
+
+
+def _ocr_single_substitution_variants(word: str) -> set[str]:
+    out: set[str] = set()
+    for index, ch in enumerate(word):
+        for left, right in _OCR_CONFUSABLE_PAIRS:
+            if ch == left:
+                out.add(word[:index] + right + word[index + 1:])
+            elif ch == right:
+                out.add(word[:index] + left + word[index + 1:])
+    out.discard(word)
+    return out
 
 
 def _near_screen_noise_word(normalized: str) -> bool:
