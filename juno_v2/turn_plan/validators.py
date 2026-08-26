@@ -26,6 +26,81 @@ _UTTERANCE_KINDS = {
     "no_op",
     "ambiguous",
 }
+ACTION_KINDS = ("note", "reminder", "alarm")
+
+_ACTION_KIND_ALIASES = {
+    # Note synonyms.
+    "notes": "note",
+    "memo": "note",
+    "note_create": "note",
+    "note_action": "note",
+    "create_note": "note",
+    "create_notes": "note",
+    "new_note": "note",
+    "add_note": "note",
+    "make_note": "note",
+    "save_note": "note",
+    "take_note": "note",
+    "write_note": "note",
+    "apple_note": "note",
+    "apple_notes": "note",
+    # Reminder synonyms. Juno has no separate task/todo sink; both are reminders.
+    "reminders": "reminder",
+    "reminder_create": "reminder",
+    "reminder_action": "reminder",
+    "create_reminder": "reminder",
+    "create_reminders": "reminder",
+    "new_reminder": "reminder",
+    "add_reminder": "reminder",
+    "set_reminder": "reminder",
+    "make_reminder": "reminder",
+    "apple_reminder": "reminder",
+    "apple_reminders": "reminder",
+    "task": "reminder",
+    "tasks": "reminder",
+    "todo": "reminder",
+    "todos": "reminder",
+    "todo_item": "reminder",
+    "to_do": "reminder",
+    "to_dos": "reminder",
+    # Alarm synonyms.
+    "alarms": "alarm",
+    "alarm_create": "alarm",
+    "alarm_action": "alarm",
+    "create_alarm": "alarm",
+    "new_alarm": "alarm",
+    "add_alarm": "alarm",
+    "set_alarm": "alarm",
+    "alarm_set": "alarm",
+    "make_alarm": "alarm",
+    "wake_up_alarm": "alarm",
+}
+
+
+def canonical_action_kind(value: Any) -> str | None:
+    """Canonical ``ActionKind`` value for a model-emitted action kind.
+
+    The planner prompt lists three kinds, but the model routinely emits
+    verb-prefixed, plural, camelCase, or spaced variants ("create_note",
+    "Reminders", "createAlarm"). Those survived validation as a warning
+    and were then dropped by ``actions_from_turn_plan`` after the full
+    decode had been paid for; every such plan was "ok" and un-shippable
+    at once (issue #76).
+
+    Returns ``None`` for a kind no sink can serve. Callers must treat
+    that as "drop this action", never as "fail this plan": ok=False in
+    ``WriterService._turn_plan_result`` costs a second turn_repair_v1
+    decode before any fallback runs.
+    """
+    raw = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", str(value or ""))
+    key = re.sub(r"[^a-z0-9]+", "_", raw.casefold()).strip("_")
+    if not key:
+        return None
+    if key in ACTION_KINDS:
+        return key
+    return _ACTION_KIND_ALIASES.get(key)
+
+
 _RENDER_KINDS = {
     "plain",
     "paragraphs",
@@ -109,6 +184,12 @@ def validate_turn_plan(
             # plan that coercion could already salvage (production
             # 2026-06-11: one ungrounded note body rejected a five-action
             # utterance after the repair decode returned garbage).
+            # An unrecognized kind is no exception: ok=False here costs a
+            # second turn_repair_v1 decode in WriterService before any
+            # fallback runs, and it would sink a batch whose siblings are
+            # fine. The normalizer drops uncoercible actions instead, so a
+            # plan that reaches here with only bad kinds has an empty
+            # actions list and takes the existing no_valid_actions path.
             warnings.extend(_validate_action_dict(action, idx=idx, source_text=source_text))
 
     transform = plan.get("transform") if isinstance(plan.get("transform"), dict) else {}
@@ -157,32 +238,32 @@ def _memory_candidate_is_common_phrase(value: str) -> bool:
 
 
 def _validate_action_dict(action: Any, *, idx: int, source_text: str) -> list[str]:
-    errors: list[str] = []
+    warnings: list[str] = []
     if not isinstance(action, dict):
         return [f"action_{idx}_not_object"]
-    kind = str(action.get("kind") or "").strip()
-    if kind not in {"note", "reminder", "alarm"}:
-        errors.append(f"action_{idx}_invalid_kind")
+    kind = canonical_action_kind(action.get("kind"))
+    if kind is None:
+        return [f"action_{idx}_invalid_kind"]
     operation = str(action.get("operation") or "create").strip()
     if operation not in {"create", "update", "delete", "complete", "query", "append_to", "remove_from"}:
-        errors.append(f"action_{idx}_invalid_operation")
+        warnings.append(f"action_{idx}_invalid_operation")
     evidence = str(action.get("evidence_span") or "").strip()
     body = str(action.get("body") or "").strip()
     if evidence and not span_present(evidence, source_text):
-        errors.append(f"action_{idx}_evidence_not_grounded")
+        warnings.append(f"action_{idx}_evidence_not_grounded")
     if not evidence and body and not span_present(body, source_text):
-        errors.append(f"action_{idx}_body_not_grounded")
+        warnings.append(f"action_{idx}_body_not_grounded")
     if operation == "create" and kind in {"note", "reminder"} and not body:
-        errors.append(f"action_{idx}_missing_body")
+        warnings.append(f"action_{idx}_missing_body")
     schedule = action.get("schedule") if isinstance(action.get("schedule"), dict) else {}
     schedule_kind = str(schedule.get("kind") or "none").strip()
     if kind in {"reminder", "alarm"} and operation == "create":
         source_span = str(schedule.get("source_span") or "").strip()
         if schedule_kind not in {"none", ""} and source_span and not span_present(source_span, source_text):
-            errors.append(f"action_{idx}_schedule_not_grounded")
+            warnings.append(f"action_{idx}_schedule_not_grounded")
         if kind == "alarm" and schedule_kind in {"none", ""}:
-            errors.append(f"action_{idx}_alarm_missing_schedule")
-    return errors
+            warnings.append(f"action_{idx}_alarm_missing_schedule")
+    return warnings
 
 
 def span_present(span: Any, source_text: str) -> bool:

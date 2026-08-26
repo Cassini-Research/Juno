@@ -4447,3 +4447,324 @@ def test_ordinal_expansion_noop_when_model_batch_complete() -> None:
     expanded, notes = P._expand_missing_ordinal_actions(complete, source_text=source)
     assert expanded == complete
     assert notes == []
+
+
+# --- Action-kind enum / synonym coercion (issue #76) -------------------------
+
+
+def _action_kind_plan(kind: str, *, source: str, body: str) -> dict[str, Any]:
+    return {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "actions",
+        "corrected_transcript": {"text": source, "corrections": [], "literal_spans": []},
+        "target": {"kind": "none", "confidence": 0.9},
+        "render_plan": {"render_kind": "none", "markdown_allowed": False, "content_units": []},
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None},
+        "actions": [
+            {
+                "kind": kind,
+                "operation": "create",
+                "body": body,
+                "evidence_span": body,
+                "schedule": {"kind": "none"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "no_commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+
+
+def test_action_kind_synonyms_canonicalize() -> None:
+    from juno_v2.turn_plan.validators import canonical_action_kind
+
+    assert canonical_action_kind("note") == "note"
+    assert canonical_action_kind("Note") == "note"
+    assert canonical_action_kind("create_note") == "note"
+    assert canonical_action_kind("Create Note") == "note"
+    assert canonical_action_kind("createNote") == "note"
+    assert canonical_action_kind("notes") == "note"
+    assert canonical_action_kind("todo") == "reminder"
+    assert canonical_action_kind("task") == "reminder"
+    assert canonical_action_kind("add-reminder") == "reminder"
+    assert canonical_action_kind("Reminders") == "reminder"
+    assert canonical_action_kind("set_alarm") == "alarm"
+    assert canonical_action_kind("frobnicate") is None
+    assert canonical_action_kind("") is None
+    assert canonical_action_kind(None) is None
+
+
+def test_turn_plan_normalizer_coerces_action_kind_synonym() -> None:
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("create_note", source=source, body="about the release checklist")
+
+    normalized, notes = normalize_turn_plan(plan, source_text=source)
+
+    assert normalized["actions"][0]["kind"] == "note"
+    assert "action_kind_alias_normalized" in notes
+
+
+def test_turn_plan_synonym_kind_validates_and_ships_action() -> None:
+    """Regression for #76: a coerced plan must not be 'ok' and then discarded."""
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("create_note", source=source, body="about the release checklist")
+
+    normalized, _ = normalize_turn_plan(plan, source_text=source)
+    validation = validate_turn_plan(
+        normalized, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert validation.ok
+    assert not any("invalid_kind" in w for w in validation.warnings)
+
+    parsed = actions_from_turn_plan(normalized, source_text=source)
+    assert [a.kind.value for a in (parsed.actions or [])] == ["note"]
+    assert parsed.rejected_reason is None
+
+
+def test_turn_plan_actions_coerce_synonym_kind_without_normalizer() -> None:
+    source = "remind me to water the plants"
+    plan = _action_kind_plan("todo", source=source, body="water the plants")
+
+    parsed = actions_from_turn_plan(plan, source_text=source)
+
+    assert [a.kind.value for a in (parsed.actions or [])] == ["reminder"]
+
+
+def test_unknown_action_kind_is_dropped_not_plan_fatal() -> None:
+    """Unknown kinds must not fail the plan: ok=False buys a repair decode."""
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("frobnicate", source=source, body="about the release checklist")
+
+    normalized, notes = normalize_turn_plan(plan, source_text=source)
+
+    assert normalized["actions"] == []
+    assert "action_kind_unknown_dropped" in notes
+
+    validation = validate_turn_plan(
+        normalized, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+    assert validation.ok
+    assert validation.errors == []
+
+    # An all-unknown batch reaches the existing no-actions path, not a
+    # rejection that would need a second decode to recover from.
+    parsed = actions_from_turn_plan(normalized, source_text=source)
+    assert parsed.actions is None
+    assert parsed.rejected_reason is None
+
+
+def test_unknown_action_kind_left_unnormalized_stays_a_warning() -> None:
+    source = "take a note about the release checklist"
+    plan = _action_kind_plan("frobnicate", source=source, body="about the release checklist")
+
+    validation = validate_turn_plan(
+        plan, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert validation.ok
+    assert validation.errors == []
+    assert "action_0_invalid_kind" in validation.warnings
+
+
+def test_unknown_action_kind_drops_only_itself_and_ships_sibling() -> None:
+    """Regression for the 2026-06-11 batch-loss mode: valid siblings ship."""
+    source = "Hey Juno, take a note about the release checklist and frobnicate the widget"
+    plan = _action_kind_plan("note", source=source, body="about the release checklist")
+    plan["actions"].append(
+        {
+            "kind": "frobnicate",
+            "operation": "create",
+            "body": "the widget",
+            "evidence_span": "the widget",
+            "schedule": {"kind": "none"},
+            "missing_fields": [],
+        }
+    )
+
+    normalized, notes = normalize_turn_plan(plan, source_text=source)
+
+    assert [a["kind"] for a in normalized["actions"]] == ["note"]
+    assert "action_kind_unknown_dropped" in notes
+
+    validation = validate_turn_plan(
+        normalized, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+    assert validation.ok
+
+    parsed = actions_from_turn_plan(normalized, source_text=source)
+    assert [a.kind.value for a in (parsed.actions or [])] == ["note"]
+
+
+def test_unknown_action_kind_does_not_trigger_repair_decode() -> None:
+    """[note, frobnicate]: the note ships and planner.repair is never called."""
+    source = "Hey Juno, take a note about the release checklist and frobnicate the widget"
+    plan = _action_kind_plan("note", source=source, body="about the release checklist")
+    plan["actions"].append(
+        {
+            "kind": "frobnicate",
+            "operation": "create",
+            "body": "the widget",
+            "evidence_span": "the widget",
+            "schedule": {"kind": "none"},
+            "missing_fields": [],
+        }
+    )
+    # No turn_repair_v1 response registered: a repair attempt would KeyError.
+    backend = _TaskBackend({"turn_planning_v1": plan})
+    recorder = _Recorder()
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=recorder,
+        backend=backend,
+    )
+
+    service.process_transcript(
+        utterance_id="utt-unknown-kind-sibling",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(app_name="Notes", app_category="docs"),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+        wake_verified=True,
+    )
+
+    assert [str((req.context_payload or {}).get("task")) for req in backend.requests] == ["turn_planning_v1"]
+    generated = [
+        args[2]
+        for args, _kwargs in recorder.events
+        if len(args) > 2 and args[1] == "turn_plan_generated"
+    ]
+    assert len(generated) == 1
+    payload = generated[0]
+    assert payload["repair_attempted"] is False
+    assert payload["validation_ok"] is True
+    assert not any("invalid_kind" in w for w in payload["validation_warnings"])
+    assert "action_kind_unknown_dropped" in payload["normalization_notes"]
+    # The bad sibling is gone; the note survived rather than sinking the batch.
+    assert payload["action_count"] == 1
+
+
+def test_reported_command_utterance_costs_one_decode() -> None:
+    """'Create a PR and merge it.' - the #76 repro: one decode, then text."""
+    source = "Create a PR and merge it."
+    plan = {
+        "schema_version": "turn_plan_v1",
+        "utterance_kind": "command",
+        "corrected_transcript": {"text": source, "corrections": [], "literal_spans": []},
+        "target": {"kind": "cursor", "confidence": 0.8},
+        "render_plan": {
+            "render_kind": "plain",
+            "markdown_allowed": False,
+            "content_units": [
+                {"kind": "paragraph", "text": source, "source_span": source, "order": 1}
+            ],
+        },
+        "transform": {"operation": "none", "instruction": "", "transformed_text": None},
+        "actions": [
+            {
+                "kind": "pull_request",
+                "operation": "create",
+                "body": "Create a PR",
+                "evidence_span": "Create a PR",
+                "schedule": {"kind": "none"},
+                "missing_fields": [],
+            }
+        ],
+        "snippets": [],
+        "memory_candidates": [],
+        "safety": {"commit_policy": "commit", "execute_policy": "execute"},
+        "uncertainties": [],
+    }
+    # No turn_repair_v1 response registered: a repair attempt would KeyError.
+    backend = _TaskBackend({"turn_planning_v1": plan})
+    recorder = _Recorder()
+    service = WriterService(
+        config=WriterConfig(enable_model_transforms=True, enable_turn_planner=True, dictation_editor_enabled=False),
+        recorder=recorder,
+        backend=backend,
+    )
+
+    result = service.process_transcript(
+        utterance_id="utt-create-a-pr",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(app_name="Terminal", app_category="terminal"),
+        anchor_selection=None,
+        memory_store=None,
+        memory_snapshot=MemorySnapshot(schema_version=1),
+        memory_packet={},
+        mode_policy=BUILTIN_MODES["default_surface"],
+        mode_selection=_selection(),
+    )
+
+    assert result is not None
+    assert [str((req.context_payload or {}).get("task")) for req in backend.requests] == ["turn_planning_v1"]
+    generated = [
+        args[2]
+        for args, _kwargs in recorder.events
+        if len(args) > 2 and args[1] == "turn_plan_generated"
+    ]
+    assert len(generated) == 1
+    assert generated[0]["repair_attempted"] is False
+    assert generated[0]["validation_ok"] is True
+    assert "action_kind_unknown_dropped" in generated[0]["normalization_notes"]
+
+
+def test_turn_plan_other_action_problems_stay_warnings() -> None:
+    """The kind stayed warning-level, and so did every other per-action check.
+
+    The sibling here is fully grounded and fails only on its operation, so
+    this stays independent of the evidence-grounding policy (which #77 makes
+    plan-fatal on its own branch).
+    """
+    source = "remind me to water the plants"
+    plan = _action_kind_plan("reminder", source=source, body="water the plants")
+    plan["actions"].append(
+        {
+            "kind": "note",
+            "operation": "frobnicate",
+            "body": "water the plants",
+            "evidence_span": "water the plants",
+            "schedule": {"kind": "none"},
+            "missing_fields": [],
+        }
+    )
+
+    validation = validate_turn_plan(
+        plan, source_text=source, context=TypedContextBundle(app_category="docs")
+    )
+
+    assert validation.ok
+    assert validation.errors == []
+    assert "action_1_invalid_operation" in validation.warnings
+
+
+def test_turn_plan_schema_hint_and_prompt_spell_out_action_kind_enum() -> None:
+    from juno_v2.turn_plan.planner import _turn_plan_schema_hint
+
+    hint = _turn_plan_schema_hint()
+    assert hint["allowed_values"]["actions.kind"] == ["note", "reminder", "alarm"]
+    assert hint["actions"]["kind"]["enum"] == ["note", "reminder", "alarm"]
+    for kind in ("note", "reminder", "alarm"):
+        assert kind in hint["actions"]["kind"]
+
+    prompt = _system_prompt(
+        WriterTransformRequest(
+            utterance_id="utt-action-kind-enum",
+            instruction="Plan the turn.",
+            source_text="take a note about the release checklist",
+            mode=WriterMode.DEFAULT_SURFACE,
+            context_payload={"task": "turn_planning_v1"},
+            metadata={"kind": "turn_planning_v1"},
+        )
+    )
+    assert "actions[].kind must be exactly one of three literals" in prompt
+    assert "'note'" in prompt and "'reminder'" in prompt and "'alarm'" in prompt
+    assert "create_note" in prompt

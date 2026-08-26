@@ -11,7 +11,7 @@ from juno_v2.contracts.memory import MemorySnapshot
 from juno_v2.contracts.modes import ModePolicy, ModeSelection
 from juno_v2.contracts.writer import WriterMode, WriterTransformRequest
 from juno_v2.memory.store import JsonMemoryStore
-from juno_v2.turn_plan.validators import span_present
+from juno_v2.turn_plan.validators import ACTION_KINDS, canonical_action_kind, span_present
 
 if TYPE_CHECKING:
     from juno_v2.writer.backends.base import WriterBackend
@@ -103,7 +103,7 @@ class TurnPlanPacket:
     writer_tone_addon: str | None = None
     wake_verified: bool = False
     now_iso: str | None = None
-    allowed_action_kinds: tuple[str, ...] = ("note", "reminder", "alarm")
+    allowed_action_kinds: tuple[str, ...] = ACTION_KINDS
     max_actions: int = 25
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -683,10 +683,28 @@ def normalize_turn_plan(plan: dict[str, Any], *, source_text: str) -> tuple[dict
             if not isinstance(action, dict):
                 notes.append("action_non_object_dropped")
                 continue
+            raw_kind = str(action.get("kind") or "").strip()
+            kind = canonical_action_kind(raw_kind)
+            if kind is None:
+                # No sink can serve this kind, so it is dropped here rather
+                # than left for the validator. Failing the plan instead
+                # would buy a second turn_repair_v1 decode before any
+                # fallback runs, and would sink well-formed siblings;
+                # dropping keeps the 2026-06-11 ship-valid-siblings
+                # behaviour and leaves an all-bad batch on the existing
+                # no_valid_actions path (issue #76).
+                notes.append("action_kind_unknown_dropped")
+                continue
             action = deepcopy(action)
             if _coerce_span_field(action, "evidence_span", source_text):
                 notes.append("action_evidence_span_object_to_text")
-            kind = str(action.get("kind") or "").strip()
+            if kind != raw_kind:
+                # Same fix as the render_kind aliases above: the model
+                # emits "create_note"/"Reminders"/"todo" and the plan
+                # validated "ok" while every downstream consumer dropped
+                # the action.
+                action["kind"] = kind
+                notes.append("action_kind_alias_normalized")
             body = str(action.get("body") or "").strip()
             evidence = str(action.get("evidence_span") or "").strip()
             if evidence and not span_present(evidence, source_text):
@@ -2283,7 +2301,7 @@ def _turn_plan_schema_hint() -> dict[str, Any]:
                 "fix_grammar",
                 "extract",
             ],
-            "actions.kind": ["note", "reminder", "alarm"],
+            "actions.kind": list(ACTION_KINDS),
             "actions.operation": ["create"],
             "actions.schedule.kind": ["none", "instant", "vague", "series"],
             "safety.commit_policy": ["commit", "no_commit", "confirm"],
@@ -2308,7 +2326,23 @@ def _turn_plan_schema_hint() -> dict[str, Any]:
             "transformed_text": "string|null",
             "requires_second_pass": "boolean",
         },
-        "actions": "array of planned native actions with kind, operation, body, evidence_span, schedule, missing_fields",
+        # ``kind`` is spelled out as its own enum here, not just described in
+        # prose: the model kept emitting "create_note"/"todo"/"Reminders",
+        # which validated as a warning and was then discarded (issue #76).
+        "actions": {
+            "kind": {
+                "enum": list(ACTION_KINDS),
+                "note": "Apple Notes entry - 'take a note that the build is red'",
+                "reminder": "Apple Reminders task, time optional - 'remind me to call Sam'",
+                "alarm": "clock alarm, grounded time required - 'set an alarm for 7 am'",
+                "rule": "use exactly one of these three literals; never invent kinds such as create_note, task, todo, event, or timer",
+            },
+            "operation": "one allowed actions.operation value",
+            "body": "string grounded in the transcript",
+            "evidence_span": "verbatim transcript span",
+            "schedule": "{kind,source_span}",
+            "missing_fields": "array",
+        },
         "snippets": "array of snippet operations",
         "memory_candidates": "array",
         "safety": {

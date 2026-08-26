@@ -7,7 +7,7 @@ from typing import Any
 
 from juno_core_v3.actions.contracts import Action, ActionKind, ActionOperation
 from juno_core_v3.actions.timeparse import parse_when
-from juno_v2.turn_plan.validators import span_present
+from juno_v2.turn_plan.validators import canonical_action_kind, span_present
 
 
 @dataclass(slots=True)
@@ -86,10 +86,13 @@ def _coerce_action(
     missing_fields: list[str] = []
     if not isinstance(raw, dict):
         return None, f"action_{idx}_not_object", missing_fields
-    try:
-        kind = ActionKind(str(raw.get("kind") or ""))
-    except ValueError:
+    # Coerce here as well as in the planner's normalizer: a plan the
+    # validator accepted must never be dropped for its kind spelling
+    # (issue #76 - "create_note" plans were "ok" and un-shippable at once).
+    canonical_kind = canonical_action_kind(raw.get("kind"))
+    if canonical_kind is None:
         return None, f"action_{idx}_invalid_kind", missing_fields
+    kind = ActionKind(canonical_kind)
     try:
         operation = ActionOperation(str(raw.get("operation") or "create"))
     except ValueError:
