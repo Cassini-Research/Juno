@@ -108,6 +108,69 @@ def test_app_name_wins_over_window_title() -> None:
 
 
 # --------------------------------------------------------------------- #
+# App-name matching is whole-word, not arbitrary substring
+# --------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "app_name",
+    [
+        # Contains "terminal" but is not a shell. Classifying it as one
+        # switches the ITN profile to TERMINAL, makes context handling
+        # ``no_touch`` and arms the terminal writer guards.
+        "TerminalX",
+        "TerminalXpress",
+        # Same shape for other categories.
+        "Mailtrap",
+        "Wordle",
+        "Sparkle",
+    ],
+)
+def test_app_name_substring_does_not_match(app_name: str) -> None:
+    assert classify_app_category(app_name, None) == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("app_name", "expected"),
+    [
+        ("Terminal", "terminal"),
+        ("Terminal.app", "terminal"),
+        ("Apple Terminal", "terminal"),
+        # Trailing digits stay part of the same word.
+        ("iTerm2", "terminal"),
+        ("Warp", "terminal"),
+        ("Alacritty", "terminal"),
+        ("Hyper", "terminal"),
+        ("Microsoft Word", "docs"),
+        ("Mail", "email"),
+        ("Airmail", "email"),
+    ],
+)
+def test_app_name_whole_word_still_matches(app_name: str, expected: str) -> None:
+    assert classify_app_category(app_name, None) == expected
+
+
+def test_bundle_id_still_decides_for_substring_names() -> None:
+    # Bundle-id rules are checked first and are unaffected by the
+    # whole-word name matching.
+    assert (
+        classify_app_category("TerminalX", None, app_bundle_id="com.apple.terminal")
+        == "terminal"
+    )
+    assert (
+        classify_app_category(
+            "TerminalX", None, app_bundle_id="com.example.notaterminal"
+        )
+        == "unknown"
+    )
+
+
+def test_unmatched_name_falls_through_to_window_title() -> None:
+    # "TerminalX" no longer short-circuits, so the title fallback runs.
+    assert classify_app_category("TerminalX", "Inbox (4) - Gmail") == "email"
+
+
+# --------------------------------------------------------------------- #
 # Window-title fallback (browser-hosted surfaces)
 # --------------------------------------------------------------------- #
 
