@@ -596,28 +596,55 @@ def apply_code_identifiers(text: str) -> tuple[str, list[str]]:
 # Rule: terminal operators ("pipe" → "|", "greater than" → ">", etc.)
 # ---------------------------------------------------------------------- #
 
-# Longest phrases first — a bare "pipe"/"ampersand" rule would otherwise
-# consume the tail of "double pipe"/"double ampersand" and make the double
-# forms unreachable.
-_TERMINAL_OPS = [
-    (re.compile(r"\bdouble\s+ampersand\b", re.IGNORECASE), "&&"),
-    (re.compile(r"\bdouble\s+pipe\b", re.IGNORECASE), "||"),
-    (re.compile(r"\bpipe\b", re.IGNORECASE), "|"),
-    (re.compile(r"\bgreater\s+than\b", re.IGNORECASE), ">"),
-    (re.compile(r"\bless\s+than\b", re.IGNORECASE), "<"),
-    (re.compile(r"\bampersand\b", re.IGNORECASE), "&"),
-]
+# Longest phrases first — a bare "pipe"/"ampersand" alternative would
+# otherwise consume the tail of "double pipe"/"double ampersand" and make
+# the double forms unreachable. One combined pattern (rather than a rule
+# per phrase applied in sequence) so the literal-mention guard sees the
+# whole cue: "a double pipe" is one guarded mention, not a blocked "double
+# pipe" followed by an unguarded bare "pipe".
+_TERMINAL_OPS: tuple[tuple[str, str], ...] = (
+    (r"double\s+ampersand", "&&"),
+    (r"double\s+pipe", "||"),
+    (r"pipe", "|"),
+    (r"greater\s+than", ">"),
+    (r"less\s+than", "<"),
+    (r"ampersand", "&"),
+)
+
+_TERMINAL_OPS_PAT = re.compile(
+    r"\b(?:" + "|".join(f"(?:{phrase})" for phrase, _ in _TERMINAL_OPS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _terminal_op_glyph(token: str) -> str:
+    """Return the operator glyph for a matched terminal-op cue."""
+    norm = re.sub(r"\s+", " ", token.strip().lower())
+    for phrase, glyph in _TERMINAL_OPS:
+        if re.fullmatch(phrase, norm, re.IGNORECASE):
+            return glyph
+    # Should not happen — the pattern matched something we don't classify.
+    return token
 
 
 def apply_terminal_ops(text: str) -> tuple[str, list[str]]:
-    applied: list[str] = []
-    out = text
-    for pat, sub in _TERMINAL_OPS:
-        new = pat.sub(sub, out)
-        if new != out:
-            applied.append("terminal_ops")
-            out = new
-    return out, list(set(applied))
+    """Convert spoken shell operators, leaving literal noun mentions alone.
+
+    The operator words are ordinary English nouns too, so they get the
+    same determiner/quotation guard the inline spoken-punctuation rule
+    uses: "put a pipe here" keeps the word, while a bare "ls pipe grep"
+    still becomes ``ls | grep``.
+    """
+    if not text:
+        return text, []
+
+    def _replace(m: "re.Match[str]") -> str:
+        if _spoken_punct_is_literal_mention(text, m.start(), m.end()):
+            return m.group(0)
+        return _terminal_op_glyph(m.group(0))
+
+    out = _TERMINAL_OPS_PAT.sub(_replace, text)
+    return out, ["terminal_ops"] if out != text else []
 
 
 # ---------------------------------------------------------------------- #

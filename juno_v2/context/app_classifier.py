@@ -16,7 +16,7 @@ Rules live in three small tables so they're easy to extend:
 
 * ``_BUNDLE_ID_RULES`` — exact macOS bundle-id prefix matches. These
   are the strongest signal because the shell usually has them.
-* ``_APP_NAME_RULES`` — case-insensitive substring matches on the
+* ``_APP_NAME_RULES`` — case-insensitive *whole-word* matches on the
   human-facing app name. Catches VS Code, Slack, Mail, etc.
 * ``_WINDOW_TITLE_RULES`` — substring matches on the window title.
   Used as a fallback when the app name isn't specific enough (e.g.
@@ -29,6 +29,7 @@ bundle; this module is the default.
 
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 # Ordered from most specific to least specific. First match wins.
@@ -126,6 +127,20 @@ _APP_NAME_RULES: tuple[tuple[str, str], ...] = (
     ("ulysses", "docs"),
 )
 
+# App-name rules match whole words, never arbitrary substrings. A rule for
+# "terminal" must not claim an unrelated app called "TerminalX": that would
+# flip the entire downstream pipeline (ITN ``TERMINAL`` profile, ``no_touch``
+# context handling, the terminal writer guards) for a surface that is not a
+# shell. A trailing digit still counts as part of the same word so "iTerm2"
+# keeps matching the ``iterm`` rule, and non-word characters still delimit so
+# "Terminal.app" matches. Names that no longer match fall through to the
+# window title and then to ``unknown``, whose writer policy is a pass-through.
+_APP_NAME_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    # ``(?![^\W\d])`` = not followed by a letter or underscore (digits ok).
+    (re.compile(rf"(?<!\w){re.escape(needle)}(?![^\W\d])"), category)
+    for needle, category in _APP_NAME_RULES
+)
+
 # Window-title keywords. Match is only considered when the app name
 # category is ``unknown`` (e.g. a browser hosting a webmail client).
 _WINDOW_TITLE_RULES: tuple[tuple[str, str], ...] = (
@@ -158,7 +173,7 @@ def classify_app_category(
     """Return the coarse app category for the focused surface.
 
     ``app_bundle_id`` (macOS reverse-DNS identifier) is the strongest
-    signal when available. We fall back to a substring match over the
+    signal when available. We fall back to a whole-word match over the
     app name, and finally to the window title. Always returns one of
     the :class:`AppCategory` string values; never raises.
     """
@@ -170,8 +185,8 @@ def classify_app_category(
 
     name = (app_name or "").strip().lower()
     if name:
-        for needle, category in _APP_NAME_RULES:
-            if needle in name:
+        for pattern, category in _APP_NAME_PATTERNS:
+            if pattern.search(name):
                 return category
 
     title = (window_title or "").strip().lower()

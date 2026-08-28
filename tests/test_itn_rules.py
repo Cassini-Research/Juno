@@ -328,6 +328,43 @@ def test_apply_terminal_ops_double_operators(text: str, expected: str) -> None:
     assert out == expected
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A determiner in front makes the operator word a noun, exactly as
+        # it does for spoken punctuation ("put a comma here").
+        "put a pipe here",
+        "the pipe is rusty",
+        "an ampersand goes at the end",
+        "use the ampersand character",
+        "the greater than sign",
+        # The guard applies to the double forms too, and blocking "double
+        # pipe" must not let the bare "pipe" rule fire on its tail.
+        "a double pipe means or",
+        "the double ampersand operator",
+    ],
+)
+def test_apply_terminal_ops_literal_mentions_preserved(text: str) -> None:
+    out, applied = apply_terminal_ops(text)
+    assert out == text
+    assert applied == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Bare cues (no determiner) still convert.
+        ("ls pipe grep foo", "ls | grep foo"),
+        ("ls pipe grep foo double ampersand echo ok", "ls | grep foo && echo ok"),
+        ("echo hi greater than out.txt", "echo hi > out.txt"),
+    ],
+)
+def test_apply_terminal_ops_bare_cues_still_convert(text: str, expected: str) -> None:
+    out, applied = apply_terminal_ops(text)
+    assert out == expected
+    assert applied == ["terminal_ops"]
+
+
 # ---------------------------------------------------------------------- #
 # apply_spoken_punctuation
 # ---------------------------------------------------------------------- #
