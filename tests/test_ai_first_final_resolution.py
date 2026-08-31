@@ -12,6 +12,7 @@ from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
     _final_adjudication_fast_skip_reason,
+    _final_asr_live_hint_audit_payload,
     _mode_policy_for_final_delivery,
     _reconcile_explicit_candidate_term_confusions,
     _reconcile_proper_nouns_from_live_hint,
@@ -2212,6 +2213,73 @@ def test_final_asr_live_hint_audit_keeps_final_asr_on_by_default(monkeypatch) ->
     assert audit["skip_enabled"] is False
     assert audit["skip_used"] is False
     assert audit["backend"] == "fake_asr"
+
+
+def test_final_asr_live_hint_audit_exposes_semantic_substitution_span() -> None:
+    audit = _final_asr_live_hint_audit_payload(
+        raw_text="Please check the history so old model behavior does not bias us.",
+        transcript_hint="Please check the history so old models work does not bias us.",
+        shell_timeline={"final_preview_flush_received_ms": 123},
+        backend_name="fake_asr",
+        model_path="fake-whisper",
+        decode_ms=17.0,
+        skip_used=False,
+    )
+
+    alignment = audit["token_alignment"]
+    assert alignment["schema"] == "live_final_token_alignment_v1"
+    assert alignment["lexical_agreement_ratio"] < 1.0
+    assert alignment["first_divergent_live_word_index"] == 6
+    assert alignment["operations"] == [
+        {
+            "kind": "replace",
+            "live_start": 6,
+            "live_end": 8,
+            "final_start": 6,
+            "final_end": 8,
+            "live_tokens": ["models", "work"],
+            "final_tokens": ["model", "behavior"],
+        }
+    ]
+
+
+def test_final_asr_live_hint_audit_separates_case_and_punctuation_loss() -> None:
+    audit = _final_asr_live_hint_audit_payload(
+        raw_text="do the test now dude like don't stop",
+        transcript_hint="Do the test now, dude! like don't stop.",
+        shell_timeline=None,
+        backend_name="fake_asr",
+        model_path="fake-whisper",
+        decode_ms=17.0,
+        skip_used=False,
+    )
+
+    alignment = audit["token_alignment"]
+    assert alignment["lexical_agreement_ratio"] == 1.0
+    assert alignment["operations"] == []
+    assert alignment["case_change_count"] == 1
+    assert alignment["punctuation_removed_count"] == 3
+    assert alignment["punctuation_added_count"] == 0
+    assert alignment["live_terminal_punctuation"] == "."
+    assert alignment["final_terminal_punctuation"] == ""
+
+
+def test_final_asr_live_hint_audit_handles_empty_lanes_without_false_drift() -> None:
+    audit = _final_asr_live_hint_audit_payload(
+        raw_text="",
+        transcript_hint="",
+        shell_timeline=None,
+        backend_name="fake_asr",
+        model_path="",
+        decode_ms=0.0,
+        skip_used=False,
+    )
+
+    alignment = audit["token_alignment"]
+    assert alignment["lexical_agreement_ratio"] == 0.0
+    assert alignment["operations"] == []
+    assert alignment["first_divergent_live_word_index"] is None
+    assert alignment["first_divergent_final_word_index"] is None
 
 
 def test_final_asr_live_hint_skip_requires_explicit_env_and_final_preview_flush(monkeypatch) -> None:

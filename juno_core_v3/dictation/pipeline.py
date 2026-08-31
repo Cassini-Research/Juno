@@ -4634,7 +4634,18 @@ def _final_asr_live_hint_audit_payload(
     skip_enabled = _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
     similarity = None
     if raw and hint:
-        similarity = round(difflib.SequenceMatcher(None, raw.casefold(), hint.casefold()).ratio(), 4)
+        similarity = round(
+            difflib.SequenceMatcher(
+                a=raw.casefold(),
+                b=hint.casefold(),
+                autojunk=False,
+            ).ratio(),
+            4,
+        )
+    token_alignment = _live_final_token_alignment(
+        live_text=hint,
+        final_text=raw,
+    )
     return {
         "hint_present": bool(hint),
         "hint_chars": len(hint),
@@ -4642,6 +4653,7 @@ def _final_asr_live_hint_audit_payload(
         "raw_chars": len(raw),
         "raw_words": len(raw.split()) if raw else 0,
         "raw_hint_similarity": similarity,
+        "token_alignment": token_alignment,
         "final_preview_flush_received": final_preview_flushed,
         "skip_enabled": skip_enabled,
         "skip_eligible": bool(hint and final_preview_flushed),
@@ -4650,6 +4662,128 @@ def _final_asr_live_hint_audit_payload(
         "model_path": model_path,
         "decode_ms": float(decode_ms or 0.0),
     }
+
+
+def _live_final_token_alignment(*, live_text: str, final_text: str) -> dict[str, Any]:
+    """Describe live-to-final drift without changing transcript authority.
+
+    Character similarity hides the failures this audit is meant to expose:
+    ``work`` -> ``behavior`` can still score highly in a long utterance, while
+    losing commas and capitalization can leave the words unchanged.  Keep a
+    lexical, case-insensitive alignment for semantic drift and report surface
+    loss separately.  The payload is intentionally a shadow diagnostic; no
+    value returned here is used to choose or rewrite the final transcript.
+    """
+
+    live_surface = _alignment_surface_tokens(live_text)
+    final_surface = _alignment_surface_tokens(final_text)
+    live_words = [token for token in live_surface if _is_alignment_word(token)]
+    final_words = [token for token in final_surface if _is_alignment_word(token)]
+    live_folded = [token.casefold() for token in live_words]
+    final_folded = [token.casefold() for token in final_words]
+
+    matcher = difflib.SequenceMatcher(
+        a=live_folded,
+        b=final_folded,
+        autojunk=False,
+    )
+    operations: list[dict[str, Any]] = []
+    matching_words = 0
+    case_changes = 0
+    deleted_words = 0
+    inserted_words = 0
+    replaced_live_words = 0
+    replaced_final_words = 0
+    first_live_index: int | None = None
+    first_final_index: int | None = None
+
+    for tag, live_start, live_end, final_start, final_end in matcher.get_opcodes():
+        if tag == "equal":
+            matching_words += live_end - live_start
+            case_changes += sum(
+                1
+                for live_token, final_token in zip(
+                    live_words[live_start:live_end],
+                    final_words[final_start:final_end],
+                )
+                if live_token != final_token
+            )
+            continue
+        if first_live_index is None:
+            first_live_index = live_start
+            first_final_index = final_start
+        if tag == "delete":
+            deleted_words += live_end - live_start
+        elif tag == "insert":
+            inserted_words += final_end - final_start
+        else:
+            replaced_live_words += live_end - live_start
+            replaced_final_words += final_end - final_start
+        operations.append(
+            {
+                "kind": tag,
+                "live_start": live_start,
+                "live_end": live_end,
+                "final_start": final_start,
+                "final_end": final_end,
+                "live_tokens": live_words[live_start:live_end],
+                "final_tokens": final_words[final_start:final_end],
+            }
+        )
+
+    live_punctuation = [token for token in live_surface if not _is_alignment_word(token)]
+    final_punctuation = [token for token in final_surface if not _is_alignment_word(token)]
+    punctuation_matcher = difflib.SequenceMatcher(
+        a=live_punctuation,
+        b=final_punctuation,
+        autojunk=False,
+    )
+    punctuation_removed = 0
+    punctuation_added = 0
+    for tag, live_start, live_end, final_start, final_end in punctuation_matcher.get_opcodes():
+        if tag in {"delete", "replace"}:
+            punctuation_removed += live_end - live_start
+        if tag in {"insert", "replace"}:
+            punctuation_added += final_end - final_start
+
+    denominator = max(len(live_words), len(final_words), 1)
+    live_terminal = (
+        live_surface[-1]
+        if live_surface and not _is_alignment_word(live_surface[-1])
+        else ""
+    )
+    final_terminal = (
+        final_surface[-1]
+        if final_surface and not _is_alignment_word(final_surface[-1])
+        else ""
+    )
+    return {
+        "schema": "live_final_token_alignment_v1",
+        "live_word_count": len(live_words),
+        "final_word_count": len(final_words),
+        "matching_word_count": matching_words,
+        "lexical_agreement_ratio": round(matching_words / denominator, 4),
+        "case_change_count": case_changes,
+        "punctuation_removed_count": punctuation_removed,
+        "punctuation_added_count": punctuation_added,
+        "live_terminal_punctuation": live_terminal,
+        "final_terminal_punctuation": final_terminal,
+        "deleted_live_word_count": deleted_words,
+        "inserted_final_word_count": inserted_words,
+        "replaced_live_word_count": replaced_live_words,
+        "replaced_final_word_count": replaced_final_words,
+        "first_divergent_live_word_index": first_live_index,
+        "first_divergent_final_word_index": first_final_index,
+        "operations": operations,
+    }
+
+
+def _alignment_surface_tokens(text: str) -> list[str]:
+    return re.findall(r"\w+(?:['\u2019]\w+)*|[^\w\s]", text or "", flags=re.UNICODE)
+
+
+def _is_alignment_word(token: str) -> bool:
+    return bool(token and re.match(r"^\w", token, flags=re.UNICODE))
 
 
 def _fallback_adjudicated_text(
