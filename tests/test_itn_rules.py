@@ -344,6 +344,10 @@ def test_apply_terminal_ops_double_operators(text: str, expected: str) -> None:
         ("wait exclamation mark", "wait!"),
         ("first item semicolon second item", "first item; second item"),
         ("note colon remember this", "note: remember this"),
+        ("use yes slash no", "use yes/no"),
+        ("open users slash shared slash notes", "open users/shared/notes"),
+        ("compare and forward slash or", "compare and/or"),
+        ("windows path c colon backslash temp", "windows path c:\\temp"),
         ("one em dash two", "one — two"),
         ("intro new paragraph body", "intro\n\nbody"),
     ],
@@ -373,6 +377,9 @@ def test_apply_spoken_punctuation_dedup(text: str, expected: str) -> None:
     [
         "type the word comma",
         "the word comma is punctuation",
+        "type the word slash",
+        "the slash is missing",
+        "write the word backslash as text",
         "",
     ],
 )
