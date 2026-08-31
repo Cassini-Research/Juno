@@ -121,6 +121,7 @@ from juno_v2.memory.repetition import collapse_tail_repetition
 from juno_v2.memory.term_policy import learned_term_allowed
 from juno_v2.personalization.seed.runtime import JunoSeedPersonalizationRuntime
 from juno_v2.observability.tracing import TraceRecorder
+from juno_v2.observability.reliability_provenance import test_provenance_fields
 from juno_v2.transcript.adjudicator import TranscriptAdjudicator, TranscriptAdjudicatorConfig
 from juno_v2.transcript.validators import validate_adjudication_result
 from juno_v2.turn_plan import actions_from_turn_plan, validate_turn_plan
@@ -399,9 +400,15 @@ class OneShotDictationPipeline:
         transcript_hint: str | None = None,
         language_mode: str | None = None,
         shell_timeline: dict[str, Any] | None = None,
+        test_run_id: str | None = None,
+        test_case_id: str | None = None,
     ) -> OneShotDictationResult:
         started_ns = time.perf_counter_ns()
         uid = utterance_id or self._new_utterance_id()
+        test_provenance = test_provenance_fields(
+            test_run_id=test_run_id,
+            test_case_id=test_case_id,
+        )
         frozen_context_merged = False
         stage = _normalize_transcript_stage(transcript_stage)
         live_adjudication = stage == "live_adjudication"
@@ -428,6 +435,7 @@ class OneShotDictationPipeline:
                     self.recorder.log_dir,
                     {
                         "utterance_id": uid,
+                        **test_provenance,
                         "ts_unix_ms": int(time.time() * 1000),
                         "transcript": "",
                         "raw_transcript": "",
@@ -478,6 +486,7 @@ class OneShotDictationPipeline:
                         self.recorder.log_dir,
                         {
                             "utterance_id": uid,
+                            **test_provenance,
                             "ts_unix_ms": int(time.time() * 1000),
                             "transcript": "",
                             "raw_transcript": "",
@@ -538,6 +547,7 @@ class OneShotDictationPipeline:
                             self.recorder.log_dir,
                             {
                                 "utterance_id": uid,
+                                **test_provenance,
                                 "ts_unix_ms": int(time.time() * 1000),
                                 "transcript": "",
                                 "raw_transcript": "",
@@ -855,6 +865,7 @@ class OneShotDictationPipeline:
                     self.recorder.log_dir,
                     {
                         "utterance_id": uid,
+                        **test_provenance,
                         "ts_unix_ms": int(time.time() * 1000),
                         "transcript": "",
                         "raw_transcript": "",
@@ -900,6 +911,7 @@ class OneShotDictationPipeline:
                     self.recorder.log_dir,
                     {
                         "utterance_id": uid,
+                        **test_provenance,
                         "ts_unix_ms": int(time.time() * 1000),
                         "transcript": "",
                         "raw_transcript": "",
@@ -1687,6 +1699,7 @@ class OneShotDictationPipeline:
                 "paste_kind": "none",
                 "live_adjudication": True,
                 "session_context_tape": tape_meta,
+                **test_provenance,
             }
             if adjudication_result is not None and not adjudication_result.rejected:
                 meta_out["transcript_patch"] = adjudication_result.to_dict()
@@ -1719,6 +1732,7 @@ class OneShotDictationPipeline:
                 parsed_actions_payload=None,
                 action_attempt_rejected=False,
                 wake_status=None,
+                test_provenance=test_provenance,
             )
             return OneShotDictationResult(
                 utterance_id=uid,
@@ -2226,6 +2240,7 @@ class OneShotDictationPipeline:
             parsed_actions_payload=parsed_actions_payload,
             action_attempt_rejected=action_attempt_rejected,
             wake_status=wake_status,
+            test_provenance=test_provenance,
         )
 
         # 10. Retain utterance record for insertion_committed / learning ----
@@ -2292,6 +2307,7 @@ class OneShotDictationPipeline:
                 self.recorder.log_dir,
                 {
                     "utterance_id": uid,
+                    **test_provenance,
                     "ts_unix_ms": int(time.time() * 1000),
                     "transcript": transcript_out,
                     "raw_transcript": raw_out,
@@ -2353,6 +2369,7 @@ class OneShotDictationPipeline:
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
             "final_asr_live_hint_audit": final_asr_live_hint_audit,
+            **test_provenance,
         }
         if shell_timeline:
             meta_out["shell_timeline"] = shell_timeline
@@ -3100,6 +3117,7 @@ def _record_transcript_decision(
     parsed_actions_payload: list[dict[str, Any]] | None,
     action_attempt_rejected: bool,
     wake_status: WakeStatus | None,
+    test_provenance: dict[str, str],
 ) -> None:
     try:
         if adjudication_result is None:
@@ -3164,6 +3182,7 @@ def _record_transcript_decision(
             "transcript_decision",
             {
                 "utterance_id": utterance_id,
+                **test_provenance,
                 "stage": stage,
                 "raw_text": raw_text,
                 "normalized_text": normalized_text,

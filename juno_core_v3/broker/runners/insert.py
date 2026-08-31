@@ -101,6 +101,10 @@ class InsertRequest:
     # the trace without a contract change.
     broker_session_id: str | None = None
     surface_id: str | None = None
+    # Optional opaque correlation tags supplied only by reliability harnesses.
+    # Normal product requests leave both unset.
+    test_run_id: str | None = None
+    test_case_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -206,6 +210,8 @@ class InsertRunner:
                 "language_mode": req.language_mode,
                 "shell_timeline": req.shell_timeline,
                 "pause_sensitivity_seconds": req.pause_sensitivity_seconds,
+                "test_run_id": req.test_run_id,
+                "test_case_id": req.test_case_id,
             }
             raw = self.pipeline.run(req.wav_bytes, **self._accepted_run_kwargs(kwargs))
         finally:

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from juno_v2.observability.reliability_provenance import test_provenance_fields
+
 
 @dataclass(frozen=True, slots=True)
 class HistoryPaths:
@@ -45,6 +47,8 @@ def read_persistent_history(
     *,
     limit: int = 50,
     before_updated_at_ms: int | None = None,
+    test_run_id: str | None = None,
+    test_case_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read newest ``limit`` records (SQLite first; legacy JSONL fallback).
 
@@ -59,12 +63,22 @@ def read_persistent_history(
         n = 50
     if n <= 0:
         return []
+    test_provenance = test_provenance_fields(
+        test_run_id=test_run_id,
+        test_case_id=test_case_id,
+    )
+    if test_run_id is not None and "test_run_id" not in test_provenance:
+        return []
+    if test_case_id is not None and "test_case_id" not in test_provenance:
+        return []
     try:
         from juno_v2.observability.product_history import get_product_history_store
 
         rows = get_product_history_store(Path(log_dir)).list_entries(
             limit=n,
             before_updated_at_ms=before_updated_at_ms,
+            test_run_id=test_provenance.get("test_run_id"),
+            test_case_id=test_provenance.get("test_case_id"),
         )
         if rows:
             return rows
@@ -87,6 +101,8 @@ def read_persistent_history(
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict):
+            if any(obj.get(key) != value for key, value in test_provenance.items()):
+                continue
             out.append(obj)
         if len(out) >= n:
             break
