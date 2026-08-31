@@ -67,6 +67,48 @@ def test_apply_numeric_idempotent() -> None:
     assert applied == []
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Issue #97 — a spoken compound cardinal can reach ITN hyphenated.
+        # It must normalise as one number, not as a converted head plus an
+        # orphaned tail ("twenty-five" once became "20-five").
+        ("twenty-five", "25"),
+        ("twenty-three items", "23 items"),
+        ("she is twenty-one", "she is 21"),
+        ("ninety-nine problems", "99 problems"),
+        ("Twenty-Five", "25"),  # case-insensitive
+        ("twenty-five percent", "25 percent"),
+        ("thirty-two percent of the total", "32 percent of the total"),
+    ],
+)
+def test_apply_numeric_hyphenated_compounds(text: str, expected: str) -> None:
+    out, applied = apply_numeric(text)
+    assert out == expected
+    assert applied == ["numeric_words_to_digits"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A numeric match may neither begin nor end part-way through a
+        # hyphenated token. "well-known" and friends are ordinary prose;
+        # "seven-eleven" and "twenty-twenty" are two separate number words
+        # rather than one compound cardinal, so neither half converts.
+        "well-known state-of-the-art work",
+        "one-off decision",
+        "seven-eleven store",
+        "twenty-twenty vision",
+        "nine-to-five job",
+        "twenty-five-year-old",
+    ],
+)
+def test_apply_numeric_leaves_hyphenated_compounds_intact(text: str) -> None:
+    out, applied = apply_numeric(text)
+    assert out == text
+    assert applied == []
+
+
 # ---------------------------------------------------------------------- #
 # apply_currency
 # ---------------------------------------------------------------------- #
@@ -106,6 +148,44 @@ def test_apply_currency_comma_decimal_policy() -> None:
 
 @pytest.mark.parametrize("text", ["", "dollars to donuts", "no money here"])
 def test_apply_currency_no_op(text: str) -> None:
+    out, applied = apply_currency(text)
+    assert out == text
+    assert applied == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Issue #97 — the amount must be read whole. Matching from inside
+        # "twenty-five" turned "twenty-five dollars" into "twenty-$5".
+        ("twenty-five dollars", "$25"),
+        ("twenty-five dollars and thirty-two cents", "$25.32"),
+        ("forty-five dollars and ninety-nine cents", "$45.99"),
+        ("one hundred twenty-five dollars", "$125"),
+        ("thirty-two euros", "\u20ac32"),
+        ("ninety-nine pounds", "\u00a399"),
+        ("twenty-one swiss francs", "CHF 21"),
+        ("twenty-five yen", "\u00a525"),
+    ],
+)
+def test_apply_currency_hyphenated_amounts(text: str, expected: str) -> None:
+    out, applied = apply_currency(text)
+    assert out == expected
+    assert applied == ["currency"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A currency match must not begin inside a hyphenated compound: the
+        # scale word here belongs to "multi-million", not to an amount, and
+        # this once became "a multi-$1000000 deal".
+        "a multi-million dollar deal",
+        "a five-dollar coffee",
+        "twenty-five-dollar bill",
+    ],
+)
+def test_apply_currency_ignores_hyphenated_compounds(text: str) -> None:
     out, applied = apply_currency(text)
     assert out == text
     assert applied == []
