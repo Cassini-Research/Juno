@@ -185,10 +185,32 @@ _NUMBER_WORD_PAT = re.compile(
 
 def _try_convert_number_phrase(match: re.Match) -> str:
     tokens = match.group(0).split()
+    if not _is_compositional_inline_number(tokens):
+        return match.group(0)
     val = _parse_number_words(tokens)
     if val is None:
         return match.group(0)
     return str(val)
+
+
+def _is_compositional_inline_number(tokens: list[str]) -> bool:
+    """Return whether adjacent basic number words form one English number.
+
+    The inline matcher intentionally covers only zero-to-nineteen and tens;
+    scaled forms are handled by the date/time/currency rules before this
+    fallback.  Within that vocabulary, the only valid multi-token cardinal is
+    a tens word followed by a non-zero unit (``twenty five``).  Treating an
+    arbitrary run such as ``two three four`` as an additive expression silently
+    changed enumerations into ``9``.
+    """
+
+    normalized = [token.casefold().replace(",", "") for token in tokens]
+    if len(normalized) == 1:
+        return normalized[0] in _ONES or normalized[0] in _TENS
+    if len(normalized) != 2:
+        return False
+    first, second = normalized
+    return first in _TENS and second in _ONES and 1 <= _ONES[second] <= 9
 
 
 _NUMERIC_CONTEXT_BEFORE_RE = re.compile(
@@ -219,7 +241,7 @@ def apply_numeric(text: str) -> tuple[str, list[str]]:
         tokens = phrase.split()
         val = _parse_number_words(tokens)
         repl = phrase
-        if val is not None:
+        if val is not None and _is_compositional_inline_number(tokens):
             convert = len(tokens) > 1 or val >= 10
             if not convert:
                 convert = bool(_NUMERIC_CONTEXT_BEFORE_RE.search(text[: m.start()])) or bool(
