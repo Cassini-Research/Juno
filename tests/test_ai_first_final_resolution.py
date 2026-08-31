@@ -6,12 +6,14 @@ import json
 import math
 import struct
 import tempfile
+from types import SimpleNamespace
 import wave
 
 from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
     _final_adjudication_fast_skip_reason,
+    _apply_final_orthography_floor,
     _mode_policy_for_final_delivery,
     _reconcile_explicit_candidate_term_confusions,
     _reconcile_proper_nouns_from_live_hint,
@@ -2212,6 +2214,96 @@ def test_final_asr_live_hint_audit_keeps_final_asr_on_by_default(monkeypatch) ->
     assert audit["skip_enabled"] is False
     assert audit["skip_used"] is False
     assert audit["backend"] == "fake_asr"
+
+
+def test_final_orthography_floor_repairs_plain_writer_fallback() -> None:
+    text, audit = _apply_final_orthography_floor(
+        "i sent it in january. then i checked b and c",
+        context=TypedContextBundle(app_category="docs"),
+        mode_selection=SimpleNamespace(effective_mode="default_surface"),
+        mode_policy=SimpleNamespace(base_mode="default_surface", mode_name="default_surface"),
+        writer_outcome=None,
+        wake_verified=False,
+    )
+
+    assert text == "I sent it in January. Then I checked B and C"
+    assert audit == {
+        "schema": "final_orthography_floor_v1",
+        "eligible": True,
+        "changed": True,
+        "skip_reason": None,
+    }
+
+
+def test_final_orthography_floor_preserves_exact_and_transform_surfaces() -> None:
+    cases = [
+        (
+            TypedContextBundle(app_category="terminal"),
+            SimpleNamespace(effective_mode="default_surface"),
+            None,
+            "exact_surface",
+        ),
+        (
+            TypedContextBundle(app_category="docs"),
+            SimpleNamespace(effective_mode="verbatim"),
+            None,
+            "verbatim_mode",
+        ),
+        (
+            TypedContextBundle(app_category="docs"),
+            SimpleNamespace(effective_mode="default_surface"),
+            WriterOutcome(
+                utterance_id="utt-lowercase-transform",
+                action=WriterActionKind.TRANSFORM_COMMIT,
+                output_text="keep this lowercase",
+            ),
+            "writer_owned:transform_commit",
+        ),
+    ]
+
+    for context, mode_selection, outcome, reason in cases:
+        text, audit = _apply_final_orthography_floor(
+            "keep this lowercase",
+            context=context,
+            mode_selection=mode_selection,
+            mode_policy=SimpleNamespace(base_mode="default_surface", mode_name="default_surface"),
+            writer_outcome=outcome,
+            wake_verified=False,
+        )
+        assert text == "keep this lowercase"
+        assert audit["eligible"] is False
+        assert audit["changed"] is False
+        assert audit["skip_reason"] == reason
+
+
+def test_pipeline_applies_final_orthography_when_writer_is_unavailable() -> None:
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript="i sent it in january. then i checked it",
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=_Recorder(),
+        writer_enabled=False,
+    )
+    result = pipeline.run(
+        _loud_wav_bytes(),
+        utterance_id="utt-final-orthography-fallback",
+        save_history=False,
+        save_audio=False,
+    )
+
+    assert result.transcript == "I sent it in January. Then I checked it"
+    assert result.metadata["final_orthography_floor"]["changed"] is True
 
 
 def test_final_asr_live_hint_skip_requires_explicit_env_and_final_preview_flush(monkeypatch) -> None:

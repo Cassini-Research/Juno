@@ -40,7 +40,6 @@ from juno_v2.writer.dictation_editor import (
     FILLER_STRIP_MODES,
     apply_edit_script,
     build_editor_suffix,
-    capitalize_sentence_starts,
     parse_edit_script,
     strip_hesitation_fillers,
 )
@@ -50,6 +49,7 @@ from juno_v2.writer.config import WriterConfig
 from juno_v2.writer.deterministic import (
     AppCategory,
     expand_snippets,
+    normalize_dictation_casing,
     render_bullets,
     render_explicit_bullet_list_command,
     render_lowercase,
@@ -653,7 +653,7 @@ class WriterService:
         structural = applied.get("struct") is not None
         category = str(getattr(context, "app_category", "") or "").lower()
         if category not in {"terminal", "code", "developer_tools"}:
-            edited = capitalize_sentence_starts(edited)
+            edited = normalize_dictation_casing(edited)
             # Mode-gated hesitation cleanup — the final guard after the
             # editor (production 2026-06-11: formal Mail kept "uh").
             mode_name = str(getattr(self.state.mode_policy, "mode_name", "") or "").lower()
