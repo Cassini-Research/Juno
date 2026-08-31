@@ -34,6 +34,7 @@ from juno_v2.commit.controller import CommitController
 from juno_v2.contracts.tracing import TraceKind
 from juno_v2.contracts.workbench import CommitMode, FinalCandidateRequest, FinalCommitRequest, ResetRequest, SyncClientStateRequest
 from juno_v2.observability.tracing import TraceRecorder
+from juno_v2.observability.reliability_provenance import test_provenance_fields
 from juno_v2.runtime.config import WorkbenchRuntimeConfig
 from juno_v2.runtime.deployment import _env_bool
 from juno_v2.runtime.ids import new_session_id
@@ -3801,6 +3802,8 @@ class WorkbenchApp:
         *,
         limit: int = 50,
         before_updated_at_ms: int | None = None,
+        test_run_id: str | None = None,
+        test_case_id: str | None = None,
     ) -> Dict[str, Any]:
         """Persistent per-utterance history.
 
@@ -3817,6 +3820,8 @@ class WorkbenchApp:
             Path(self.config.log_dir),
             limit=limit,
             before_updated_at_ms=before_updated_at_ms,
+            test_run_id=test_run_id,
+            test_case_id=test_case_id,
         )
         for entry in entries:
             uid = str(entry.get("utterance_id") or "").strip()
@@ -6012,6 +6017,8 @@ class WorkbenchApp:
         language_mode: str | None = None,
         pause_sensitivity_seconds: float | None = None,
         broker_session_id: str | None = None,
+        test_run_id: str | None = None,
+        test_case_id: str | None = None,
     ):
         """Route the one-shot Insert path through the v3 ``InsertRunner``.
 
@@ -6052,6 +6059,8 @@ class WorkbenchApp:
                 language_mode=language_mode,
                 pause_sensitivity_seconds=pause_sensitivity_seconds,
                 broker_session_id=broker_session_id,
+                test_run_id=test_run_id,
+                test_case_id=test_case_id,
             )
         )
         # Callers still consume ``result.to_dict()`` — keep handing them
@@ -6166,6 +6175,8 @@ class WorkbenchApp:
         transcript_hint: str | None = None,
         pause_sensitivity_seconds: float | None = None,
         shell_timeline: Dict[str, Any] | None = None,
+        test_run_id: str | None = None,
+        test_case_id: str | None = None,
     ) -> Dict[str, Any]:
         """One-shot dictation endpoint driven by the full engine pipeline.
 
@@ -6176,6 +6187,10 @@ class WorkbenchApp:
         ``mac_overlay`` — not ``workbench_dev`` (product repair 2026-04).
         """
         request_received_ns = time.perf_counter_ns()
+        test_provenance = test_provenance_fields(
+            test_run_id=test_run_id,
+            test_case_id=test_case_id,
+        )
         resolved_surface = resolve_dictation_surface_id(surface_id, app_bundle_id)
         frozen_context, privacy_summary = self._sanitize_frozen_context(
             frozen_context,
@@ -6249,6 +6264,8 @@ class WorkbenchApp:
                 language_mode=language_mode,
                 pause_sensitivity_seconds=pause_sensitivity_seconds,
                 broker_session_id=broker_session_id,
+                test_run_id=test_provenance.get("test_run_id"),
+                test_case_id=test_provenance.get("test_case_id"),
             )
 
         scheduler_future = self._inference_scheduler.submit(
@@ -6266,6 +6283,8 @@ class WorkbenchApp:
                 live_adjudication=live_adjudication,
                 reason=str(exc) or type(exc).__name__,
             )
+            if test_provenance:
+                out.setdefault("metadata", {}).update(test_provenance)
             self._record_utterance_lifecycle(
                 uid,
                 {
@@ -6274,6 +6293,7 @@ class WorkbenchApp:
                     "request_received_ns": request_received_ns,
                     "shell_timeline": shell_timeline,
                     "reason": str(exc) or type(exc).__name__,
+                    **test_provenance,
                     **self._inference_scheduler.stats(),
                 },
             )
@@ -6284,6 +6304,7 @@ class WorkbenchApp:
         if not isinstance(metadata_for_scheduler, dict):
             metadata_for_scheduler = {}
             out["metadata"] = metadata_for_scheduler
+        metadata_for_scheduler.update(test_provenance)
         metadata_for_scheduler["scheduler"] = {
             "stage": scheduler_stage,
             "queue_wait_ms": scheduled.queue_wait_ms,
@@ -6311,6 +6332,7 @@ class WorkbenchApp:
                 "scheduler_queue_wait_ms": scheduled.queue_wait_ms,
                 "scheduler_worker_service_ms": scheduled.worker_service_ms,
                 "mlx_lock_wait_ms": scheduled.mlx_lock_wait_ms,
+                **test_provenance,
                 "prompt_chars": metadata_for_scheduler.get("prompt_chars"),
                 "output_tokens": metadata_for_scheduler.get("output_tokens")
                 or metadata_for_scheduler.get("output_tokens_estimate"),
@@ -6407,6 +6429,8 @@ class WorkbenchApp:
             if isinstance(payload.get("pause_sensitivity_seconds"), (int, float))
             else None,
             shell_timeline=payload.get("shell_timeline") if isinstance(payload.get("shell_timeline"), dict) else None,
+            test_run_id=payload.get("test_run_id"),
+            test_case_id=payload.get("test_case_id"),
         )
         if isinstance(out, dict):
             meta = out.get("metadata")
@@ -7210,7 +7234,14 @@ class WorkbenchRequestHandler(BaseHTTPRequestHandler):
                 limit = int((qs.get("limit") or ["50"])[0])
             except ValueError:
                 limit = 50
-            return self._send_json(HTTPStatus.OK, self.app.broker_utterance_history(limit=limit))
+            return self._send_json(
+                HTTPStatus.OK,
+                self.app.broker_utterance_history(
+                    limit=limit,
+                    test_run_id=(qs.get("test_run_id") or [None])[0],
+                    test_case_id=(qs.get("test_case_id") or [None])[0],
+                ),
+            )
         if path == "/api/broker/export/data.zip":
             return self._send_bytes(
                 HTTPStatus.OK,

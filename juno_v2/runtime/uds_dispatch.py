@@ -214,6 +214,8 @@ def dispatch_broker_http_like(app, params: Dict[str, Any], binary):
             return app.broker_utterance_history(
                 limit=limit,
                 before_updated_at_ms=cursor,
+                test_run_id=(qs.get("test_run_id") or [None])[0],
+                test_case_id=(qs.get("test_case_id") or [None])[0],
             )
     if method == "POST":
         if path == "/api/broker/dictation/ingest_wav":
@@ -243,6 +245,8 @@ def dispatch_broker_http_like(app, params: Dict[str, Any], binary):
                 if isinstance(payload.get("pause_sensitivity_seconds"), (int, float))
                 else None,
                 shell_timeline=payload.get("shell_timeline") if isinstance(payload.get("shell_timeline"), dict) else None,
+                test_run_id=payload.get("test_run_id"),
+                test_case_id=payload.get("test_case_id"),
             )
         if path == "/api/broker/dictation/live_correct":
             return app.broker_dictation_live_correct(payload)

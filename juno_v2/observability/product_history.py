@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from juno_v2.observability.reliability_provenance import test_provenance_fields
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS utterances (
     utterance_id TEXT PRIMARY KEY,
@@ -42,7 +44,9 @@ CREATE TABLE IF NOT EXISTS utterances (
     correction_count INTEGER DEFAULT 0,
     failure_reason TEXT,
     deleted_at INTEGER,
-    actions_json TEXT
+    actions_json TEXT,
+    test_run_id TEXT,
+    test_case_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_utterances_created ON utterances(created_at);
 CREATE INDEX IF NOT EXISTS idx_utterances_app ON utterances(app_bundle_id);
@@ -53,6 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_utterances_app ON utterances(app_bundle_id);
 # the column is missing — safe to run on every startup.
 _SCHEMA_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("actions_json", "ALTER TABLE utterances ADD COLUMN actions_json TEXT"),
+    ("test_run_id", "ALTER TABLE utterances ADD COLUMN test_run_id TEXT"),
+    ("test_case_id", "ALTER TABLE utterances ADD COLUMN test_case_id TEXT"),
 )
 
 
@@ -158,6 +164,10 @@ class ProductHistoryStore:
             "window_title": bool(window_title),
             "app": bool(app_name or app_bundle_id),
         }
+        test_provenance = test_provenance_fields(
+            test_run_id=record.get("test_run_id"),
+            test_case_id=record.get("test_case_id"),
+        )
         with _lock_for(self.db_path):
             con = sqlite3.connect(self.db_path)
             try:
@@ -195,8 +205,9 @@ class ProductHistoryStore:
                         words, processing_ms, language, language_mode, environment_profile,
                         context_summary_json, context_used_json,
                         audio_path, audio_expires_at, replay_available, correction_count,
-                        failure_reason, deleted_at, actions_json
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        failure_reason, deleted_at, actions_json,
+                        test_run_id, test_case_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(utterance_id) DO UPDATE SET
                         updated_at = excluded.updated_at,
                         app_bundle_id = COALESCE(excluded.app_bundle_id, utterances.app_bundle_id),
@@ -213,7 +224,9 @@ class ProductHistoryStore:
                         replay_available = MAX(excluded.replay_available, utterances.replay_available),
                         correction_count = MAX(excluded.correction_count, utterances.correction_count),
                         failure_reason = COALESCE(excluded.failure_reason, utterances.failure_reason),
-                        actions_json = excluded.actions_json
+                        actions_json = excluded.actions_json,
+                        test_run_id = COALESCE(excluded.test_run_id, utterances.test_run_id),
+                        test_case_id = COALESCE(excluded.test_case_id, utterances.test_case_id)
                     """,
                     (
                         uid,
@@ -244,6 +257,8 @@ class ProductHistoryStore:
                         str(record.get("failure_reason") or "") or None,
                         None,
                         stored_actions_json,
+                        test_provenance.get("test_run_id"),
+                        test_provenance.get("test_case_id"),
                     ),
                 )
                 con.commit()
@@ -255,6 +270,8 @@ class ProductHistoryStore:
         *,
         limit: int = 50,
         before_updated_at_ms: int | None = None,
+        test_run_id: str | None = None,
+        test_case_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Newest-first page of utterance rows.
 
@@ -276,41 +293,47 @@ class ProductHistoryStore:
                     cursor_ms = None
             except (TypeError, ValueError):
                 cursor_ms = None
+        test_provenance = test_provenance_fields(
+            test_run_id=test_run_id,
+            test_case_id=test_case_id,
+        )
+        # A malformed explicit filter must never degrade into an unfiltered
+        # History read. Ingress tagging may safely drop malformed optional
+        # values; retrieval must fail closed.
+        if test_run_id is not None and "test_run_id" not in test_provenance:
+            return []
+        if test_case_id is not None and "test_case_id" not in test_provenance:
+            return []
         with _lock_for(self.db_path):
             con = sqlite3.connect(self.db_path)
             try:
-                if cursor_ms is None:
-                    cur = con.execute(
-                        """
-                        SELECT utterance_id, created_at, updated_at, app_bundle_id, app_name, window_title,
-                               mode, surface_id, transcript, raw_transcript, committed_text, corrected_text,
-                               paste_status, paste_kind, words, processing_ms, language, language_mode,
-                               environment_profile, context_summary_json, context_used_json,
-                               audio_path, audio_expires_at, replay_available, correction_count, failure_reason,
-                               actions_json
-                        FROM utterances
-                        WHERE deleted_at IS NULL
-                        ORDER BY updated_at DESC
-                        LIMIT ?
-                        """,
-                        (n,),
-                    )
-                else:
-                    cur = con.execute(
-                        """
-                        SELECT utterance_id, created_at, updated_at, app_bundle_id, app_name, window_title,
-                               mode, surface_id, transcript, raw_transcript, committed_text, corrected_text,
-                               paste_status, paste_kind, words, processing_ms, language, language_mode,
-                               environment_profile, context_summary_json, context_used_json,
-                               audio_path, audio_expires_at, replay_available, correction_count, failure_reason,
-                               actions_json
-                        FROM utterances
-                        WHERE deleted_at IS NULL AND updated_at < ?
-                        ORDER BY updated_at DESC
-                        LIMIT ?
-                        """,
-                        (cursor_ms, n),
-                    )
+                conditions = ["deleted_at IS NULL"]
+                params: list[Any] = []
+                if cursor_ms is not None:
+                    conditions.append("updated_at < ?")
+                    params.append(cursor_ms)
+                if test_provenance.get("test_run_id") is not None:
+                    conditions.append("test_run_id = ?")
+                    params.append(test_provenance["test_run_id"])
+                if test_provenance.get("test_case_id") is not None:
+                    conditions.append("test_case_id = ?")
+                    params.append(test_provenance["test_case_id"])
+                params.append(n)
+                cur = con.execute(
+                    f"""
+                    SELECT utterance_id, created_at, updated_at, app_bundle_id, app_name, window_title,
+                           mode, surface_id, transcript, raw_transcript, committed_text, corrected_text,
+                           paste_status, paste_kind, words, processing_ms, language, language_mode,
+                           environment_profile, context_summary_json, context_used_json,
+                           audio_path, audio_expires_at, replay_available, correction_count, failure_reason,
+                           actions_json, test_run_id, test_case_id
+                    FROM utterances
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    tuple(params),
+                )
                 rows = cur.fetchall()
             finally:
                 con.close()
@@ -324,6 +347,7 @@ class ProductHistoryStore:
         # 19:context_summary_json 20:context_used_json
         # 21:audio_path 22:audio_expires_at 23:replay_available
         # 24:correction_count 25:failure_reason 26:actions_json
+        # 27:test_run_id 28:test_case_id
         for r in rows:
             ctx_used: dict[str, Any] = {}
             try:
@@ -370,6 +394,10 @@ class ProductHistoryStore:
                 "audio_path": r[21],
                 "audio_expires_at": r[22],
             }
+            if r[27]:
+                entry["test_run_id"] = r[27]
+            if r[28]:
+                entry["test_case_id"] = r[28]
             if actions_payload is not None:
                 entry["actions"] = actions_payload
             out.append(entry)
