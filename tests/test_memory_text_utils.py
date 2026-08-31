@@ -255,6 +255,13 @@ def test_hallucination_numeric_marker_loop() -> None:
     assert looks_like_hallucination("Step 1. 2. 3. 4. 5. 6. done")
 
 
+def test_hallucination_repeated_numeric_marker_loop() -> None:
+    assert looks_like_hallucination(
+        "The decode stalled at 1. 2. 3. 3. 3. 3. 4. before recovering"
+    )
+    assert looks_like_hallucination("Noise (1) (2) (2) (2) (3) then speech")
+
+
 def test_hallucination_legitimate_short_numbered_list_survives() -> None:
     assert not looks_like_hallucination(
         "1. apples 2. bananas 3. cherries"
@@ -264,6 +271,44 @@ def test_hallucination_legitimate_short_numbered_list_survives() -> None:
 def test_hallucination_version_string_is_legitimate() -> None:
     # Spared shape (a) from the docstring.
     assert not looks_like_hallucination("Version 3.0.0.0 released")
+
+
+def test_hallucination_long_correction_version_turn_is_legitimate() -> None:
+    # Regression: the long-form correction case contains repeated times,
+    # versions, and counts. The old transcript-wide marker fallback combined
+    # these unrelated clauses into one apparent numeric loop.
+    text = (
+        "Schedule the design review for Tuesday at 3. Sorry, Wednesday at 3. "
+        "The release number is 2.4.1, actually 2.4.2. We need 5. reviewers, "
+        "scratch that, we need 4. reviewers. At 9:14 the preview was partial. "
+        "At 9:16 the final changed a noun. Compare build 3.3.2.4 with 1.2.4.2. "
+        "Use localhost:8. and port 9. for the two development services."
+    )
+    assert not looks_like_hallucination(text)
+
+
+def test_hallucination_dotted_and_colon_numeric_prose_is_legitimate() -> None:
+    text = (
+        "Versions 11.1.2, 12.2.3, 13.3.4, and 14.4.5 connect to "
+        "10.0.0.1:8. at 9:05, then 10.0.0.2:9. at 9:10."
+    )
+    assert not looks_like_hallucination(text)
+
+
+def test_hallucination_distant_sentence_end_numbers_are_not_a_loop() -> None:
+    text = " ".join(
+        [
+            "The first check completed at 1.",
+            "The second check completed at 2.",
+            "The third check completed at 3.",
+            "The fourth check completed at 4.",
+            "The fifth check completed at 5.",
+            "The sixth check completed at 6.",
+            "The seventh check completed at 7.",
+            "The repeated check completed at 3.",
+        ]
+    )
+    assert not looks_like_hallucination(text)
 
 
 def test_hallucination_normal_sentence_is_legitimate() -> None:
