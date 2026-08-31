@@ -36,8 +36,9 @@ DICTATION_EDIT_SYSTEM_PROMPT = (
     "\n"
     "Rules:\n"
     "- Phrases must be copied exactly from the transcript (8 words max).\n"
-    "- EDIT fixes a misrecognized word/phrase using the context and the "
-    "provided known terms (e.g. a name heard wrong, 'God' for 'got').\n"
+    "- EDIT may change words only when the replacement is explicitly present "
+    "in the provided trusted corrections or elsewhere in a spoken "
+    "self-correction. Otherwise EDIT may change punctuation/casing only.\n"
     "- DELETE removes only false starts, abandoned rephrases, and filler "
     "sounds (per the filler policy given). Never delete a complete clause "
     "that carries meaning, emphasis, or opinion — keep the speaker's words "
@@ -195,9 +196,11 @@ def _delete_is_evidenced(
 ) -> bool:
     """DELETE needs deterministic evidence that the span is not content.
 
-    Allowed: spans containing a spoken correction marker or filler; tiny
-    stumbles (≤2 tokens); restarts (the following words re-speak the span's
-    opening); and list-announcement heads consumed by structure rendering.
+    Allowed: spans containing a spoken correction marker or filler; repeated
+    stumbles; restarts (the following words re-speak the span's opening); and
+    list-announcement heads consumed by structure rendering. Short content is
+    not intrinsically disposable: that old exception allowed the model to
+    remove single emphatic or profane words without any spoken evidence.
     """
     span = text[start:end]
     tokens = _norm_tokens(span)
@@ -216,9 +219,11 @@ def _delete_is_evidenced(
         ):
             return True
         return False
-    if len(tokens) <= 2:
-        return True
     following = _norm_tokens(text[end : end + 160])
+    if tokens and following[: len(tokens)] == tokens:
+        # Exact local repetition ("create create") is deterministic stumble
+        # evidence even when the repeated span is only one word.
+        return True
     if len(tokens) >= 2 and len(following) >= 2:
         # Restart evidence: the continuation re-speaks the abandoned
         # opening ("send it to the budget … send it to the headcount").
@@ -237,19 +242,43 @@ def apply_edit_script(
     script: EditScript,
     *,
     protected_terms: list[str] | tuple[str, ...] | None = None,
+    authoritative_texts: list[str] | tuple[str, ...] | None = None,
+    correction_pairs: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None = None,
 ) -> tuple[str, dict[str, Any]] | None:
     """Deterministically apply a parsed script. None ⇒ caller uses the floor."""
     text = source
-    applied = {"edits": 0, "deletes": 0, "skipped": 0, "struct": None}
+    applied: dict[str, Any] = {
+        "edits": 0,
+        "deletes": 0,
+        "skipped": 0,
+        "skip_reasons": {},
+        "struct": None,
+    }
+
+    def skip(reason: str) -> None:
+        applied["skipped"] += 1
+        reasons = applied["skip_reasons"]
+        reasons[reason] = int(reasons.get(reason, 0)) + 1
 
     spans: list[tuple[int, int, str]] = []
     for phrase, replacement in script.edits:
         loc = _find_phrase(text, phrase)
-        if loc is None or len(replacement) > max(24, 3 * len(phrase)):
-            applied["skipped"] += 1
+        if loc is None:
+            skip("ungrounded_anchor")
             continue
-        if _edit_drops_content_without_evidence(text, loc[0], loc[1], phrase, replacement):
-            applied["skipped"] += 1
+        if len(replacement) > max(24, 3 * len(phrase)):
+            skip("replacement_too_large")
+            continue
+        if not _edit_has_lexical_authority(
+            text,
+            loc[0],
+            loc[1],
+            phrase,
+            replacement,
+            authoritative_texts=authoritative_texts,
+            correction_pairs=correction_pairs,
+        ):
+            skip("unsupported_lexical_edit")
             continue
         if _case_only_edit_without_evidence(
             text,
@@ -258,7 +287,7 @@ def apply_edit_script(
             replacement,
             protected_terms=protected_terms,
         ):
-            applied["skipped"] += 1
+            skip("unsupported_case_edit")
             continue
         spans.append((loc[0], loc[1], replacement))
     first_item_start: int | None = None
@@ -269,13 +298,13 @@ def apply_edit_script(
     for phrase in script.deletes:
         loc = _find_phrase(text, phrase)
         if loc is None:
-            applied["skipped"] += 1
+            skip("ungrounded_anchor")
             continue
         if not _delete_is_evidenced(text, loc[0], loc[1], first_item_start=first_item_start):
             # The model wanted to drop real content ("that is just not
             # acceptable behavior" — production over-delete). Without
             # deterministic restart/filler evidence, the speaker's words win.
-            applied["skipped"] += 1
+            skip("unsupported_delete")
             continue
         spans.append((loc[0], loc[1], ""))
 
@@ -284,7 +313,7 @@ def apply_edit_script(
     last_start = len(text) + 1
     for start, end, repl in spans:
         if end > last_start:
-            applied["skipped"] += 1
+            skip("overlapping_operation")
             continue
         text = text[:start] + repl + text[end:]
         last_start = start
@@ -357,46 +386,69 @@ def apply_edit_script(
     return text, applied
 
 
-def _edit_drops_content_without_evidence(
-    text: str,
+def _edit_has_lexical_authority(
+    source: str,
     start: int,
     end: int,
     phrase: str,
     replacement: str,
+    *,
+    authoritative_texts: list[str] | tuple[str, ...] | None,
+    correction_pairs: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None,
 ) -> bool:
-    """Reject model EDITs that silently compress meaningful spoken content."""
+    """Return whether an EDIT may change lexical tokens.
+
+    The editor model is a proposal source, not transcript evidence. It may
+    always propose formatting over the same words. New/different words need
+    one of three explicit authorities: a stored observed→corrected pair, an
+    independent raw transcript that carries the replacement instead of the
+    edited phrase, or a replacement actually spoken around a correction cue.
+    This deliberately does not use global string similarity: a fluent-looking
+    model rewrite is not evidence that the user said it.
+    """
     old_tokens = _norm_tokens(phrase)
     new_tokens = _norm_tokens(replacement)
-    if len(new_tokens) >= len(old_tokens):
-        return False
-    # Keep evidenced retakes/fillers available even when the model emits EDIT
-    # rather than DELETE for the abandoned phrase.
-    if _DELETE_MARKER_RE.search(phrase):
-        return False
-    if _edit_shrink_has_retake_evidence(text, start, end, old_tokens):
-        return False
-    # Collapsing a local stutter is content-preserving, even though it shrinks.
-    if _collapse_adjacent_duplicate_tokens(old_tokens) == new_tokens:
-        return False
-    # Pure subset edits are the common failure mode: the model keeps a few
-    # source words and silently drops the rest ("make a new" -> "new").
-    if _tokens_are_ordered_subset(new_tokens, old_tokens):
+    if old_tokens == new_tokens:
         return True
-    # If the replacement also introduces new words, allow small corrections but
-    # reject broad compressions without deterministic retake evidence.
-    if len(old_tokens) >= 4 and len(new_tokens) <= len(old_tokens) - 2:
+    if _collapse_adjacent_duplicate_tokens(old_tokens) == new_tokens:
+        return True
+
+    old_key = tuple(old_tokens)
+    new_key = tuple(new_tokens)
+    for observed, corrected in correction_pairs or ():
+        if tuple(_norm_tokens(observed)) == old_key and tuple(_norm_tokens(corrected)) == new_key:
+            return True
+
+    source_tokens = _norm_tokens(source)
+    for evidence in authoritative_texts or ():
+        evidence_tokens = _norm_tokens(evidence)
+        if not evidence_tokens or evidence_tokens == source_tokens:
+            continue
+        # An independent transcript is useful only when it resolves the local
+        # alternative: it must contain the proposed phrase and not repeat the
+        # phrase being replaced.
+        if _token_phrase_present(evidence_tokens, new_tokens) and not _token_phrase_present(
+            evidence_tokens, old_tokens
+        ):
+            return True
+
+    # The source itself can authorize a spoken retake, but only when both the
+    # correction cue and the replacement words are present. A cue never grants
+    # the model permission to invent the replacement.
+    local_start = max(0, start - 80)
+    local_end = min(len(source), end + 160)
+    local = source[local_start:local_end]
+    if _CORRECTION_MARKER_RE.search(local) and _token_phrase_present(source_tokens, new_tokens):
         return True
     return False
 
 
-def _tokens_are_ordered_subset(candidate: list[str], source: list[str]) -> bool:
-    if not candidate:
-        return bool(source)
-    pos = 0
-    for token in source:
-        if pos < len(candidate) and candidate[pos] == token:
-            pos += 1
-    return pos == len(candidate)
+def _token_phrase_present(haystack: list[str], needle: list[str]) -> bool:
+    if not needle or len(needle) > len(haystack):
+        return False
+    width = len(needle)
+    target = tuple(needle)
+    return any(tuple(haystack[idx : idx + width]) == target for idx in range(len(haystack) - width + 1))
 
 
 def _collapse_adjacent_duplicate_tokens(tokens: list[str]) -> list[str]:
@@ -405,23 +457,6 @@ def _collapse_adjacent_duplicate_tokens(tokens: list[str]) -> list[str]:
         if not collapsed or collapsed[-1] != token:
             collapsed.append(token)
     return collapsed
-
-
-def _edit_shrink_has_retake_evidence(
-    text: str,
-    start: int,
-    end: int,
-    tokens: list[str],
-) -> bool:
-    if len(tokens) < 2:
-        return False
-    following = _norm_tokens(text[end : end + 160])
-    if len(following) < 2:
-        return False
-    for offset in range(0, min(4, len(following) - 1)):
-        if following[offset : offset + 2] == tokens[:2]:
-            return True
-    return len(set(tokens[-3:]) & set(following[:6])) >= 2
 
 
 def _case_only_edit_without_evidence(
@@ -516,6 +551,7 @@ def build_editor_suffix(
     app_name: str | None,
     app_category: str | None,
     known_terms: list[str],
+    correction_pairs: list[tuple[str, str]] | tuple[tuple[str, str], ...] = (),
     filler_policy: str,
     style_hint: str | None,
 ) -> str:
@@ -525,6 +561,9 @@ def build_editor_suffix(
     ]
     if known_terms:
         parts.append("Known terms: " + ", ".join(known_terms[:24]))
+    if correction_pairs:
+        pairs = [f'"{observed}" => "{corrected}"' for observed, corrected in correction_pairs[:8]]
+        parts.append("Trusted corrections: " + "; ".join(pairs))
     if style_hint:
         parts.append(f"Style: {style_hint[:160]}")
     parts.append("Transcript:\n" + transcript)
