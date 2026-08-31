@@ -24,6 +24,7 @@ from juno_v2.contracts.writer import (
 )
 from juno_v2.memory.entity_policy import common_english_single_word
 from juno_v2.memory.store import JsonMemoryStore
+from juno_v2.memory.stores.corrections import is_safe_correction_pair
 from juno_v2.memory.term_policy import learned_term_allowed
 from juno_v2.observability.tracing import TraceRecorder
 from juno_v2.turn_plan import (
@@ -549,12 +550,19 @@ class WriterService:
         """Run the cached-prefix dictation editor. None ⇒ deterministic floor."""
         packet = memory_packet or {}
         memory_terms: list[str] = []
+        correction_pairs: list[tuple[str, str]] = []
         for value in (packet.get("lexicon_terms") or [])[:48]:
             if str(value).strip():
                 memory_terms.append(str(value).strip())
         for row in (packet.get("corrections") or [])[:8]:
-            if isinstance(row, dict) and str(row.get("corrected") or "").strip():
-                memory_terms.append(str(row["corrected"]).strip())
+            if not isinstance(row, dict):
+                continue
+            observed = str(row.get("observed") or "").strip()
+            corrected = str(row.get("corrected") or "").strip()
+            if corrected:
+                memory_terms.append(corrected)
+            if is_safe_correction_pair(observed, corrected):
+                correction_pairs.append((observed, corrected))
         screen_terms: list = []
         for entity in (getattr(context, "candidate_entities", None) or [])[:16]:
             text = entity.get("text") if isinstance(entity, dict) else entity
@@ -575,6 +583,7 @@ class WriterService:
             app_name=getattr(context, "app_name", None),
             app_category=getattr(context, "app_category", None),
             known_terms=list(dict.fromkeys(terms)),
+            correction_pairs=correction_pairs,
             filler_policy=filler_policy,
             style_hint=style_hint,
         )
@@ -622,6 +631,8 @@ class WriterService:
                 final_text,
                 script,
                 protected_terms=list(dict.fromkeys(terms)),
+                authoritative_texts=[raw_text],
+                correction_pairs=correction_pairs,
             )
             if applied_result is None:
                 self.recorder.record(

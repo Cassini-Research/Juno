@@ -6,7 +6,7 @@ from typing import Any
 from juno_core_v3.dictation.pipeline import OneShotDictationPipeline
 from juno_core_v3.dictation.transcriber import TranscribeResult
 from juno_v2.contracts.context import TypedContextBundle
-from juno_v2.contracts.memory import MemorySnapshot
+from juno_v2.contracts.memory import MemorySnapshot, TranscriptNormalization
 from juno_v2.contracts.modes import ModeSelection, ModeSource
 from juno_v2.contracts.writer import (
     WriterActionKind,
@@ -84,7 +84,7 @@ def _process(service: WriterService, text: str, **kwargs: Any):
         anchor_selection=None,
         memory_store=kwargs.pop("memory_store", None),
         memory_snapshot=MemorySnapshot(schema_version=1),
-        memory_packet={},
+        memory_packet=kwargs.pop("memory_packet", {}),
         mode_policy=BUILTIN_MODES["default_surface"],
         mode_selection=_selection(),
         **kwargs,
@@ -278,7 +278,11 @@ def test_apply_word_fix_edit() -> None:
     src = "I don't know how God committed in the final text."
     script = parse_edit_script('VERDICT: edited\nEDIT: "God committed" => "got committed"')
     assert script is not None
-    out, _ = apply_edit_script(src, script)
+    out, _ = apply_edit_script(
+        src,
+        script,
+        authoritative_texts=["I don't know how got committed in the final text."],
+    )
     assert out == "I don't know how got committed in the final text."
 
 
@@ -400,8 +404,12 @@ def test_ungrounded_anchor_is_skipped_not_fatal() -> None:
     )
     assert script is not None
     out, applied = apply_edit_script(src, script)
-    assert out == "ship the build"
-    assert applied["skipped"] == 1
+    assert out == src
+    assert applied["skipped"] == 2
+    assert applied["skip_reasons"] == {
+        "ungrounded_anchor": 1,
+        "unsupported_delete": 1,
+    }
 
 
 def test_over_aggressive_script_is_defanged() -> None:
@@ -431,7 +439,11 @@ def test_editor_outcome_is_primary_for_dictation() -> None:
     service, backend, recorder = _editor_service(
         'VERDICT: edited\nEDIT: "God committed" => "got committed"'
     )
-    result = _process(service, "I don't know how God committed in the final text.")
+    result = _process(
+        service,
+        "I don't know how God committed in the final text.",
+        raw_text="I don't know how got committed in the final text.",
+    )
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
     assert result.output_text == "I don't know how got committed in the final text."
     assert result.metadata["reason"] == "dictation_editor"
@@ -475,6 +487,46 @@ def test_editor_keeps_case_only_non_common_name_fix() -> None:
     assert applied["edits"] == 1
 
 
+def test_editor_service_uses_exact_memory_correction_as_lexical_authority() -> None:
+    service, _backend, _recorder = _editor_service(
+        'VERDICT: edited\nEDIT: "rahool" => "Rahul"'
+    )
+
+    result = _process(
+        service,
+        "Ask rahool to ship the build",
+        memory_packet={
+            "corrections": [
+                {"observed": "rahool", "corrected": "Rahul", "count": 2}
+            ]
+        },
+    )
+
+    assert result.output_text == "Ask Rahul to ship the build."
+    assert result.metadata["editor"]["applied"]["edits"] == 1
+
+
+def test_screen_candidate_alone_cannot_authorize_semantic_replacement() -> None:
+    service, _backend, _recorder = _editor_service(
+        'VERDICT: edited\nEDIT: "cafe" => "Chippy"'
+    )
+
+    result = _process(
+        service,
+        "Meet me at the cafe after lunch",
+        context=TypedContextBundle(
+            app_name="Notes",
+            app_category="docs",
+            candidate_entities=["Chippy"],
+        ),
+    )
+
+    assert result.output_text == "Meet me at the cafe after lunch."
+    assert result.metadata["editor"]["applied"]["skip_reasons"] == {
+        "unsupported_lexical_edit": 1
+    }
+
+
 def test_editor_clean_verdict_gets_punctuation_floor() -> None:
     service, _, _ = _editor_service("VERDICT: clean")
     result = _process(service, "send the brief to Mira tonight")
@@ -515,14 +567,15 @@ def test_editor_skipped_for_wake_and_selection() -> None:
 
 
 def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
-    source = "I don't know how God committed in the final text but please check the logs"
+    raw_source = "I don't know how got committed in the final text but please check the logs"
+    editor_source = "I don't know how God committed in the final text but please check the logs"
 
     class FakeTranscriber:
         backend_name = "fake_asr"
 
         def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
             return TranscribeResult(
-                transcript=source,
+                transcript=raw_source,
                 language="en",
                 backend_name="fake_asr",
                 audio_duration_ms=1000.0,
@@ -533,6 +586,11 @@ def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
     class FakeContextProvider:
         def snapshot(self) -> TypedContextBundle:
             return TypedContextBundle(app_name="Notes", app_category="docs")
+
+    class FakeNormalizer:
+        def normalize_transcript(self, text: str, **kwargs: object) -> TranscriptNormalization:
+            assert text == raw_source
+            return TranscriptNormalization(raw_text=text, normalized_text=editor_source)
 
     import io
     import math
@@ -563,6 +621,7 @@ def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
         recorder=recorder,
         context_provider=FakeContextProvider(),
         writer_service=writer,
+        transcript_normalizer=FakeNormalizer(),
         transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=True),
         itn_enabled=False,
     )
@@ -648,15 +707,85 @@ def test_stutter_collapse_edit_still_applies() -> None:
 
 
 def test_content_compressing_edit_with_correction_marker_still_applies() -> None:
-    src = "I told him we got the budget approved, I mean, so we can hire."
+    src = "I told him we got the budget approved, I mean the headcount approved, so we can hire."
     script = parse_edit_script(
-        'VERDICT: edited\nEDIT: "the budget approved, I mean" => "the headcount approved"'
+        'VERDICT: edited\n'
+        'EDIT: "the budget approved, I mean the headcount approved" => "the headcount approved"'
     )
     assert script is not None
 
     out, applied = apply_edit_script(src, script)
 
     assert out == "I told him we got the headcount approved, so we can hire."
+    assert applied["edits"] == 1
+
+
+def test_editor_rejects_unsupported_same_length_semantic_substitution() -> None:
+    src = "Like I said, work is what showed in the live transcript."
+    script = parse_edit_script('VERDICT: edited\nEDIT: "work" => "behavior"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script, authoritative_texts=[src])
+
+    assert out == src
+    assert applied["edits"] == 0
+    assert applied["skip_reasons"] == {"unsupported_lexical_edit": 1}
+
+
+def test_editor_rejects_unsupported_euphemism_and_preserves_profanity() -> None:
+    src = "This AI slop is fucking unacceptable."
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "AI slop" => "AI nonsense"\nDELETE: "fucking"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skip_reasons"] == {
+        "unsupported_lexical_edit": 1,
+        "unsupported_delete": 1,
+    }
+
+
+def test_editor_cannot_reinterpret_spoken_slash_as_or() -> None:
+    src = "Write alpha slash beta exactly."
+    script = parse_edit_script('VERDICT: edited\nEDIT: "slash" => "or"')
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == src
+    assert applied["skip_reasons"] == {"unsupported_lexical_edit": 1}
+
+
+def test_editor_allows_formatting_over_the_same_lexical_tokens() -> None:
+    src = "hello world this is stable"
+    script = parse_edit_script(
+        'VERDICT: edited\nEDIT: "hello world" => "Hello, world"'
+    )
+    assert script is not None
+
+    out, applied = apply_edit_script(src, script)
+
+    assert out == "Hello, world this is stable"
+    assert applied["edits"] == 1
+
+
+def test_editor_allows_exact_stored_correction_but_not_an_unrelated_term() -> None:
+    src = "Ask rahool to ship the build."
+    script = parse_edit_script('VERDICT: edited\nEDIT: "rahool" => "Rahul"')
+    assert script is not None
+
+    out, applied = apply_edit_script(
+        src,
+        script,
+        correction_pairs=[("rahool", "Rahul")],
+        # A candidate term alone is intentionally not lexical authority.
+        protected_terms=["Rahul", "behavior"],
+    )
+
+    assert out == "Ask Rahul to ship the build."
     assert applied["edits"] == 1
 
 
