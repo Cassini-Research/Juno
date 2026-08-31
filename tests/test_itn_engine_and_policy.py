@@ -69,6 +69,26 @@ def test_run_invalid_profile_string_falls_back_to_prose() -> None:
     assert result.text == "25"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Issue #97 — currency runs before the numeric rule, so a currency
+        # match that started inside "twenty-five" left a fragment for the
+        # numeric rule to convert separately ("twenty-five dollars" -> "20-$5").
+        ("twenty-five dollars", "$25"),
+        ("twenty-five dollars and thirty-two cents", "$25.32"),
+        ("twenty-five percent", "25 percent"),
+        ("it costs twenty-five dollars today", "it costs $25 today"),
+        # Unchanged: space-separated forms and non-numeric compounds.
+        ("twenty five dollars", "$25"),
+        ("a multi-million dollar deal", "a multi-million dollar deal"),
+        ("well-known state-of-the-art work", "well-known state-of-the-art work"),
+    ],
+)
+def test_run_hyphenated_numbers_normalise_as_whole_values(text: str, expected: str) -> None:
+    assert ITNEngine().run(text, profile=ITNProfile.PROSE).text == expected
+
+
 def test_run_empty_text_short_circuits() -> None:
     result = ITNEngine().run("", profile=ITNProfile.FULL)
     assert result.text == ""

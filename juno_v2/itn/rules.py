@@ -69,6 +69,54 @@ _MONTH_FULL = {
 }
 
 
+# ---------------------------------------------------------------------- #
+# Shared regex fragments for the number-bearing rules
+# ---------------------------------------------------------------------- #
+
+_ONES_PAT = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
+_TENS_PAT = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
+_NUM_PAT = _ONES_PAT + "|" + _TENS_PAT
+# The same words as one alternation, for rules where ones and tens occupy
+# interchangeable positions rather than distinct slots.
+_ONES_TENS_ALTS = "|".join(sorted([*_ONES, *_TENS], key=len, reverse=True))
+
+# English hyphenates compound cardinals in exactly one shape: a tens word
+# joined to a ones word ("twenty-five", "ninety-nine"). Accepting the hyphen
+# as a general number-word separator would instead fuse unrelated compounds
+# ("seven-eleven" → 18, "twenty-twenty" → 40), so only this shape counts.
+_HYPHEN_COMPOUND = rf"(?:{_TENS_PAT})-(?:{_ONES_PAT})"
+
+# `\b` is the wrong outer boundary for a spoken-number rule. A hyphen is a
+# non-word character, so `\bfive\b` also anchors after the hyphen of
+# "twenty-five" and lets a rule rewrite only the suffix ("twenty-five dollars"
+# → "20-$5"). Rejecting an adjacent hyphen too keeps a numeric or currency
+# match from beginning or ending part-way through a hyphenated token.
+_NUM_START = r"(?<![\w-])"
+_NUM_END = r"(?![\w-])"
+
+_NUM_TOKEN_SPLIT_RE = re.compile(r"[\s-]+")
+
+
+def _number_chunk(alts: str) -> str:
+    """Regex fragment: one number token — hyphenated compound or single word."""
+    return rf"(?:{_HYPHEN_COMPOUND}|{alts})"
+
+
+def _number_phrase(alts: str) -> str:
+    """Regex fragment: a whole spoken number, hyphen- and space-separated."""
+    chunk = _number_chunk(alts)
+    return rf"{chunk}(?:\s+{chunk})*"
+
+
+def _number_word_tokens(phrase: str) -> list[str]:
+    """Split a matched spoken-number phrase into its individual word tokens.
+
+    A hyphen joins words *inside* one number, so it separates tokens exactly
+    as whitespace does: "twenty-five" parses as ``["twenty", "five"]``.
+    """
+    return [tok for tok in _NUM_TOKEN_SPLIT_RE.split(phrase.strip()) if tok]
+
+
 def _decimal_sep(fmt: ITNFormatPolicy) -> str:
     return "," if fmt.currency_decimal == "comma" else "."
 
@@ -174,17 +222,13 @@ def _parse_number_words(tokens: list[str]) -> int | None:
 # ---------------------------------------------------------------------- #
 
 _NUMBER_WORD_PAT = re.compile(
-    r"\b("
-    + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-    + r")(\s+("
-    + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-    + r"))*\b",
+    _NUM_START + _number_phrase(_ONES_TENS_ALTS) + _NUM_END,
     re.IGNORECASE,
 )
 
 
 def _try_convert_number_phrase(match: re.Match) -> str:
-    tokens = match.group(0).split()
+    tokens = _number_word_tokens(match.group(0))
     val = _parse_number_words(tokens)
     if val is None:
         return match.group(0)
@@ -216,7 +260,7 @@ def apply_numeric(text: str) -> tuple[str, list[str]]:
     last = 0
     for m in _NUMBER_WORD_PAT.finditer(text):
         phrase = m.group(0)
-        tokens = phrase.split()
+        tokens = _number_word_tokens(phrase)
         val = _parse_number_words(tokens)
         repl = phrase
         if val is not None:
@@ -257,13 +301,7 @@ def _ordinal_to_numeral(word: str) -> str | None:
 
 def _spoken_number_group() -> str:
     """Regex fragment: one spoken integer (words), captured as group 1."""
-    return (
-        r"\b((?:"
-        + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-        + r")(?:\s+(?:"
-        + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-        + r"))*)"
-    )
+    return _NUM_START + r"(" + _number_phrase(_ONES_TENS_ALTS) + r")" + _NUM_END
 
 
 def _spoken_currency_amount_group() -> str:
@@ -271,17 +309,14 @@ def _spoken_currency_amount_group() -> str:
     extra = ("hundred", "thousand", "million", "and")
     keys = sorted(set(_ONES) | set(_TENS) | set(extra), key=len, reverse=True)
     alts = "|".join(keys)
-    return r"\b((?:" + alts + r")(?:\s+(?:" + alts + r"))*)\b"
+    return _NUM_START + r"(" + _number_phrase(alts) + r")" + _NUM_END
 
 
 def _optional_minor_unit_pattern(minor_label: str) -> str:
-    lab = minor_label
     return (
-        r"(?:\s+and\s+((?:"
-        + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-        + r")(?:\s+(?:"
-        + r"|".join(sorted(list(_ONES.keys()) + list(_TENS.keys()), key=len, reverse=True))
-        + r"))*)\s+" + lab + r")?"
+        r"(?:\s+and\s+"
+        + _NUM_START + r"(" + _number_phrase(_ONES_TENS_ALTS) + r")" + _NUM_END
+        + r"\s+" + minor_label + r")?"
     )
 
 
@@ -312,11 +347,11 @@ def _parse_minor_amount(m: re.Match, minor_group_idx: int) -> int | None:
     raw = m.group(minor_group_idx)
     if not raw:
         return None
-    return _parse_number_words(raw.split())
+    return _parse_number_words(_number_word_tokens(raw))
 
 
 def _convert_usd(m: re.Match, fmt: ITNFormatPolicy) -> str:
-    main = _parse_number_words(m.group(1).split())
+    main = _parse_number_words(_number_word_tokens(m.group(1)))
     if main is None:
         return m.group(0)
     cents = _parse_minor_amount(m, 2)
@@ -326,7 +361,7 @@ def _convert_usd(m: re.Match, fmt: ITNFormatPolicy) -> str:
 
 
 def _convert_eur(m: re.Match, fmt: ITNFormatPolicy) -> str:
-    main = _parse_number_words(m.group(1).split())
+    main = _parse_number_words(_number_word_tokens(m.group(1)))
     if main is None:
         return m.group(0)
     cents = _parse_minor_amount(m, 2)
@@ -336,7 +371,7 @@ def _convert_eur(m: re.Match, fmt: ITNFormatPolicy) -> str:
 
 
 def _convert_gbp(m: re.Match, fmt: ITNFormatPolicy) -> str:
-    main = _parse_number_words(m.group(1).split())
+    main = _parse_number_words(_number_word_tokens(m.group(1)))
     if main is None:
         return m.group(0)
     pence = _parse_minor_amount(m, 2)
@@ -346,7 +381,7 @@ def _convert_gbp(m: re.Match, fmt: ITNFormatPolicy) -> str:
 
 
 def _convert_chf(m: re.Match, fmt: ITNFormatPolicy) -> str:
-    main = _parse_number_words(m.group(1).split())
+    main = _parse_number_words(_number_word_tokens(m.group(1)))
     if main is None:
         return m.group(0)
     centimes = _parse_minor_amount(m, 2)
@@ -356,7 +391,7 @@ def _convert_chf(m: re.Match, fmt: ITNFormatPolicy) -> str:
 
 
 def _convert_jpy(m: re.Match, fmt: ITNFormatPolicy) -> str:
-    main = _parse_number_words(m.group(1).split())
+    main = _parse_number_words(_number_word_tokens(m.group(1)))
     if main is None:
         return m.group(0)
     return _format_currency_amount(main, None, "¥", fmt)
@@ -437,10 +472,6 @@ def apply_dates(text: str, fmt: ITNFormatPolicy | None = None) -> tuple[str, lis
 # ---------------------------------------------------------------------- #
 # Rule: times ("three thirty pm" → "3:30 PM", "fourteen hundred" → "14:00")
 # ---------------------------------------------------------------------- #
-
-_ONES_PAT = "|".join(sorted(_ONES.keys(), key=len, reverse=True))
-_TENS_PAT = "|".join(sorted(_TENS.keys(), key=len, reverse=True))
-_NUM_PAT = _ONES_PAT + "|" + _TENS_PAT
 
 # Dotted forms first, and `(?!\w)` instead of `\b`: after the trailing "."
 # of "p.m." there is no word boundary, so `p\.m\.\b` can never match.
