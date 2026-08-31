@@ -53,6 +53,28 @@ def test_apply_numeric_keeps_small_numbers_in_prose(text: str) -> None:
     assert applied == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I need two three four things",
+        "compare one two three options",
+        "the checkpoints are seventeen five nine",
+        "chapter one two is a placeholder",
+        "say twenty twenty without a date context",
+    ],
+)
+def test_apply_numeric_does_not_sum_adjacent_number_enumerations(text: str) -> None:
+    out, applied = apply_numeric(text)
+    assert out == text
+    assert applied == []
+
+
+def test_apply_numeric_still_converts_each_separated_number_phrase() -> None:
+    out, applied = apply_numeric("twenty five, then sixty four")
+    assert out == "25, then 64"
+    assert applied == ["numeric_words_to_digits"]
+
+
 @pytest.mark.parametrize("text", ["", "no numbers here", "onety stays", "thousand"])
 def test_apply_numeric_no_op(text: str) -> None:
     out, applied = apply_numeric(text)
