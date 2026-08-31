@@ -9,6 +9,7 @@ from juno_v2.writer.deterministic import (
     apply_app_formatting,
     apply_newline_policy,
     expand_snippets,
+    normalize_dictation_casing,
     normalize_dictation_orthography,
     normalize_explicit_numbered_markers,
     normalize_plain_dictation,
@@ -278,6 +279,28 @@ def test_normalize_dictation_orthography(text: str, expected: str) -> None:
 def test_normalize_dictation_orthography_letter_a_untouched() -> None:
     # 'a' is an article and is not in the standalone-letter class.
     assert normalize_dictation_orthography("pick a card") == "Pick a card"
+
+
+def test_normalize_dictation_casing_preserves_structural_whitespace() -> None:
+    source = "customer follow-up\ncontext:\nnext step:\n  owner:"
+    assert normalize_dictation_casing(source) == (
+        "Customer follow-up\nContext:\nNext step:\n  Owner:"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("we may ship in may", "We may ship in May"),
+        ("the review may move to may 5", "The review may move to May 5"),
+        ("use e.g. lowercase here. then continue", "Use e.g. lowercase here. Then continue"),
+    ],
+)
+def test_normalize_dictation_casing_handles_contextual_may_and_abbreviations(
+    source: str,
+    expected: str,
+) -> None:
+    assert normalize_dictation_casing(source) == expected
 
 
 # ---------------------------------------------------------------------- #

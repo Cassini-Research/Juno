@@ -179,7 +179,7 @@ def test_literal_new_paragraph_phrase_can_still_use_editor() -> None:
 
     assert len(backend.requests) == 1
     assert result.metadata["reason"] == "dictation_editor"
-    assert result.output_text == "the new paragraph is short."
+    assert result.output_text == "The new paragraph is short."
 
 
 def test_same_utterance_bullet_list_command_bypasses_editor() -> None:
@@ -479,8 +479,14 @@ def test_editor_clean_verdict_gets_punctuation_floor() -> None:
     service, _, _ = _editor_service("VERDICT: clean")
     result = _process(service, "send the brief to Mira tonight")
     assert result.action == WriterActionKind.PASS_THROUGH_COMMIT
-    assert result.output_text == "send the brief to Mira tonight."
+    assert result.output_text == "Send the brief to Mira tonight."
     assert result.metadata["punctuation_floor"]["rules_applied"] == ["terminal_period"]
+
+
+def test_editor_clean_verdict_uses_shared_dictation_casing_floor() -> None:
+    service, _, _ = _editor_service("VERDICT: clean")
+    result = _process(service, "i sent it in january. then i checked b and c")
+    assert result.output_text == "I sent it in January. Then I checked B and C."
 
 
 def test_editor_garbage_floors_to_legacy_lane() -> None:

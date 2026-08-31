@@ -176,4 +176,4 @@ def test_pipeline_passes_speech_like_audio_through_gate(tmp_path) -> None:
     result = _pipeline(tmp_path).run(blob, save_history=False, save_audio=False)
     assert result.ok is True
     assert result.error_code is None
-    assert "should never be pasted" in result.transcript
+    assert result.transcript == "Should never be pasted"

@@ -124,6 +124,7 @@ from juno_v2.observability.tracing import TraceRecorder
 from juno_v2.transcript.adjudicator import TranscriptAdjudicator, TranscriptAdjudicatorConfig
 from juno_v2.transcript.validators import validate_adjudication_result
 from juno_v2.turn_plan import actions_from_turn_plan, validate_turn_plan
+from juno_v2.writer.deterministic import normalize_dictation_casing
 
 from juno_core_v3.dictation.self_corrections import (
     MID_UTTERANCE_EDIT_MARKER_RE,
@@ -2140,6 +2141,23 @@ class OneShotDictationPipeline:
                 },
             )
             writer_text = writer_fallback_text
+        writer_text, final_orthography_floor = _apply_final_orthography_floor(
+            writer_text,
+            context=context,
+            mode_selection=mode_sel,
+            mode_policy=writer_mode_policy,
+            writer_outcome=writer_outcome,
+            wake_verified=wake_status.verified,
+        )
+        if final_orthography_floor["changed"]:
+            self.recorder.record(
+                TraceKind.WRITER,
+                "oneshot_final_orthography_floor_applied",
+                {
+                    "utterance_id": uid,
+                    **final_orthography_floor,
+                },
+            )
         if writer_outcome is not None:
             writer_outcome_payload = writer_outcome.to_dict()
             if writer_safety_reason is not None:
@@ -2353,6 +2371,7 @@ class OneShotDictationPipeline:
             "normalized_text": normalized_text,
             "adjudicated_text": adjudicated_text,
             "final_asr_live_hint_audit": final_asr_live_hint_audit,
+            "final_orthography_floor": final_orthography_floor,
         }
         if shell_timeline:
             meta_out["shell_timeline"] = shell_timeline
@@ -3317,6 +3336,62 @@ def _mode_policy_for_final_delivery(
         final_formatting_policy=requested_policy,
         prompt_prefix=prompt_prefix,
     )
+
+
+def _apply_final_orthography_floor(
+    text: str,
+    *,
+    context: TypedContextBundle,
+    mode_selection: Any,
+    mode_policy: Any,
+    writer_outcome: WriterOutcome | None,
+    wake_verified: bool,
+) -> tuple[str, dict[str, Any]]:
+    """Apply one shared, non-semantic casing floor to plain final dictation.
+
+    The normal writer path already normalizes sentence starts and standalone
+    ``I``, but the editor path and writer-error fallback historically used
+    different postpasses. That let a better-cased live preview degrade to a
+    lowercase final paste. Keep transforms, verbatim mode, wake commands,
+    selections, and developer surfaces outside this floor.
+    """
+
+    current = text or ""
+    category = str(getattr(context, "app_category", "") or "").strip().casefold()
+    selected_text = str(getattr(context, "selected_text", "") or "").strip()
+    effective_mode = str(getattr(mode_selection, "effective_mode", "") or "").strip().casefold()
+    base_mode = str(getattr(mode_policy, "base_mode", "") or "").strip().casefold()
+    mode_name = str(getattr(mode_policy, "mode_name", "") or "").strip().casefold()
+
+    skip_reason: str | None = None
+    if not current:
+        skip_reason = "empty"
+    elif category in {"code", "terminal", "developer_tools"}:
+        skip_reason = "exact_surface"
+    elif effective_mode == "verbatim" or base_mode == "verbatim" or mode_name == "verbatim":
+        skip_reason = "verbatim_mode"
+    elif selected_text:
+        skip_reason = "selection_turn"
+    elif wake_verified:
+        skip_reason = "wake_turn"
+    elif writer_outcome is not None:
+        skip_reason = f"writer_owned:{writer_outcome.action.value}"
+
+    if skip_reason is not None:
+        return current, {
+            "schema": "final_orthography_floor_v1",
+            "eligible": False,
+            "changed": False,
+            "skip_reason": skip_reason,
+        }
+
+    normalized = normalize_dictation_casing(current)
+    return normalized, {
+        "schema": "final_orthography_floor_v1",
+        "eligible": True,
+        "changed": normalized != current,
+        "skip_reason": None,
+    }
 
 
 def _formatting_policy_from_qwen_plan(

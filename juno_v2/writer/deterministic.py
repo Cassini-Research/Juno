@@ -345,6 +345,22 @@ _MONTH_CANONICAL = {
 _MONTH_RE = re.compile(r"\b(" + "|".join(_MONTH_CANONICAL) + r")\b", re.IGNORECASE)
 _STANDALONE_LOWER_I_RE = re.compile(r"(?<![A-Za-z])i(?![A-Za-z])")
 _STANDALONE_LETTER_RE = re.compile(r"(?<![A-Za-z'.])([bcdefghjklmnopqrstuvwxyz])(?![A-Za-z'.])")
+_MAY_MONTH_BEFORE_RE = re.compile(
+    r"\b(?:in|on|by|before|after|during|through|until|next|last|this|early|late|mid)\s+$",
+    re.IGNORECASE,
+)
+_MAY_MONTH_AFTER_RE = re.compile(
+    r"^\s+(?:\d{1,2}(?:st|nd|rd|th)?\b|first|second|third|fourth|fifth|sixth|"
+    r"seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|"
+    r"fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|"
+    r"twenty(?:[ -](?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth))?|"
+    r"thirtieth|thirty[ -]first)\b",
+    re.IGNORECASE,
+)
+_ABBREV_BEFORE_PERIOD_RE = re.compile(
+    r"\b(?:e\.g|i\.e|etc|vs|mr|mrs|ms|dr|st|no|inc|ltd)$",
+    re.IGNORECASE,
+)
 
 
 def normalize_dictation_orthography(text: str) -> str:
@@ -358,11 +374,37 @@ def normalize_dictation_orthography(text: str) -> str:
     current = normalize_plain_dictation(text)
     if not current:
         return current
+    return normalize_dictation_casing(current)
+
+
+def normalize_dictation_casing(text: str) -> str:
+    """Normalize only casing while preserving spaces and line structure."""
+
+    current = text or ""
+    if not current:
+        return current
     current = _STANDALONE_LOWER_I_RE.sub("I", current)
-    current = _MONTH_RE.sub(lambda m: _MONTH_CANONICAL[m.group(1).casefold()], current)
+    current = _normalize_month_casing(current)
     current = _STANDALONE_LETTER_RE.sub(lambda m: m.group(1).upper(), current)
     current = _capitalize_sentence_starts(current)
     return current.strip()
+
+
+def _normalize_month_casing(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        key = token.casefold()
+        if key != "may":
+            return _MONTH_CANONICAL[key]
+        if token[:1].isupper():
+            return token
+        before = text[max(0, match.start() - 48) : match.start()]
+        after = text[match.end() : match.end() + 32]
+        if _MAY_MONTH_BEFORE_RE.search(before) or _MAY_MONTH_AFTER_RE.match(after):
+            return "May"
+        return token
+
+    return _MONTH_RE.sub(replace, text)
 
 
 def _capitalize_sentence_starts(text: str) -> str:
@@ -376,6 +418,8 @@ def _capitalize_sentence_starts(text: str) -> str:
             continue
         out.append(ch)
         if ch == "." and idx + 1 < len(chars) and not chars[idx + 1].isspace():
+            continue
+        if ch == "." and _ABBREV_BEFORE_PERIOD_RE.search(text[:idx]):
             continue
         if ch in ".!?\n":
             capitalize_next = True
@@ -1027,6 +1071,7 @@ __all__ = [
     "strip_correction_chants",
     "strip_fillers",
     "expand_snippets",
+    "normalize_dictation_casing",
     "normalize_dictation_orthography",
     "normalize_plain_dictation",
     "normalize_explicit_numbered_markers",
