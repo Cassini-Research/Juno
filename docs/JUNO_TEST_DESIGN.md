@@ -66,6 +66,26 @@ Deterministic tests cannot express acoustics. The replay harness closes that:
 4. **Budget**: the fixture set must run < 5 min on an M-series laptop so it
    gates merges.
 
+### 3.1 Reference-owned long-form review harness
+
+`juno_v2.reliability.longform_harness` is the deterministic manifest and
+scoring layer for the bi-weekly review. It is intentionally capture-adapter
+based: it never launches an app, clicks an editor, pastes text, or mutates
+History on its own. A reviewed product adapter must explicitly opt into
+playback with `execute_manifest(..., allow_product_playback=True)`.
+
+Before playback, `freeze_manifest` validates the cohort duration, readable WAV,
+spoken reference, expected output, invariants, target/distractor stems,
+language, app, settings, and hashes them into a run/case contract. Clean
+cohorts (`normal`, `structure`, `corrections`, `symbols`, `code_switch`) must
+be at least 30 seconds; `cafe`, `background_speech`, and `sustained_noise`
+must be 120–180 seconds. The scorer keeps live emission, terminal live, raw
+final ASR, normalization/memory, editor operations, History, and destination
+as separate stages. Missing or truncated live telemetry, any missing stage, or
+an unverified destination is `NOT_OBSERVABLE`; it cannot count as a pass.
+Reports are grouped by cohort and include first-divergent-stage counts, so
+clean and noisy cases are never hidden by one blended average.
+
 ## 4. Invariants that must hold everywhere (encoded, not aspirational)
 
 1. **No silent loss**: every utterance with speech ends in a paste, a
