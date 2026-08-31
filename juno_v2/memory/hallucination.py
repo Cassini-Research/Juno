@@ -108,8 +108,10 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
     # Number-marker loops: on low-information pauses Whisper can emit
     # ``"1. 2. 3. 3. 3. ... 10."`` and then recover a plausible tail.
     # That shape should never be committed as dictated text. Keep this
-    # structural and confidence-independent, but require an actual marker
-    # run so legitimate short numbered lists survive.
+    # structural and confidence-independent, but require one *local*,
+    # marker-only run. Long dictations naturally contain many sentence-ending
+    # numbers (times, versions, counts, and ports); aggregating those markers
+    # across prose turns unrelated facts into a false hallucination signal.
     if _has_numeric_marker_loop(text):
         return True
 
@@ -143,21 +145,33 @@ def looks_like_hallucination(text: str, *, confidence: float | None = None) -> b
 
 
 def _has_numeric_marker_loop(text: str) -> bool:
-    marker_run = re.search(
-        r"(?<!\d)(?:[1-9]|10)[.)](?:\s+(?:[1-9]|10)[.)]){4,}",
-        text,
-    )
-    if marker_run:
-        return True
+    """Detect a dense run of standalone small-number list markers.
 
-    markers = re.findall(r"(?<!\d)(?:[1-9]|10)[.)]", text)
-    if len(markers) < 8:
+    A previous fallback collected markers from the entire transcript. Eight
+    unrelated clauses ending in numbers such as ``"at 3."`` or ``"version
+    2.4.2"`` could therefore reject an otherwise valid multi-paragraph turn.
+    A Whisper numeric loop is local: five or more marker tokens appear next to
+    one another with only whitespace or punctuation between them.
+
+    The lookarounds also keep components of conventional decimals, versions,
+    times, IP addresses, and ports out of the candidate set. For example, the
+    ``2.`` inside ``12.2.4`` is not a standalone marker.
+    """
+    marker_pattern = re.compile(r"(?<![\d.:])(?:10|[1-9])[.)](?!\d)")
+    markers = list(marker_pattern.finditer(text))
+    if len(markers) < 5:
         return False
-    if len(set(markers)) < len(markers):
-        return True
-    content = re.sub(r"(?<!\d)(?:[1-9]|10)[.)]", " ", text)
-    content_words = [w for w in re.findall(r"\b[a-zA-Z]{2,}\b", content)]
-    return len(content_words) < len(markers) // 2
+
+    run_length = 1
+    for previous, current in zip(markers, markers[1:]):
+        between = text[previous.end() : current.start()]
+        if not any(char.isalnum() or char == "_" for char in between):
+            run_length += 1
+            if run_length >= 5:
+                return True
+        else:
+            run_length = 1
+    return False
 
 
 def _has_token_ngram_loop(words: list[str]) -> bool:
