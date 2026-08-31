@@ -653,6 +653,8 @@ _SPOKEN_PUNCT_TABLE: list[tuple[str, str, str]] = [
     (r"colon", ":", "punct"),
     (r"comma", ",", "punct"),
     (r"period", ".", "punct"),
+    (r"back\s*slash", "\\", "tight"),
+    (r"forward\s+slash|slash", "/", "tight"),
     (r"hyphen", "-", "tight"),
     (r"dash", "-", "tight"),
 ]
