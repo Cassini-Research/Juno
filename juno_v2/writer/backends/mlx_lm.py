@@ -946,6 +946,8 @@ def _system_prompt(req: WriterTransformRequest | None = None) -> str:
             "target state, permissions, and current time. "
             "Qwen decides meaning; deterministic code will validate, render, normalize time, resolve snippets, and execute. "
             "If actions.wake_verified is true, treat the utterance as addressed to Juno and classify the intended operation from the whole transcript; do not rely on keyword vetoes. "
+            "If actions.wake_verified is false, the turn is not addressed to Juno: actions.allowed_action_kinds is empty and actions.max_actions is 0, so 'actions' is not a permitted utterance_kind and the actions array must be []. "
+            "Classify such a turn as dictation, format_dictation, transform, memory_mutation, no_op, or ambiguous, and put any spoken request into the rendered text instead of a native action. "
             "Do not add facts, names, dates, times, numbers, tasks, list items, or action bodies that are not grounded in ASR/context. "
             "Resolve explicit self-corrections and false starts by keeping the latest intended wording. "
             "Resolve corrections before filling action bodies, schedule.source_span, render text, or transform instructions. "
