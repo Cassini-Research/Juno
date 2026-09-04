@@ -3099,6 +3099,12 @@ final class DictationController: ObservableObject {
     private var hudCommittedRevealWork: DispatchWorkItem?
     private var hudCommittedRevealGeneration: UInt64 = 0
     private let hudCommittedRevealInterval: TimeInterval = 0.016
+    /// Engine text the in-flight reveal is walking toward, or ``nil`` when no
+    /// reveal is running. The reveal itself is presentation only — the engine
+    /// has already committed this text — so anything that *snapshots* the
+    /// transcript must settle to this target instead of reading whichever
+    /// frame is on screen. See ``finishHUDCommittedRevealNow()``.
+    private var hudCommittedRevealTarget: (committed: String, tail: String)?
 
     // MARK: - Live caption source state machine
     //
@@ -3302,16 +3308,7 @@ final class DictationController: ObservableObject {
         let uid = pendingUtteranceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !uid.isEmpty else { return }
 
-        // Resolve a draft transcript: prefer the live HUD text, fall back
-        // to the copy-ready buffer so dismissing the copy panel still
-        // captures something.
-        var draft = (liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if draft.isEmpty, hudState == .idle,
-           let c = copyableTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !c.isEmpty {
-            draft = c
-        }
+        let draft = hudCancelDraftTranscript()
         guard !draft.isEmpty else { return }
 
         var payload: [String: Any] = [
@@ -3330,6 +3327,30 @@ final class DictationController: ObservableObject {
             // "broker is down", and the HUD has already been dismissed
             // by the time this resolves. The user will retry naturally.
         }
+    }
+
+    /// The transcript a HUD cancel should persist.
+    ///
+    /// Prefers the live HUD text, falling back to the copy-ready buffer so
+    /// dismissing the copy panel still captures something. Settles any
+    /// in-flight committed-text reveal first: every HUD-derived holder is a
+    /// mid-animation character prefix while a reveal is running, so without
+    /// this the row records what the animation had drawn — routinely a
+    /// mid-word cut — rather than what the engine committed (issue #108).
+    ///
+    /// Internal rather than private so ``JunoShellLogicTests`` can pin the
+    /// mid-reveal behaviour without standing up the recorder or the broker.
+    func hudCancelDraftTranscript() -> String {
+        finishHUDCommittedRevealNow()
+        let live = (liveDisplayTranscript.isEmpty ? livePartialText : liveDisplayTranscript)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !live.isEmpty { return live }
+        if hudState == .idle,
+           let c = copyableTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !c.isEmpty {
+            return c
+        }
+        return ""
     }
 
     /// Set when ``cancelDictation`` fires so any late-arriving broker insertion
@@ -3687,6 +3708,59 @@ final class DictationController: ObservableObject {
         hudCommittedRevealGeneration &+= 1
         hudCommittedRevealWork?.cancel()
         hudCommittedRevealWork = nil
+        hudCommittedRevealTarget = nil
+    }
+
+    /// Settle an in-flight committed-text reveal immediately.
+    ///
+    /// ``HUDCommittedTextReveal`` is a presentation effect: the engine's
+    /// committed text is already final when the preview chunk arrives, and the
+    /// reveal walks the store toward it one chunk of characters at a time (one
+    /// *character* for anything shorter than 96 characters). Callers that
+    /// snapshot transcript text rather than draw it — the HUD cancel draft —
+    /// must call this first, or they capture whichever frame happened to be
+    /// drawn, routinely cut mid-word (issue #108).
+    ///
+    /// Applying the target is exactly what the reveal's last step would do:
+    /// every intermediate step is a prefix of the target, so
+    /// ``HUDTranscriptStore/applyPreviewRevision(committed:tail:)`` takes it as
+    /// an append regardless of how far the animation got.
+    private func finishHUDCommittedRevealNow() {
+        guard let target = hudCommittedRevealTarget else { return }
+        cancelHUDCommittedReveal()
+        _ = hudTranscriptStore.applyPreviewRevision(
+            committed: target.committed,
+            tail: target.tail
+        )
+        enginePreviewPartialText = hudTranscriptStore.rawText
+        // Unlike ``revealCommittedStep`` this is not gated on
+        // ``liveSource == .engine``: a reveal only ever runs for engine
+        // committed text, and the caller is snapshotting that text, so the
+        // mirrors must reflect it even if the source state machine has already
+        // been torn down.
+        livePartialText = hudTranscriptStore.text
+        syncHUDFromTranscriptStore()
+    }
+
+    /// Take one engine preview chunk for the active utterance: promote the
+    /// caption source to ``.engine`` on first text, then hand the chunk to the
+    /// HUD store.
+    ///
+    /// Extracted from the ``JunoPreviewStreamer/onPartial`` closure (which
+    /// keeps the utterance-id guard and the writer-warm nudge) so the live
+    /// preview → HUD path is reachable without standing up the recorder, a
+    /// real streamer, or the broker.
+    func ingestEnginePreviewChunk(committed: String, tail: String) {
+        let hasAnyText = !committed.isEmpty || !tail.isEmpty
+        if hasAnyText, liveSource != .engine {
+            liveSource = .engine
+            engineFirstWordTimer?.cancel()
+            engineFirstWordTimer = nil
+        }
+        // Root-level preview update. Segment-level LocalAgreement remains
+        // append-only; the store accepts only bounded suffix revisions when
+        // the root utterance gains better evidence.
+        applyEnginePreviewChunkToHUD(committed: committed, tail: tail)
     }
 
     private func applyEnginePreviewChunkToHUD(committed: String, tail: String) {
@@ -3710,6 +3784,7 @@ final class DictationController: ObservableObject {
 
         cancelHUDCommittedReveal()
         let generation = hudCommittedRevealGeneration
+        hudCommittedRevealTarget = (committed: targetCommitted, tail: targetTail)
         revealCommittedStep(steps, tail: targetTail, index: 0, generation: generation)
     }
 
@@ -3728,6 +3803,7 @@ final class DictationController: ObservableObject {
         }
         guard !isLast else {
             hudCommittedRevealWork = nil
+            hudCommittedRevealTarget = nil
             return
         }
         let work = DispatchWorkItem { [weak self] in
@@ -4602,16 +4678,7 @@ final class DictationController: ObservableObject {
         previewStreamer.onPartial = { [weak self] reportedUid, committed, tail, isFinal in
             guard let self else { return }
             guard reportedUid == self.pendingUtteranceId else { return }
-            let hasAnyText = !committed.isEmpty || !tail.isEmpty
-            if hasAnyText, self.liveSource != .engine {
-                self.liveSource = .engine
-                self.engineFirstWordTimer?.cancel()
-                self.engineFirstWordTimer = nil
-            }
-            // Root-level preview update. Segment-level LocalAgreement remains
-            // append-only; the store accepts only bounded suffix revisions when
-            // the root utterance gains better evidence.
-            self.applyEnginePreviewChunkToHUD(committed: committed, tail: tail)
+            self.ingestEnginePreviewChunk(committed: committed, tail: tail)
             if self.liveSource == .engine {
                 let generation = self.dictationSessionGeneration
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { [weak self] in
