@@ -1805,6 +1805,129 @@ def test_wake_verified_mixed_native_actions_reaching_writer_still_deliver_text()
     assert "launch checklist" in result.output_text
 
 
+def _packet_for_wake(wake_verified: bool) -> TurnPlanPacket:
+    source = "create a summary and send it over later"
+    return TurnPlanPacket(
+        utterance_id=f"utt-surface-{int(wake_verified)}",
+        final_text=source,
+        raw_text=source,
+        context=TypedContextBundle(app_name="Notes", app_category="docs"),
+        wake_verified=wake_verified,
+        now_iso="2026-09-04T09:00:00",
+    )
+
+
+def test_turn_plan_payload_withdraws_action_surface_without_wake() -> None:
+    # Issue #107: the pipeline dispatches actions only under
+    # ``wake_status.verified`` and the writer discards every ``actions`` plan
+    # unconditionally, so offering an action surface on a non-wake turn buys
+    # decode time for a classification that can never be delivered.
+    payload = _packet_for_wake(False).to_payload()
+
+    actions = payload["actions"]
+    assert actions["wake_verified"] is False
+    assert actions["allowed_action_kinds"] == []
+    assert actions["max_actions"] == 0
+    assert actions["supported_operations"] == {}
+    assert actions["reason"] == "no_wake_word_this_turn"
+    # Time context still travels: it grounds spoken dates in ordinary dictation.
+    assert actions["now_iso"] == "2026-09-04T09:00:00"
+
+    schema = payload["output_schema"]
+    assert "actions" not in schema["allowed_values"]["utterance_kind"]
+    assert schema["allowed_values"]["actions.kind"] == []
+    assert "actions_not_permitted" in schema
+    assert "not an allowed utterance_kind" in schema["actions_not_permitted"]
+
+
+def test_turn_plan_payload_keeps_full_action_surface_when_wake_verified() -> None:
+    payload = _packet_for_wake(True).to_payload()
+
+    actions = payload["actions"]
+    assert actions["wake_verified"] is True
+    assert actions["allowed_action_kinds"] == ["note", "reminder", "alarm"]
+    assert actions["max_actions"] == 25
+    assert actions["supported_operations"] == {
+        "note": ["create"],
+        "reminder": ["create"],
+        "alarm": ["create"],
+    }
+    assert "reason" not in actions
+
+    schema = payload["output_schema"]
+    assert "actions" in schema["allowed_values"]["utterance_kind"]
+    assert schema["allowed_values"]["actions.kind"]
+    assert "actions_not_permitted" not in schema
+
+
+def test_turn_plan_non_wake_schema_hint_removes_only_the_actions_classification() -> None:
+    # Behaviour preservation guard: every text-shaping outcome that the writer
+    # can still deliver without a wake word must remain offerable. Only the
+    # ``actions`` classification - already discarded by
+    # ``turn_plan_actions_fell_back_to_text`` - is withdrawn.
+    wake = _packet_for_wake(True).to_payload()["output_schema"]
+    no_wake = _packet_for_wake(False).to_payload()["output_schema"]
+
+    removed = set(wake["allowed_values"]["utterance_kind"]) - set(
+        no_wake["allowed_values"]["utterance_kind"]
+    )
+    assert removed == {"actions"}
+    # ``mixed`` stays: a non-wake mixed plan still renders and commits text.
+    assert "mixed" in no_wake["allowed_values"]["utterance_kind"]
+    for kind in ("dictation", "format_dictation", "transform", "memory_mutation", "no_op", "ambiguous"):
+        assert kind in no_wake["allowed_values"]["utterance_kind"]
+
+    for key in ("render_plan.render_kind", "transform.operation", "safety.commit_policy", "safety.execute_policy"):
+        assert no_wake["allowed_values"][key] == wake["allowed_values"][key]
+    assert no_wake["required_top_level_keys"] == wake["required_top_level_keys"]
+    assert no_wake["render_plan"] == wake["render_plan"]
+    assert no_wake["transform"] == wake["transform"]
+    assert no_wake["snippets"] == wake["snippets"]
+    assert no_wake["memory_candidates"] == wake["memory_candidates"]
+
+
+def test_turn_planning_system_prompt_stays_static_across_wake_states() -> None:
+    # The turn_planning_v1 system prompt is the KV-cached static prefix
+    # (``cache_prefix`` metadata in ``TurnPlanner.plan``). Making it depend on
+    # the wake result would split one cached prefix into two, so the
+    # false-case rule is stated as an unconditional instruction and the
+    # per-turn values live in the (dynamic) user payload.
+    def _prompt(wake_verified: bool) -> str:
+        return _system_prompt(
+            WriterTransformRequest(
+                utterance_id="utt-prompt",
+                instruction="plan",
+                source_text="create a summary and send it over later",
+                mode=WriterMode.DEFAULT_SURFACE,
+                context_payload={
+                    "task": "turn_planning_v1",
+                    "schema_version": "turn_planning_v1",
+                    "payload": _packet_for_wake(wake_verified).to_payload(),
+                },
+                metadata={"kind": "turn_planning_v1"},
+            )
+        )
+
+    assert _prompt(True) == _prompt(False)
+    assert "actions.wake_verified is false" in _prompt(False)
+    assert "not a permitted utterance_kind" in _prompt(False)
+
+
+def test_turn_planner_request_carries_the_withdrawn_surface_to_the_backend() -> None:
+    source = "create a summary and send it over later"
+    backend = _TaskBackend({"turn_planning_v1": "not json"})
+    TurnPlanner(backend).plan(_packet_for_wake(False))
+
+    assert len(backend.requests) == 1
+    payload = backend.requests[0].context_payload["payload"]
+    assert payload["actions"]["allowed_action_kinds"] == []
+    assert payload["actions"]["max_actions"] == 0
+    prompt = _build_writer_prompt(backend.requests[0])
+    assert '"allowed_action_kinds":[]' in prompt
+    assert '"max_actions":0' in prompt
+    assert source in prompt
+
+
 def test_turn_plan_snippet_insert_resolves_exact_trigger_from_memory() -> None:
     with tempfile.TemporaryDirectory(prefix="juno-turn-snippet-") as tmp:
         memory = JsonMemoryStore(tmp)

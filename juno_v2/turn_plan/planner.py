@@ -151,20 +151,18 @@ class TurnPlanPacket:
                 "snippets": snippets,
                 "replacements": replacements,
             },
-            "actions": {
-                "wake_verified": self.wake_verified,
-                "allowed_action_kinds": list(self.allowed_action_kinds),
-                "supported_operations": {
-                    "note": ["create"],
-                    "reminder": ["create"],
-                    "alarm": ["create"],
-                },
-                "max_actions": self.max_actions,
-                "now_iso": self.now_iso,
-                "permission_state": self.metadata.get("action_permission_state") or "unknown",
-                "destructive_operations_require_confirmation": True,
-            },
-            "output_schema": _turn_plan_schema_hint(),
+            "actions": _action_surface_payload(
+                wake_verified=self.wake_verified,
+                allowed_action_kinds=self.allowed_action_kinds,
+                max_actions=self.max_actions,
+                now_iso=self.now_iso,
+                permission_state=self.metadata.get("action_permission_state") or "unknown",
+            ),
+            "output_schema": (
+                _turn_plan_schema_hint()
+                if self.wake_verified
+                else _turn_plan_schema_hint_without_actions()
+            ),
         }
 
 
@@ -2322,3 +2320,76 @@ def _turn_plan_schema_hint() -> dict[str, Any]:
             "one allowed ... value text",
         ],
     }
+
+
+def _action_surface_payload(
+    *,
+    wake_verified: bool,
+    allowed_action_kinds: tuple[str, ...],
+    max_actions: int,
+    now_iso: str | None,
+    permission_state: str,
+) -> dict[str, Any]:
+    """The native-action surface offered to the planner for one turn.
+
+    Native actions are dispatched in exactly one place - the pipeline's
+    ``if wake_status.verified and action_source_text:`` branch. When the wake
+    gate reported no wake word there is no dispatch site, and
+    ``WriterService._turn_plan_outcome`` discards every ``actions`` plan
+    unconditionally in favour of text delivery
+    (``turn_plan_actions_fell_back_to_text``). Advertising up to 25 actions
+    across 3 kinds on those turns bought decode time for a classification the
+    code guarantees it will throw away (issue #107).
+
+    So on a non-wake turn the offer is withdrawn: no kinds, no operations, a
+    cap of zero. Only the *offer* changes. The packet fields are untouched,
+    the planner still runs, and every other planning capability (structural
+    rendering, transforms, corrected transcript, memory candidates, snippets,
+    commit policy) is unaffected.
+    """
+    if not wake_verified:
+        return {
+            "wake_verified": False,
+            "allowed_action_kinds": [],
+            "supported_operations": {},
+            "max_actions": 0,
+            "now_iso": now_iso,
+            "permission_state": permission_state,
+            "destructive_operations_require_confirmation": True,
+            "reason": "no_wake_word_this_turn",
+        }
+    return {
+        "wake_verified": True,
+        "allowed_action_kinds": list(allowed_action_kinds),
+        "supported_operations": {str(kind): ["create"] for kind in allowed_action_kinds},
+        "max_actions": max_actions,
+        "now_iso": now_iso,
+        "permission_state": permission_state,
+        "destructive_operations_require_confirmation": True,
+    }
+
+
+def _turn_plan_schema_hint_without_actions() -> dict[str, Any]:
+    """Schema hint for a turn on which no native action can be dispatched.
+
+    Derived from ``_turn_plan_schema_hint()`` instead of duplicating it so the
+    two stay in lock-step: only the action-bearing entries are narrowed.
+    ``mixed`` deliberately stays allowed - a non-wake ``mixed`` plan still
+    renders and commits its text (``WriterService`` suppresses the paste for
+    ``mixed`` only when ``wake_verified`` is true), so removing it would drop a
+    currently-deliverable outcome.
+    """
+    hint = _turn_plan_schema_hint()
+    allowed = dict(hint.get("allowed_values") or {})
+    allowed["utterance_kind"] = [
+        value for value in (allowed.get("utterance_kind") or []) if value != "actions"
+    ]
+    allowed["actions.kind"] = []
+    hint["allowed_values"] = allowed
+    hint["actions"] = "must be [] on this turn; no native action can be dispatched"
+    hint["actions_not_permitted"] = (
+        "actions.wake_verified is false: 'actions' is not an allowed utterance_kind for this "
+        "turn and the actions array must be empty. Classify the turn as dictation, "
+        "format_dictation, transform, memory_mutation, no_op, or ambiguous instead."
+    )
+    return hint
