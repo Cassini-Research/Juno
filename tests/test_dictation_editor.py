@@ -514,6 +514,57 @@ def test_editor_skipped_for_wake_and_selection() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def _sine_wav() -> bytes:
+    """One second of synthetic 16 kHz mono tone — no recorded audio in tests."""
+    import io
+    import math
+    import struct
+    import wave
+
+    buf = io.BytesIO()
+    frames = [struct.pack("<h", int(20000 * math.sin(i / 8.0))) for i in range(16000)]
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"".join(frames))
+    return buf.getvalue()
+
+
+def _events(recorder: _Recorder) -> list[tuple[str, dict[str, object]]]:
+    out: list[tuple[str, dict[str, object]]] = []
+    for args, _ in recorder.events:
+        if len(args) > 2 and isinstance(args[1], str) and isinstance(args[2], dict):
+            out.append((args[1], args[2]))
+    return out
+
+
+def _started_final_adjudication(recorder: _Recorder) -> bool:
+    return any(
+        name == "oneshot_transcript_adjudication_started" and payload.get("stage") == "final"
+        for name, payload in _events(recorder)
+    )
+
+
+def _adjudication_rejected_reason(recorder: _Recorder) -> object:
+    """Reason on the final-stage ``oneshot_transcript_adjudication_rejected`` event."""
+    for name, payload in _events(recorder):
+        if name == "oneshot_transcript_adjudication_rejected" and payload.get("stage") == "final":
+            return payload.get("reason")
+    return None
+
+
+def _transcript_decision_rejected_reason(recorder: _Recorder) -> object:
+    """``rejected_reason`` persisted in the transcript decision payload."""
+    for name, payload in _events(recorder):
+        if name != "transcript_decision":
+            continue
+        adjudication = payload.get("adjudication")
+        if isinstance(adjudication, dict):
+            return adjudication.get("rejected_reason")
+    return None
+
+
 def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
     source = "I don't know how God committed in the final text but please check the logs"
 
@@ -534,23 +585,6 @@ def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
         def snapshot(self) -> TypedContextBundle:
             return TypedContextBundle(app_name="Notes", app_category="docs")
 
-    import io
-    import math
-    import struct
-    import wave
-
-    def _wav() -> bytes:
-        buf = io.BytesIO()
-        frames = [
-            struct.pack("<h", int(20000 * math.sin(i / 8.0))) for i in range(16000)
-        ]
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(16000)
-            w.writeframes(b"".join(frames))
-        return buf.getvalue()
-
     backend = _EditorBackend('VERDICT: edited\nEDIT: "God committed" => "got committed"')
     recorder = _Recorder()
     writer = WriterService(
@@ -566,21 +600,66 @@ def test_pipeline_dictation_uses_editor_and_skips_final_adjudication() -> None:
         transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=True),
         itn_enabled=False,
     )
-    result = pipeline.run(_wav(), utterance_id="utt-editor-pipe", save_history=False, save_audio=False)
+    result = pipeline.run(_sine_wav(), utterance_id="utt-editor-pipe", save_history=False, save_audio=False)
     assert result.ok
     assert "got committed" in result.transcript
     assert "God committed" not in result.transcript
     assert result.paste_kind != "none"
     # Final 0.6B adjudication must be skipped — the editor owns correction.
-    payloads = [a[2] for a, _ in recorder.events if len(a) > 2 and isinstance(a[2], dict)]
-    assert any(
-        p.get("skip_reason") == "dictation_editor_lane" or p.get("reason") == "dictation_editor_lane"
-        for p in payloads
-    ) or not any(
-        a[1] == "oneshot_transcript_adjudication_started" and (a[2] or {}).get("stage") == "final"
-        for a, _ in recorder.events
-        if len(a) > 2
+    assert not _started_final_adjudication(recorder)
+    # ...and the trace must say *why*. The previous assertion allowed "no final
+    # adjudication started" as an alternative, which is always true here, so it
+    # never noticed that ``dictation_editor_lane`` was being overwritten by
+    # ``policy_or_live_disabled`` before the rejected event was recorded.
+    assert _adjudication_rejected_reason(recorder) == "dictation_editor_lane"
+    assert _transcript_decision_rejected_reason(recorder) == "dictation_editor_lane"
+
+
+def test_pipeline_policy_skip_reason_survives_when_editor_lane_inactive() -> None:
+    """Editor lane off + policy rejection → the policy reason, not the lane one.
+
+    Guards the ordering of the ``adjudication_skip_reason`` fallback chain: the
+    first real cause wins, so a run where the editor lane never claimed the
+    correction must still report ``policy_or_live_disabled``.
+    """
+    source = "cd into the repo and run the tests"
+
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=source,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            # Terminal category: _should_run_transcript_adjudication() says no.
+            return TypedContextBundle(app_name="Terminal", app_category="terminal")
+
+    recorder = _Recorder()
+    # No writer service at all → editor_owns_final_correction is False.
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=recorder,
+        context_provider=FakeContextProvider(),
+        writer_service=None,
+        transcript_adjudicator_config=TranscriptAdjudicatorConfig(enabled=True),
+        itn_enabled=False,
     )
+    result = pipeline.run(
+        _sine_wav(), utterance_id="utt-policy-skip", save_history=False, save_audio=False
+    )
+
+    assert result.ok
+    assert not _started_final_adjudication(recorder)
+    assert _adjudication_rejected_reason(recorder) == "policy_or_live_disabled"
+    assert _transcript_decision_rejected_reason(recorder) == "policy_or_live_disabled"
 
 
 # --------------------------------------------------------------------------- #

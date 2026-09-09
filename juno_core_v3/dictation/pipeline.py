@@ -1596,7 +1596,14 @@ class OneShotDictationPipeline:
                     },
                 )
         else:
-            adjudication_skip_reason = fast_skip_reason or "policy_or_live_disabled"
+            # Preserve the first reason that actually caused the skip. When the
+            # dictation editor owns final correction the guard above short
+            # circuits before ``fast_skip_reason`` is evaluated, so overwriting
+            # here would drop ``dictation_editor_lane`` from the trace and the
+            # persisted transcript decision.
+            adjudication_skip_reason = (
+                adjudication_skip_reason or fast_skip_reason or "policy_or_live_disabled"
+            )
             self.recorder.record(
                 TraceKind.SYSTEM,
                 "oneshot_transcript_adjudication_rejected",
