@@ -12,6 +12,7 @@ from juno_core_v3.dictation.pipeline import (
     OneShotDictationPipeline,
     _collect_self_correction_cues,
     _final_adjudication_fast_skip_reason,
+    _final_asr_live_hint_audit_payload,
     _mode_policy_for_final_delivery,
     _reconcile_explicit_candidate_term_confusions,
     _reconcile_proper_nouns_from_live_hint,
@@ -2164,6 +2165,51 @@ def test_recent_transform_command_grammar_covers_natural_variants() -> None:
     assert shorter is not None
     assert shorter.kind == "recent_edit"
     assert shorter.payload["instruction"] == "Make the text more concise and direct. Preserve meaning."
+
+
+def test_final_asr_live_hint_audit_similarity_survives_long_utterances(monkeypatch) -> None:
+    """`raw_hint_similarity` must reflect real agreement at any utterance length.
+
+    `difflib.SequenceMatcher` defaults to ``autojunk=True``, which for sequences of
+    200+ characters treats every character appearing in more than 1% of the sequence
+    as junk. In prose that is nearly every letter, so the ratio collapses (~0.17 for
+    the pair below) even though the two texts are almost identical.
+    """
+    monkeypatch.delenv("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", raising=False)
+
+    long_raw = ("the quick brown fox jumps over the lazy dog and keeps running " * 5).strip()
+    long_hint = long_raw.replace("keeps running", "keeps on running", 1)
+    assert len(long_raw) >= 250
+
+    long_audit = _final_asr_live_hint_audit_payload(
+        raw_text=long_raw,
+        transcript_hint=long_hint,
+        shell_timeline={"final_preview_flush_received_ms": 123},
+        backend_name="fake_asr",
+        model_path="fake-whisper",
+        decode_ms=17.0,
+        skip_used=False,
+    )
+
+    assert long_audit["raw_chars"] == len(long_raw)
+    assert long_audit["raw_hint_similarity"] > 0.9
+
+    short_raw = "book the flight on tuesday"
+    short_hint = "book the flights on tuesday"
+    assert len(short_raw) < 200 and len(short_hint) < 200
+
+    short_audit = _final_asr_live_hint_audit_payload(
+        raw_text=short_raw,
+        transcript_hint=short_hint,
+        shell_timeline={"final_preview_flush_received_ms": 123},
+        backend_name="fake_asr",
+        model_path="fake-whisper",
+        decode_ms=17.0,
+        skip_used=False,
+    )
+
+    # Short texts are below the autojunk threshold, so this value is unchanged by the fix.
+    assert short_audit["raw_hint_similarity"] == 0.9811
 
 
 def test_final_asr_live_hint_audit_keeps_final_asr_on_by_default(monkeypatch) -> None:
