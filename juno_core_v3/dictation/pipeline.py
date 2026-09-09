@@ -4634,7 +4634,15 @@ def _final_asr_live_hint_audit_payload(
     skip_enabled = _env_bool("JUNO_V2_SKIP_FINAL_ASR_ON_FINAL_PREVIEW_FLUSH", False)
     similarity = None
     if raw and hint:
-        similarity = round(difflib.SequenceMatcher(None, raw.casefold(), hint.casefold()).ratio(), 4)
+        similarity = round(
+            difflib.SequenceMatcher(
+                None,
+                raw.casefold(),
+                hint.casefold(),
+                autojunk=False,
+            ).ratio(),
+            4,
+        )
     return {
         "hint_present": bool(hint),
         "hint_chars": len(hint),
