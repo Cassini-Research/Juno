@@ -1,0 +1,19 @@
+[Unit]
+Description=Mac-independent Juno Voice API on DGX Spark
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -B /home/jasagent/qwen38-dgx-spark/juno-relay/dgx/current/juno_voice_spark_relay.py --host 127.0.0.1 --port 18791 --api-key-file /home/jasagent/.config/qwen38-juno-relay/client.key --upstream-key-file /home/jasagent/.config/qwen38-juno-relay/parakeet-upstream.key --upstream-url http://127.0.0.1:18121
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -85,3 +85,20 @@ This supports corrections contained within one utterance, such as “3 PM,
 scratch that, 4 PM.” It does not let a later keyboard utterance edit arbitrary
 text already owned by another iOS app; cross-utterance editing requires an
 explicit client/session protocol and undo boundary.
+
+## Mac-independent Spark route
+
+`scripts/juno_voice_spark_relay.py` is the bounded alternative for an always-on
+DGX Spark that already hosts the locked Parakeet service. It adapts the phone's
+`juno-local` multipart contract to the Spark's pinned Parakeet model and runs
+Juno's deterministic self-correction pass on the result. Deploy it beside an
+exact copy of `juno_core_v3/dictation/self_corrections.py` named
+`self_corrections.py`; record both hashes in the release receipt. The supplied
+`juno-voice-spark.service` binds the relay to loopback and keeps the public and
+Parakeet credentials in separate owner-only files.
+
+Publish that loopback service with HTTPS Funnel on the Spark itself. Do not
+switch a phone from the Mac endpoint until independent public DNS, pinned TLS,
+unauthenticated rejection, authenticated session lifecycle, and a real speech
+upload all pass. Merely moving public ingress is not Mac independence: the
+relay's upstream must point to Spark loopback, never the reverse-SSH port.
