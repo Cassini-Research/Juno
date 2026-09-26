@@ -94,8 +94,19 @@ class JunoUpstream:
         self.port = parsed.port or 80
         self.api_key = api_key
         self.timeout = timeout
+        # Parakeet's local HTTP worker is intentionally single-model. Live
+        # previews and the authoritative final request share that one lane;
+        # serializing here turns a transient upstream 503 into a short wait
+        # instead of dropping the user's final dictation.
+        self.inference_lock = threading.Lock()
 
     def request(self, path: str, content_type: str, body: bytes) -> tuple[int, str, bytes]:
+        if path == "/v1/audio/transcriptions":
+            with self.inference_lock:
+                return self._request(path, content_type, body)
+        return self._request(path, content_type, body)
+
+    def _request(self, path: str, content_type: str, body: bytes) -> tuple[int, str, bytes]:
         if path == "/v1/audio/transcriptions":
             parts = _multipart_parts(content_type, body)
             audio = parts.get("file", b"")
@@ -182,6 +193,7 @@ class Session:
         self.next_sequence = 0
         self.last_sequence = -1
         self.last_response: dict[str, Any] | None = None
+        self.accepting_audio = True
 
     def publish(self, event: dict[str, Any]) -> None:
         with self.lock:
@@ -275,17 +287,27 @@ class SessionStore:
                 return dict(session.last_response)
             if sequence != session.next_sequence:
                 raise RelayError("audio chunks arrived out of order")
-            if session.final_requested:
+            if not session.accepting_audio:
                 raise RelayError("transcription session is already finalized")
 
-            if pcm:
+            if pcm and not is_final:
                 self.append(session, pcm)
+            elif pcm:
+                if len(session.pcm) + len(pcm) > MAX_PCM_BYTES:
+                    raise RelayError("live audio exceeded the in-memory session limit")
+                session.pcm.extend(pcm)
+                session.updated_at = time.monotonic()
             elif not is_final:
                 raise RelayError("audio chunks must not be empty")
             if is_final:
                 if not session.pcm:
                     raise RelayError("cannot finalize an empty audio buffer")
-                self.commit(session)
+                # The phone immediately submits the durable WAV to the final
+                # Juno route. Launching another full cumulative preview here
+                # only competes for Parakeet and can make that final return
+                # 503. Freeze this session and let the authoritative request
+                # take the single inference lane next.
+                session.accepting_audio = False
 
             response = {
                 "sequence": sequence,
@@ -551,7 +573,7 @@ def main() -> None:
     parser.add_argument("--upstream-url", default="http://127.0.0.1:18797")
     parser.add_argument("--session-ttl-seconds", type=int, default=300)
     parser.add_argument("--max-sessions", type=int, default=4)
-    parser.add_argument("--preview-seconds", type=float, default=2.0)
+    parser.add_argument("--preview-seconds", type=float, default=1.0)
     parser.add_argument(
         "--allow-tailnet-bind",
         action="store_true",

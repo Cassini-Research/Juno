@@ -76,7 +76,7 @@ class OrderedLiveSessionTests(unittest.TestCase):
                 is_final=False,
             )
 
-    def test_empty_final_flushes_an_existing_utterance(self) -> None:
+    def test_empty_final_yields_to_the_authoritative_final_lane(self) -> None:
         self.store.append_ordered(
             self.session,
             sequence=0,
@@ -92,7 +92,8 @@ class OrderedLiveSessionTests(unittest.TestCase):
 
         self.assertTrue(response["is_final"])
         self.assertEqual(response["sequence"], 1)
-        self.assertTrue(self.upstream.called.wait(timeout=2))
+        self.assertFalse(self.session.accepting_audio)
+        self.assertFalse(self.upstream.called.wait(timeout=0.05))
 
 
 if __name__ == "__main__":
