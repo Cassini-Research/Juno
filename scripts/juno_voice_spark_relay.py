@@ -179,6 +179,9 @@ class Session:
         self.final_requested = False
         self.closed = False
         self.updated_at = time.monotonic()
+        self.next_sequence = 0
+        self.last_sequence = -1
+        self.last_response: dict[str, Any] | None = None
 
     def publish(self, event: dict[str, Any]) -> None:
         with self.lock:
@@ -250,6 +253,54 @@ class SessionStore:
             should_preview = len(session.pcm) - session.last_transcribed_bytes >= threshold
         if should_preview:
             self._schedule(session, final=False)
+
+    def append_ordered(
+        self,
+        session: Session,
+        *,
+        sequence: int,
+        pcm: bytes,
+        is_final: bool,
+    ) -> dict[str, Any]:
+        """Accept the phone's retry-safe ordered chunk contract.
+
+        Preview inference remains asynchronous: the Spark transcribes a
+        cumulative snapshot every ``preview_seconds`` instead of blocking the
+        microphone upload. Each response carries the newest completed Juno
+        revision, so the following 500 ms chunk naturally picks it up without
+        a second long-lived connection that iOS must keep alive in background.
+        """
+        with session.lock:
+            if sequence == session.last_sequence and session.last_response is not None:
+                return dict(session.last_response)
+            if sequence != session.next_sequence:
+                raise RelayError("audio chunks arrived out of order")
+            if session.final_requested:
+                raise RelayError("transcription session is already finalized")
+
+            if pcm:
+                self.append(session, pcm)
+            elif not is_final:
+                raise RelayError("audio chunks must not be empty")
+            if is_final:
+                if not session.pcm:
+                    raise RelayError("cannot finalize an empty audio buffer")
+                self.commit(session)
+
+            response = {
+                "sequence": sequence,
+                "committed_text": session.last_text,
+                "tail_text": "",
+                "text": session.last_text,
+                "language": session.language,
+                "is_final": is_final,
+                "decode_ms": 0.0,
+            }
+            session.last_sequence = sequence
+            session.next_sequence += 1
+            session.last_response = dict(response)
+            session.updated_at = time.monotonic()
+            return response
 
     def commit(self, session: Session) -> None:
         with session.lock:
@@ -446,7 +497,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read(64 * 1024)
                 payload = json.loads(body)
                 session = self.sessions.create(str(payload.get("language") or "auto"), int(payload.get("sample_rate") or 16000))
-                self._json(201, {"id": session.id, "object": "realtime.transcription_session", "audio_format": "pcm16", "sample_rate": session.sample_rate, "expires_in": session.ttl_seconds})
+                self._json(201, {"id": session.id, "ready": True, "object": "realtime.transcription_session", "audio_format": "pcm16", "sample_rate": session.sample_rate, "expires_in": session.ttl_seconds})
                 return
             matched = self._session_match()
             if matched is None:
@@ -456,7 +507,17 @@ class Handler(BaseHTTPRequestHandler):
             if action == "audio":
                 body = self._read(MAX_PCM_BYTES)
                 if self.headers.get("Content-Type", "").startswith("application/json"):
-                    body = base64.b64decode(json.loads(body).get("audio", ""), validate=True)
+                    request = json.loads(body)
+                    body = base64.b64decode(request.get("audio", ""), validate=True)
+                    if "sequence" in request:
+                        response = self.sessions.append_ordered(
+                            session,
+                            sequence=int(request["sequence"]),
+                            pcm=body,
+                            is_final=bool(request.get("is_final") or False),
+                        )
+                        self._json(200, response)
+                        return
                 self.sessions.append(session, body)
                 self._json(202, {"status": "accepted", "session_id": session.id, "buffered_bytes": len(session.pcm)})
                 return
