@@ -185,6 +185,11 @@ class Session:
         self.subscribers: list[queue.Queue[dict[str, Any]]] = []
         self.last_text = ""
         self.last_transcribed_bytes = 0
+        # Scheduling is based on bytes attempted, not only bytes that produced
+        # a transcript. Otherwise one upstream failure leaves this value at
+        # zero and every following 500 ms phone chunk immediately retries an
+        # ever-larger cumulative request.
+        self.last_attempted_bytes = 0
         self.worker_active = False
         self.dirty = False
         self.final_requested = False
@@ -219,7 +224,10 @@ class SessionStore:
         self.preview_seconds = preview_seconds
         self.lock = threading.RLock()
         self.sessions: dict[str, Session] = {}
-        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="juno-live")
+        # The installed Parakeet model has one inference lane. A single relay
+        # worker keeps previews ordered and prevents multiple sessions from
+        # building a burst behind the upstream lock.
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="juno-live")
         self.stopping = threading.Event()
         threading.Thread(target=self._cleaner, name="juno-session-cleaner", daemon=True).start()
 
@@ -262,7 +270,7 @@ class SessionStore:
             session.dirty = True
             session.updated_at = time.monotonic()
             threshold = int(session.sample_rate * 2 * self.preview_seconds)
-            should_preview = len(session.pcm) - session.last_transcribed_bytes >= threshold
+            should_preview = len(session.pcm) - session.last_attempted_bytes >= threshold
         if should_preview:
             self._schedule(session, final=False)
 
@@ -351,6 +359,10 @@ class SessionStore:
                     final = session.final_requested
                     session.final_requested = False
                     session.dirty = False
+                    # Record the attempt before network inference. Audio can
+                    # continue arriving while this call is in flight, and a
+                    # failure must not turn each small append into a retry.
+                    session.last_attempted_bytes = len(snapshot)
                 session.publish({"type": "transcription.started", "session_id": session.id, "final": final})
                 try:
                     text = self.upstream.transcribe_pcm(snapshot, session.sample_rate, session.language)
@@ -374,7 +386,12 @@ class SessionStore:
                         session.zero()
                         return
                 with session.lock:
-                    if not session.dirty and not session.final_requested:
+                    threshold = int(session.sample_rate * 2 * self.preview_seconds)
+                    enough_new_audio = len(session.pcm) - session.last_attempted_bytes >= threshold
+                    # A final commit is never delayed. Ordinary preview work
+                    # only loops after a complete new cadence window arrived
+                    # during inference; otherwise a future append schedules it.
+                    if not session.final_requested and not enough_new_audio:
                         return
         finally:
             with session.lock:

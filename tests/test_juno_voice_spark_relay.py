@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import threading
+import time
 import types
 import unittest
 
@@ -31,6 +32,19 @@ class FakeUpstream:
         self.calls += 1
         self.called.set()
         return "Hello from the Spark."
+
+
+class FailingBlockingUpstream:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.called = threading.Event()
+        self.release = threading.Event()
+
+    def transcribe_pcm(self, pcm: bytes, sample_rate: int, language: str) -> str:
+        self.calls += 1
+        self.called.set()
+        self.release.wait(timeout=1)
+        raise relay.RelayError("temporary upstream failure")
 
 
 class OrderedLiveSessionTests(unittest.TestCase):
@@ -94,6 +108,39 @@ class OrderedLiveSessionTests(unittest.TestCase):
         self.assertEqual(response["sequence"], 1)
         self.assertFalse(self.session.accepting_audio)
         self.assertFalse(self.upstream.called.wait(timeout=0.05))
+
+    def test_failed_preview_waits_for_a_full_new_cadence_before_retry(self) -> None:
+        self.store.stopping.set()
+        self.store.executor.shutdown(wait=True, cancel_futures=True)
+        upstream = FailingBlockingUpstream()
+        store = relay.SessionStore(
+            upstream,
+            max_sessions=2,
+            ttl_seconds=60,
+            preview_seconds=0.5,
+        )
+        session = store.create("en", 16_000)
+        try:
+            # 0.5 seconds schedules the first inference.
+            store.append(session, b"\x01\x00" * 8_000)
+            self.assertTrue(upstream.called.wait(timeout=1))
+
+            # A 0.25-second append during the failed request must not trigger
+            # the old retry storm when that request returns.
+            store.append(session, b"\x01\x00" * 4_000)
+            upstream.release.set()
+            time.sleep(0.1)
+            self.assertEqual(upstream.calls, 1)
+
+            # The next 0.25 seconds completes one new preview window.
+            store.append(session, b"\x01\x00" * 4_000)
+            deadline = time.monotonic() + 1
+            while upstream.calls < 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(upstream.calls, 2)
+        finally:
+            store.stopping.set()
+            store.executor.shutdown(wait=True, cancel_futures=True)
 
 
 if __name__ == "__main__":
