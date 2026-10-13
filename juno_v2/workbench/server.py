@@ -3879,6 +3879,27 @@ class WorkbenchApp:
             "actions": [],
             "category": "capture",
         },
+        # Engine guard verdicts on a healthy engine. The take was rejected
+        # before any transcript was kept, so there is nothing to copy or
+        # insert again: an unlisted code would fall through to the default
+        # below and offer "Copy transcript" on a row that has none.
+        "low_signal_audio": {
+            "severity": "info",
+            "actions": [],
+            "category": "capture",
+        },
+        "silence_hallucination": {
+            "severity": "info",
+            "actions": [],
+            "category": "capture",
+        },
+        # Unlike the silence verdicts the user may well have spoken here —
+        # the decode itself was judged unusable — so it is not "info".
+        "hallucinated_transcript": {
+            "severity": "warning",
+            "actions": [],
+            "category": "capture",
+        },
         "user_cancelled_hud": {
             "severity": "info",
             "actions": ["copy_transcript"],

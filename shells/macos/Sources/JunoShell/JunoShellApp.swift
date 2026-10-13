@@ -1294,7 +1294,7 @@ enum JunoBroker {
         }.resume()
     }
 
-    private static func parseTranscribeResponse(_ obj: [String: Any]) -> Result<TranscribeResponse, Error> {
+    static func parseTranscribeResponse(_ obj: [String: Any]) -> Result<TranscribeResponse, Error> {
         if let ok = obj["ok"] as? Bool, ok == false {
             let errMsg = (obj["error"] as? String) ?? "transcribe_failed"
             let cancelled = (obj["cancelled"] as? Bool) ?? false
@@ -3397,8 +3397,9 @@ final class DictationController: ObservableObject {
     private var pendingFinalReplaceTarget: String?
     private var pendingFinalReplaceTargetChars: Int = 0
     private var recorderStopped: Bool = false
-    private var brokerSnapshotFailedThisSession: Bool = false
-    private var brokerSnapshotLowSignalThisSession: Bool = false
+    /// How this session's failed final transcription should be surfaced; nil
+    /// while no broker snapshot has failed. See ``JunoTranscribeFailurePolicy``.
+    private var brokerSnapshotFailureThisSession: JunoTranscribeFailurePolicy.Disposition?
     /// ``juno-capability`` JSON captured when recording starts (hotkey time).
     private var utteranceFrozenContext: [String: Any]?
     /// When the frozen snapshot had a non-empty selection, skip pause-based
@@ -3571,8 +3572,7 @@ final class DictationController: ObservableObject {
             self.enginePreviewPartialText = ""
             self.transientCopyToast = nil
             self.delightSweepActive = false
-            self.brokerSnapshotFailedThisSession = false
-            self.brokerSnapshotLowSignalThisSession = false
+            self.brokerSnapshotFailureThisSession = nil
             self.copyToastWorkItem?.cancel()
             self.copyToastWorkItem = nil
             self.copyDismissWorkItem?.cancel()
@@ -4126,8 +4126,7 @@ final class DictationController: ObservableObject {
         pendingFinalReplaceTargetChars = 0
         recorderStopped = false
         writerWarmRequestedThisSession = false
-        brokerSnapshotFailedThisSession = false
-        brokerSnapshotLowSignalThisSession = false
+        brokerSnapshotFailureThisSession = nil
         livePartialText = ""
         resetHUDTranscriptStore()
         lastNonEmptyHUDTranscript = ""
@@ -5411,12 +5410,10 @@ final class DictationController: ObservableObject {
                     }
                     brokerOk = true
                 case .failure(let error):
-                    self.brokerSnapshotFailedThisSession = true
-                    let nsError = error as NSError
-                    let errorCode = (nsError.userInfo["JunoErrorCode"] as? String) ?? ""
-                    if errorCode == "low_signal_audio" {
-                        self.brokerSnapshotLowSignalThisSession = true
-                        self.liveSpeechHint = "No clear speech detected."
+                    let failure = JunoTranscribeFailurePolicy.disposition(forBrokerError: error)
+                    self.brokerSnapshotFailureThisSession = failure
+                    if failure.skipsLiveDraftFallback {
+                        self.liveSpeechHint = failure.speechHint
                     }
                     NSLog("Juno: broker snapshot failed: \(error.localizedDescription)")
                 }
@@ -6064,17 +6061,19 @@ final class DictationController: ObservableObject {
             deletedRecentReplaceTarget = true
         }
 
-        if finalText.isEmpty && brokerSnapshotLowSignalThisSession {
+        if finalText.isEmpty,
+           let failure = brokerSnapshotFailureThisSession,
+           failure.skipsLiveDraftFallback {
             postInsertionCommitted(
                 transcript: "",
                 ok: false,
                 pasteKind: "none",
-                failureReason: "low_signal_audio",
+                failureReason: failure.failureReason,
                 pasteAttempted: false
             )
             insertionTriggerSource = "hotkey"
-            liveSpeechHint = "No clear speech detected."
-            state = "error:low_signal_audio"
+            liveSpeechHint = failure.speechHint
+            state = failure.hudStateWire
             dictationStartedAt = nil
             refiningStartedAt = nil
             stopWorkbenchStatePolling(clear: true)
@@ -6084,7 +6083,7 @@ final class DictationController: ObservableObject {
         // If the broker never produced any text and we have a live
         // caption draft, surface it via the copy overlay so the user
         // doesn't lose what they said.
-        if finalText.isEmpty && brokerSnapshotFailedThisSession {
+        if finalText.isEmpty, let failure = brokerSnapshotFailureThisSession {
             // Resolve spoken "new line"/"new paragraph" cues to real breaks and
             // drop the literal cue words: the HUD keeps them visible during live
             // preview, but this copy-overlay fallback must not paste literal
@@ -6099,18 +6098,25 @@ final class DictationController: ObservableObject {
             if !fallback.isEmpty {
                 copyableTranscript = fallback
             } else {
+                // Nothing to offer: record the engine's own verdict so a
+                // guard rejection (a healthy engine judging the take not to
+                // be usable speech) is not stored or shown as an engine
+                // failure. ``transcribe_failed`` stays for real errors.
                 pendingRevisionFullTranscript = nil
                 postInsertionCommitted(
                     transcript: "",
                     ok: false,
                     pasteKind: "none",
-                    failureReason: "transcribe_failed",
+                    failureReason: failure.failureReason,
                     pasteAttempted: false
                 )
                 insertionTriggerSource = "hotkey"
                 syncLiveDisplayTranscript(allowFrozen: false)
                 stopWorkbenchStatePolling(clear: true)
-                state = "error:transcribe_failed"
+                if let hint = failure.speechHint {
+                    liveSpeechHint = hint
+                }
+                state = failure.hudStateWire
                 dictationStartedAt = nil
                 refiningStartedAt = nil
                 return

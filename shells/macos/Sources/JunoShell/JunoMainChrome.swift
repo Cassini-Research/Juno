@@ -4759,7 +4759,8 @@ extension UtteranceHistoryEntry {
         case "broker_unreachable":
             return "The local voice engine was unreachable."
         default:
-            return Self.humanizedFailureCode(reason)
+            return JunoTranscribeFailurePolicy.historyLabel(forFailureReason: reason)
+                ?? Self.humanizedFailureCode(reason)
         }
     }
 
