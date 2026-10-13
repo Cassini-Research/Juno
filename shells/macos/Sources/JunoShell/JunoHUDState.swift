@@ -194,6 +194,9 @@ public enum BlockReason: Equatable {
 public enum ErrorReason: Equatable {
     case micNoAudio
     case transcribeFailed
+    /// The engine found no clear speech in the take. Terminal state for every
+    /// "nothing was said" verdict — see `JunoTranscribeFailurePolicy`.
+    case lowSignalAudio
     /// `error:<message>` — the producer at `JunoShellApp.swift:3523` wraps
     /// arbitrary `error.localizedDescription` strings into this case.
     case unknown(String)
@@ -202,6 +205,7 @@ public enum ErrorReason: Equatable {
         switch rawValue {
         case "mic_no_audio":      self = .micNoAudio
         case "transcribe_failed": self = .transcribeFailed
+        case "low_signal_audio":  self = .lowSignalAudio
         default:                  self = .unknown(rawValue)
         }
     }
@@ -210,6 +214,7 @@ public enum ErrorReason: Equatable {
         switch self {
         case .micNoAudio:       return "mic_no_audio"
         case .transcribeFailed: return "transcribe_failed"
+        case .lowSignalAudio:   return "low_signal_audio"
         case .unknown(let raw): return raw
         }
     }

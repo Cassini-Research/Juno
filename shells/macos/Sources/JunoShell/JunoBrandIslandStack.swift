@@ -777,11 +777,17 @@ struct JunoBrandIslandStack: View {
     }
 
     private var errorTitle: String {
+        if let copy = JunoTranscribeFailurePolicy.hudErrorCopy(for: controller.hudState) {
+            return copy.title
+        }
         if case .blocked = controller.hudState { return "Blocked" }
         return "Something went wrong"
     }
 
     private var errorMessage: String {
+        if let copy = JunoTranscribeFailurePolicy.hudErrorCopy(for: controller.hudState) {
+            return copy.message
+        }
         switch controller.hudState {
         case .error(.micNoAudio):
             return "Juno is not receiving microphone audio. Check permission or try another input."
