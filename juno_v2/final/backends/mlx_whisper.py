@@ -286,10 +286,24 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
         weighted_logprob = 0.0
         weighted_no_speech = 0.0
         weighted_compression = 0.0
-        total_weight_s = 0.0
+        # One weight total per signal: a segment whose value is unknown
+        # (missing or non-finite) is left out of that signal's average
+        # instead of diluting or poisoning it. When every value is present
+        # and finite the three totals are the same number.
+        logprob_weight_s = 0.0
+        no_speech_weight_s = 0.0
+        compression_weight_s = 0.0
+        # Raw (unstripped) text of every segment that is not dropped, in
+        # order. Only used to re-assemble the transcript when a segment is
+        # dropped below; otherwise ``text`` stays exactly what mlx_whisper
+        # returned.
+        surviving_text_parts: list[str] = []
+        dropped_artifact_segments = 0
         for seg in segments_raw:
-            seg_text = str(seg.get('text', '')).strip()
+            seg_text_raw = str(seg.get('text', ''))
+            seg_text = seg_text_raw.strip()
             if not seg_text:
+                surviving_text_parts.append(seg_text_raw)
                 continue
             start_s = float(seg.get('start', 0.0) or 0.0)
             end_s = float(seg.get('end', 0.0) or 0.0)
@@ -313,6 +327,36 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
                 seg_compression_float = float(seg_compression) if seg_compression is not None else None
             except (TypeError, ValueError):
                 seg_compression_float = None
+            # mlx_whisper's timestamp rules can leave every logit of a decode
+            # step at -inf (seen with an initial prompt on a recording that
+            # opens with a click followed by silence). argmax then yields
+            # token id 0 ("!") and the log-probability of that step is NaN,
+            # which turns avg_logprob of the whole 30 s decode window NaN. The
+            # window therefore comes back as segments whose text is only the
+            # forced "!" next to segments holding the real speech of the same
+            # window, all with a non-finite avg_logprob.
+            #   - no alphanumeric content AND non-finite avg_logprob: the
+            #     forced token itself, never something the user said. Drop it
+            #     wherever it sits (head, middle or tail).
+            #   - alphanumeric content with a non-finite avg_logprob: real
+            #     speech that shares the poisoned window. Keep the text; only
+            #     its confidence is unknown.
+            #   - punctuation-only with a finite (or missing) avg_logprob: no
+            #     evidence of the masked-logits step, e.g. a decoded "?" or
+            #     "...". Keep it; the commit-side guards own that case.
+            # A non-finite value is recorded as None (unknown) rather than
+            # passed on, because NaN compares False against every threshold
+            # and would silently flip the confidence-gated guards downstream.
+            if seg_avg_logprob_float is not None and not np.isfinite(seg_avg_logprob_float):
+                if not any(ch.isalnum() for ch in seg_text):
+                    dropped_artifact_segments += 1
+                    continue
+                seg_avg_logprob_float = None
+            if seg_no_speech_float is not None and not np.isfinite(seg_no_speech_float):
+                seg_no_speech_float = None
+            if seg_compression_float is not None and not np.isfinite(seg_compression_float):
+                seg_compression_float = None
+            surviving_text_parts.append(seg_text_raw)
             segments.append(
                 FinalSegment(
                     start_ms=req.start_ms + (start_s * 1000.0),
@@ -324,24 +368,32 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
                 )
             )
             weight = max(end_s - start_s, 0.05)
-            try:
-                if seg_avg_logprob is not None:
-                    weighted_logprob += float(seg_avg_logprob) * weight
-                if seg_no_speech is not None:
-                    weighted_no_speech += float(seg_no_speech) * weight
-                if seg_compression is not None:
-                    weighted_compression += float(seg_compression) * weight
-                total_weight_s += weight
-            except (TypeError, ValueError):
-                continue
-        avg_logprob = (weighted_logprob / total_weight_s) if total_weight_s > 0 else None
-        no_speech_prob = (weighted_no_speech / total_weight_s) if total_weight_s > 0 else None
-        compression_ratio = (weighted_compression / total_weight_s) if total_weight_s > 0 else None
+            if seg_avg_logprob_float is not None:
+                weighted_logprob += seg_avg_logprob_float * weight
+                logprob_weight_s += weight
+            if seg_no_speech_float is not None:
+                weighted_no_speech += seg_no_speech_float * weight
+                no_speech_weight_s += weight
+            if seg_compression_float is not None:
+                weighted_compression += seg_compression_float * weight
+                compression_weight_s += weight
+        if dropped_artifact_segments:
+            # mlx_whisper builds ``text`` by decoding the concatenated tokens
+            # of all segments, which is the segment texts joined with no
+            # separator (each carries its own leading space). Re-assemble it
+            # the same way from the segments that are left.
+            text = "".join(surviving_text_parts).strip()
+        # None (unknown) when no segment reported a finite value, matching how
+        # the commit-side guards already treat a backend without the signal.
+        avg_logprob = (weighted_logprob / logprob_weight_s) if logprob_weight_s > 0 else None
+        no_speech_prob = (weighted_no_speech / no_speech_weight_s) if no_speech_weight_s > 0 else None
+        compression_ratio = (weighted_compression / compression_weight_s) if compression_weight_s > 0 else None
         text_preview = (text or "").replace("\n", " ")[:120]
+        dropped_note = f" dropped_segs={dropped_artifact_segments}" if dropped_artifact_segments else ""
         print(
             f"[ASR_FINAL]   decode_done  utt={req.utterance_id[:8]} "
             f"decode_ms={decode_ms:.1f} chars={len(text or '')} "
-            f"segs={len(segments)} no_speech={no_speech_prob} "
+            f"segs={len(segments)}{dropped_note} no_speech={no_speech_prob} "
             f"avg_logprob={avg_logprob} text={text_preview!r}",
             file=sys.stderr,
             flush=True,
@@ -368,6 +420,7 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
                 'avg_logprob': avg_logprob,
                 'no_speech_prob': no_speech_prob,
                 'compression_ratio': compression_ratio,
+                'dropped_artifact_segments': dropped_artifact_segments,
                 # Issue #17: required by the silence-hallucination guard in
                 # commit/controller.py to corroborate avg_logprob with audio
                 # length when the decoded text is a clean one-shot like
