@@ -14,6 +14,7 @@ from juno_v2.contracts.final import FinalDecodeRequest, FinalDecodeResult, Final
 from juno_v2.contracts.tracing import TraceKind
 from juno_v2.final.backends.base import FinalAsrBackend, effective_decode_language
 from juno_v2.final.config import FinalAsrConfig
+from juno_v2.final.pause_chunking import transcribe_with_prompt_per_chunk
 from juno_v2.runtime.mlx_lock import mlx_decode_guard
 
 if TYPE_CHECKING:
@@ -262,8 +263,17 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
         # plus APFS variance). Pass the float32 ndarray directly — same
         # data path the upstream library would take after reading the
         # WAV back. Audio is already clipped to [-1, 1] above.
+        #
+        # Issue #118: transcribe() only applies initial_prompt to its first
+        # 30 s window, so audio longer than one window is decoded in
+        # pause-aligned chunks, each handed the prompt (pause_chunking
+        # says where it cuts and when it withholds the prompt). Audio that
+        # fits one window is still exactly one transcribe() call with
+        # these arguments. The guard is held across all chunks so one
+        # utterance stays one uninterrupted MLX decode.
         with mlx_decode_guard():
-            result = self._mlx_whisper.transcribe(
+            result = transcribe_with_prompt_per_chunk(
+                self._mlx_whisper.transcribe,
                 audio,
                 path_or_hf_repo=model_ref,
                 language=effective_decode_language(req, self.config.language),
@@ -273,6 +283,20 @@ class MlxWhisperFinalBackend(FinalAsrBackend):
                 condition_on_previous_text=self.config.condition_on_previous_text,
             )
         decode_ms = (time.perf_counter() - started) * 1000.0
+        chunks = result.get('chunks') or ()
+        if chunks:
+            # One line per chunked decode: where it was cut and how many
+            # chunks kept the prompt (see pause_chunking for when it is
+            # withheld). Carries no transcript text.
+            chunk_ends_ms = ",".join(f"{chunk['end'] * 1000.0:.0f}" for chunk in chunks)
+            prompted_chunks = sum(1 for chunk in chunks if chunk['prompted'])
+            print(
+                f"[ASR_FINAL]   decode_chunks utt={req.utterance_id[:8]} "
+                f"chunks={len(chunks)} prompted={prompted_chunks} "
+                f"calls={result.get('calls')} ends_ms={chunk_ends_ms}",
+                file=sys.stderr,
+                flush=True,
+            )
         text = str(result.get('text', '')).strip()
         detected_language = result.get('language')
         segments_raw = result.get('segments') or []
