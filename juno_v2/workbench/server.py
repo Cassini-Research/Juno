@@ -6687,7 +6687,26 @@ class WorkbenchApp:
             return {"ok": False, "error": "memory_not_configured"}
         with self._lock:
             # observed = what ASR produced (wrong), corrected = what user intended (correct)
-            self.memory.record_correction(observed, corrected)
+            stored = bool(self.memory.record_correction(observed, corrected))
+        if not stored:
+            # Issue #121: the store's safety filter (length / word caps,
+            # case-only edits, fragment expansions, hallucination shapes)
+            # refused the pair, so nothing was learned. It must not be
+            # traced as observed or counted against the utterance —
+            # History would otherwise accumulate corrections that were
+            # never stored. Trace the refusal under its own name (sizes
+            # only, never the text) so the monitor's activity stays
+            # diagnosable.
+            self.recorder.record(
+                TraceKind.SYSTEM,
+                "correction_rejected",
+                {
+                    "source": str(payload.get("source") or "unknown"),
+                    "observed_chars": len(observed),
+                    "corrected_chars": len(corrected),
+                },
+            )
+            return {"ok": False, "error": "correction_rejected"}
         self.recorder.record(
             TraceKind.SYSTEM,
             "correction_observed",
