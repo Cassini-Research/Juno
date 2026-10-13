@@ -3423,27 +3423,60 @@ def _reconcile_proper_nouns_from_live_hint(
     final_text: str,
     protected_terms: tuple[str, ...],
 ) -> tuple[str, list[dict[str, str]]]:
-    del protected_terms
-    live_terms = _proper_noun_terms(live_hint or "")
-    live_terms = list(dict.fromkeys(t for t in live_terms if _proper_noun_candidate(t)))
-    if not live_terms or not final_text:
+    """Un-shout an ALL-CAPS final token using the live preview's casing.
+
+    The live preview is evidence, not context truth: a volatile second opinion
+    that can drop an internal capital or shout a word just as the final decode
+    can. Its casing replaces the final decode's only when all of these hold:
+
+    - the final token is ALL-CAPS. A mixed-case final token is never re-cased
+      from the preview, in either direction.
+    - the final token is not itself a protected casing. An ALL-CAPS word that
+      appears verbatim in a protected term (an acronym or brand from the
+      dictionary or the screen) is intentional, not shouting.
+    - the preview shows the word in exactly one casing. Every sighting counts,
+      lowercase ones included; a preview that disagrees with itself cannot
+      say which casing is right.
+    - that one casing is mixed-case, so the repair never produces another
+      ALL-CAPS token and never lowercases a word.
+
+    An ALL-CAPS word that nothing protects is treated as shouting, so an
+    unprotected acronym is still re-cased when the preview consistently shows
+    it in mixed case.
+    """
+    if not final_text or not live_hint:
         return final_text, []
 
-    live_case_by_fold = {term.casefold(): term for term in live_terms}
+    live_casings_by_fold: dict[str, set[str]] = {}
+    for match in re.finditer(r"(?<!\w)[A-Za-z]{3,}(?!\w)", live_hint):
+        word = match.group(0)
+        live_casings_by_fold.setdefault(word.casefold(), set()).add(word)
+    if not live_casings_by_fold:
+        return final_text, []
+
+    # Letter runs, so a word inside a protected phrase or identifier counts
+    # ("ACME" in "ACME Hub", "MAX" in "MAX_RETRIES").
+    protected_casings = {
+        word
+        for term in protected_terms
+        for word in re.findall(r"[A-Za-z]{3,}", str(term or ""))
+    }
     replacements: list[dict[str, str]] = []
 
     def repl(match: re.Match[str]) -> str:
         token = match.group(0)
-        folded = token.casefold()
-        exact_case = live_case_by_fold.get(folded)
-        if exact_case:
-            if token != exact_case:
-                replacements.append({"from": token, "to": exact_case, "source": "live_hint_case"})
-                return exact_case
+        if token in protected_casings:
             return token
-        return token
+        live_casings = live_casings_by_fold.get(token.casefold())
+        if not live_casings or len(live_casings) != 1:
+            return token
+        (live_case,) = live_casings
+        if live_case.isupper() or live_case.islower() or not _proper_noun_candidate(live_case):
+            return token
+        replacements.append({"from": token, "to": live_case, "source": "live_hint_case"})
+        return live_case
 
-    out = re.sub(r"(?<!\w)[A-Z][A-Za-z]{2,}(?!\w)", repl, final_text)
+    out = re.sub(r"(?<!\w)[A-Z]{3,}(?!\w)", repl, final_text)
     return out, replacements
 
 

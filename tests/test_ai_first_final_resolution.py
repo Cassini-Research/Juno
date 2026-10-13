@@ -1168,6 +1168,205 @@ def test_live_hint_repair_only_preserves_case_for_same_word() -> None:
     assert replacements == [{"from": "ISHITA", "to": "Ishita", "source": "live_hint_case"}]
 
 
+def test_live_hint_repair_keeps_mixed_case_final_token_against_preview_casing() -> None:
+    final_text = "Push it to AcmeHub and open the AcmeHub page."
+
+    # The preview shows the word in two casings and the final decode already
+    # matches the protected one.
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Push it to AcmeHub and open the Acmehub... page",
+        final_text=final_text,
+        protected_terms=("AcmeHub",),
+    )
+
+    assert text == final_text
+    assert replacements == []
+
+    # The preview only ever shows the degraded casing and nothing protects the
+    # word: a mixed-case final token is still not re-cased from the preview.
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="push it to Acmehub and open the Acmehub page",
+        final_text=final_text,
+        protected_terms=(),
+    )
+
+    assert text == final_text
+    assert replacements == []
+
+
+def test_live_hint_repair_does_not_force_final_token_to_all_caps() -> None:
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="SEND it to ZENTRIX today",
+        final_text="Send it to Zentrix today.",
+        protected_terms=(),
+    )
+
+    assert text == "Send it to Zentrix today."
+    assert replacements == []
+
+
+def test_live_hint_repair_keeps_protected_all_caps_final_token() -> None:
+    # Whole term, word of a phrase, component of an identifier.
+    for protected_terms in (("ZENTRIX",), ("ZENTRIX Cloud",), ("ZENTRIX_TOKEN",)):
+        text, replacements = _reconcile_proper_nouns_from_live_hint(
+            live_hint="Send it to Zentrix today",
+            final_text="Send it to ZENTRIX today.",
+            protected_terms=protected_terms,
+        )
+
+        assert text == "Send it to ZENTRIX today.", protected_terms
+        assert replacements == [], protected_terms
+
+    # A protected term in a different casing is not a reason to keep shouting.
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Send it to Zentrix today",
+        final_text="Send it to ZENTRIX today.",
+        protected_terms=("Zentrix",),
+    )
+
+    assert text == "Send it to Zentrix today."
+    assert replacements == [{"from": "ZENTRIX", "to": "Zentrix", "source": "live_hint_case"}]
+
+
+def test_live_hint_repair_skips_word_the_preview_cases_inconsistently() -> None:
+    final_text = "ZENTRIX shipped and ZENTRIX support replied."
+
+    for live_hint in (
+        "Zentrix shipped and zentrix support replied",
+        "ZentriX shipped and Zentrix support replied",
+        "Zentrix shipped and ZENTRIX support replied",
+    ):
+        text, replacements = _reconcile_proper_nouns_from_live_hint(
+            live_hint=live_hint,
+            final_text=final_text,
+            protected_terms=(),
+        )
+
+        assert text == final_text, live_hint
+        assert replacements == [], live_hint
+
+
+def test_live_hint_repair_still_restores_all_caps_final_token_from_consistent_preview() -> None:
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Send it to Zentrix today and thank Zentrix",
+        final_text="Send it to ZENTRIX today and thank ZENTRIX.",
+        protected_terms=(),
+    )
+
+    assert text == "Send it to Zentrix today and thank Zentrix."
+    assert replacements == [
+        {"from": "ZENTRIX", "to": "Zentrix", "source": "live_hint_case"},
+        {"from": "ZENTRIX", "to": "Zentrix", "source": "live_hint_case"},
+    ]
+
+    # An internal capital in the preview is restored too.
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="Then push it to AcmeHub",
+        final_text="Then push it to ACMEHUB.",
+        protected_terms=(),
+    )
+
+    assert text == "Then push it to AcmeHub."
+    assert replacements == [{"from": "ACMEHUB", "to": "AcmeHub", "source": "live_hint_case"}]
+
+    # A lowercase preview sighting is never adopted.
+    text, replacements = _reconcile_proper_nouns_from_live_hint(
+        live_hint="send it to zentrix today",
+        final_text="Send it to ZENTRIX today.",
+        protected_terms=(),
+    )
+
+    assert text == "Send it to ZENTRIX today."
+    assert replacements == []
+
+
+def _run_oneshot_with_live_hint(
+    *,
+    final_asr_text: str,
+    live_hint: str,
+    screen_terms: tuple[str, ...] = (),
+):
+    class FakeTranscriber:
+        backend_name = "fake_asr"
+
+        def transcribe_wav(self, *args: object, **kwargs: object) -> TranscribeResult:
+            return TranscribeResult(
+                transcript=final_asr_text,
+                language="en",
+                backend_name="fake_asr",
+                audio_duration_ms=1000.0,
+                decode_ms=1.0,
+                model_path="fake",
+            )
+
+    class FakeContextProvider:
+        def snapshot(self) -> TypedContextBundle:
+            return TypedContextBundle(
+                app_name="Notes",
+                app_category="docs",
+                candidate_entities=list(screen_terms),
+            )
+
+    pipeline = OneShotDictationPipeline(
+        transcriber=FakeTranscriber(),
+        recorder=_Recorder(),
+        context_provider=FakeContextProvider(),
+        writer_enabled=False,
+    )
+    return pipeline.run(
+        _loud_wav_bytes(),
+        utterance_id="utt-live-hint-casing",
+        transcript_hint=live_hint,
+        save_history=False,
+        save_audio=False,
+    )
+
+
+def _live_hint_case_replacements(result) -> list[dict[str, str]]:
+    return [
+        replacement
+        for item in result.normalization_applied
+        if item.get("rule") == "live_hint_proper_noun_reconciliation"
+        for replacement in item["replacements"]
+    ]
+
+
+def test_oneshot_final_casing_survives_differently_cased_live_preview() -> None:
+    result = _run_oneshot_with_live_hint(
+        final_asr_text="Push it to AcmeHub and open the AcmeHub page.",
+        live_hint="Push it to AcmeHub and open the Acmehub... page",
+    )
+
+    assert result.ok
+    assert result.transcript == "Push it to AcmeHub and open the AcmeHub page."
+    assert _live_hint_case_replacements(result) == []
+
+
+def test_oneshot_live_preview_restores_all_caps_final_token_unless_protected() -> None:
+    repaired = _run_oneshot_with_live_hint(
+        final_asr_text="Send it to ZENTRIX today.",
+        live_hint="Send it to Zentrix today",
+    )
+
+    assert repaired.ok
+    assert repaired.transcript == "Send it to Zentrix today."
+    assert _live_hint_case_replacements(repaired) == [
+        {"from": "ZENTRIX", "to": "Zentrix", "source": "live_hint_case"}
+    ]
+
+    # The same decode with the ALL-CAPS form on screen: the compiled context
+    # protects it, so the preview's casing must not replace it.
+    protected = _run_oneshot_with_live_hint(
+        final_asr_text="Send it to ZENTRIX today.",
+        live_hint="Send it to Zentrix today",
+        screen_terms=("ZENTRIX",),
+    )
+
+    assert protected.ok
+    assert protected.transcript == "Send it to ZENTRIX today."
+    assert _live_hint_case_replacements(protected) == []
+
+
 def test_action_llm_body_prefers_spoken_evidence_over_model_word_substitution() -> None:
     source = "set an alarm for 5 pm tomorrow and add a reminder to go to Disco with Ishita next week."
     actions = validate_envelope(
