@@ -15,6 +15,25 @@ from juno_v2.writer.config import WriterConfig
 
 _ACTION_EXTRACTION_MAX_TOKENS = 1024
 _V3_ACTION_EXTRACTION_MAX_TOKENS = _ACTION_EXTRACTION_MAX_TOKENS
+_MAX_PREFIX_CACHE_ENTRIES = 4
+
+
+def _cache_token_offset(cache: Any) -> int | None:
+    """Return the token offset from the first KV-cache layer that tracks ``.offset``.
+
+    Hybrid SSM/attention architectures (e.g. Qwen3.5, LFM2, Jamba) place an
+    ``ArraysCache`` without ``.offset`` at ``cache[0]`` and a ``KVCache`` with
+    ``.offset`` at later attention layers. Inspecting only ``cache[0]`` returns
+    0 and silently skips ``trim_prompt_cache``, leaving suffix/decode tokens in
+    the reusable prefix cache.
+    """
+    if not isinstance(cache, (list, tuple)):
+        return None
+    for layer_cache in cache:
+        offset = getattr(layer_cache, "offset", None)
+        if isinstance(offset, int):
+            return int(offset)
+    return None
 
 
 class MlxLmWriterBackend(WriterBackend):
@@ -90,16 +109,32 @@ class MlxLmWriterBackend(WriterBackend):
             if entry is None:
                 prefix_ids = tok.encode(prefix_str)
                 cache = make_prompt_cache(self._model)
-                for _ in stream_generate(
+                prefill_stream = stream_generate(
                     self._model, tok, prompt=prefix_ids, max_tokens=1, prompt_cache=cache
-                ):
-                    pass
+                )
+                try:
+                    for _ in prefill_stream:
+                        pass
+                finally:
+                    close_fn = getattr(prefill_stream, "close", None)
+                    if callable(close_fn):
+                        close_fn()
                 if not can_trim_prompt_cache(cache):
                     return None
-                offset = int(getattr(cache[0], "offset", 0))
+                offset = _cache_token_offset(cache)
+                if offset is None:
+                    return None
                 trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+                if _cache_token_offset(cache) != len(prefix_ids):
+                    return None
+                while len(self._kv_caches) >= _MAX_PREFIX_CACHE_ENTRIES:
+                    oldest_key = next(iter(self._kv_caches))
+                    self._kv_caches.pop(oldest_key, None)
                 entry = {"ids": list(prefix_ids), "cache": cache}
                 self._kv_caches[key] = entry
+            else:
+                # Refresh LRU order for hot prefix keys.
+                self._kv_caches[key] = self._kv_caches.pop(key)
             prefix_ids = entry["ids"]
             if list(full_ids[: len(prefix_ids)]) != prefix_ids:
                 return None
@@ -111,21 +146,33 @@ class MlxLmWriterBackend(WriterBackend):
             pieces: list[str] = []
             timed_out = False
             started = time.perf_counter()
-            for resp in stream_generate(
+            decode_stream = stream_generate(
                 self._model,
                 tok,
                 prompt=suffix_ids,
                 max_tokens=int(max_tokens),
                 prompt_cache=cache,
                 sampler=sampler,
-            ):
-                pieces.append(resp.text)
-                if deadline_s is not None and (time.perf_counter() - started) > deadline_s:
-                    timed_out = True
-                    break
-            # Rewind the cache to the static prefix for the next call.
-            offset = int(getattr(cache[0], "offset", 0))
-            trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+            )
+            try:
+                for resp in decode_stream:
+                    pieces.append(resp.text)
+                    if deadline_s is not None and (time.perf_counter() - started) > deadline_s:
+                        timed_out = True
+                        break
+            finally:
+                close_fn = getattr(decode_stream, "close", None)
+                if callable(close_fn):
+                    close_fn()
+                # Always rewind the cache to the static prefix for the next call,
+                # or evict this entry if the offset cannot be restored cleanly.
+                offset = _cache_token_offset(cache)
+                if offset is None:
+                    self._kv_caches.pop(key, None)
+                else:
+                    trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+                    if _cache_token_offset(cache) != len(prefix_ids):
+                        self._kv_caches.pop(key, None)
             return "".join(pieces), {
                 "generation_api": "cached_stream",
                 "prompt_cache_hit": True,
@@ -154,6 +201,8 @@ class MlxLmWriterBackend(WriterBackend):
         self._model = None
         self._tokenizer = None
         self._loaded = False
+        self._kv_caches.clear()
+        self._split_prefix_memo.clear()
         try:
             import mlx.core as mx  # type: ignore
             mx.clear_cache()
