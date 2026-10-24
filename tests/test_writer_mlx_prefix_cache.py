@@ -16,6 +16,9 @@ from juno_v2.writer.config import WriterConfig
 class _DummyArraysCache:
     """Simulates mlx-lm ArraysCache on hybrid SSM/linear-attention layers (no .offset)."""
 
+    def __init__(self) -> None:
+        self.steps = 0
+
 
 class _DummyKVCache:
     """Simulates mlx-lm KVCache tracking token .offset."""
@@ -28,6 +31,7 @@ def _install_fake_mlx_lm(
     monkeypatch: Any,
     *,
     hybrid_layer0: bool = False,
+    trimmable: bool = True,
     broken_trim: bool = False,
     token_delay_s: float = 0.0,
 ) -> dict[str, Any]:
@@ -43,7 +47,7 @@ def _install_fake_mlx_lm(
         return [_DummyKVCache(0)]
 
     def can_trim_prompt_cache(_cache: list[Any]) -> bool:
-        return True
+        return trimmable
 
     def trim_prompt_cache(cache: list[Any], num_to_trim: int) -> int:
         state["trim_calls"].append(num_to_trim)
@@ -64,10 +68,12 @@ def _install_fake_mlx_lm(
         sampler: Any = None,
     ):
         del _model, _tok, sampler
-        is_prefill = max_tokens == 1
+        is_prefill = max_tokens in (0, 1)
         for layer in prompt_cache:
             if hasattr(layer, "offset"):
                 layer.offset += len(prompt)
+            if isinstance(layer, _DummyArraysCache):
+                layer.steps += len(prompt)
 
         def _gen():
             import time
@@ -77,6 +83,8 @@ def _install_fake_mlx_lm(
                     for layer in prompt_cache:
                         if hasattr(layer, "offset"):
                             layer.offset += 1
+                        if isinstance(layer, _DummyArraysCache):
+                            layer.steps += 1
                     if token_delay_s > 0:
                         time.sleep(token_delay_s)
                     yield SimpleNamespace(text=f"tok{i}")
@@ -211,3 +219,35 @@ def test_prefix_cache_bounds_max_entries_and_clears_on_unload(monkeypatch: Any) 
     backend.unload()
     assert len(backend._kv_caches) == 0
     assert len(backend._split_prefix_memo) == 0
+
+
+def test_prefix_cache_snapshots_non_trimmable_hybrid_arrays_cache(monkeypatch: Any) -> None:
+    state = _install_fake_mlx_lm(monkeypatch, hybrid_layer0=True, trimmable=False)
+    backend = MlxLmWriterBackend(WriterConfig(model_path="dummy"))
+    backend._loaded = True
+    backend._model = object()
+    backend._tokenizer = _FakeTokenizer()
+
+    for suffix in ("hello", "world"):
+        out = backend._generate_with_prefix_cache(
+            full_prompt=f"SYS:{suffix}",
+            prefix_str="SYS:",
+            max_tokens=3,
+            temperature=0.0,
+            top_p=1.0,
+            deadline_s=None,
+        )
+        assert out is not None
+        text, meta = out
+        assert text == "tok0tok1tok2"
+        assert meta["prompt_cache_hit"] is True
+
+    # Non-trimmable hybrid cache should never call trim_prompt_cache and its
+    # stored prefix snapshot must retain both KVCache.offset == 4 and
+    # ArraysCache.steps == 4 across repeated requests.
+    assert state["trim_calls"] == []
+    entry = next(iter(backend._kv_caches.values()))
+    assert entry["trimmable"] is False
+    assert _cache_token_offset(entry["cache"]) == 4
+    assert entry["cache"][0].steps == 4
+

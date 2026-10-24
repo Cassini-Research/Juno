@@ -92,6 +92,7 @@ class MlxLmWriterBackend(WriterBackend):
         plain path — caching must never be able to break production output.
         """
         try:
+            import copy
             import hashlib
 
             from mlx_lm import stream_generate  # type: ignore
@@ -109,8 +110,14 @@ class MlxLmWriterBackend(WriterBackend):
             if entry is None:
                 prefix_ids = tok.encode(prefix_str)
                 cache = make_prompt_cache(self._model)
+                trimmable = bool(can_trim_prompt_cache(cache))
+                prefill_max_tokens = 1 if trimmable else 0
                 prefill_stream = stream_generate(
-                    self._model, tok, prompt=prefix_ids, max_tokens=1, prompt_cache=cache
+                    self._model,
+                    tok,
+                    prompt=prefix_ids,
+                    max_tokens=prefill_max_tokens,
+                    prompt_cache=cache,
                 )
                 try:
                     for _ in prefill_stream:
@@ -119,18 +126,21 @@ class MlxLmWriterBackend(WriterBackend):
                     close_fn = getattr(prefill_stream, "close", None)
                     if callable(close_fn):
                         close_fn()
-                if not can_trim_prompt_cache(cache):
-                    return None
                 offset = _cache_token_offset(cache)
                 if offset is None:
                     return None
-                trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+                if trimmable:
+                    trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
                 if _cache_token_offset(cache) != len(prefix_ids):
                     return None
                 while len(self._kv_caches) >= _MAX_PREFIX_CACHE_ENTRIES:
                     oldest_key = next(iter(self._kv_caches))
                     self._kv_caches.pop(oldest_key, None)
-                entry = {"ids": list(prefix_ids), "cache": cache}
+                entry = {
+                    "ids": list(prefix_ids),
+                    "cache": cache,
+                    "trimmable": trimmable,
+                }
                 self._kv_caches[key] = entry
             else:
                 # Refresh LRU order for hot prefix keys.
@@ -141,7 +151,11 @@ class MlxLmWriterBackend(WriterBackend):
             suffix_ids = list(full_ids[len(prefix_ids):])
             if not suffix_ids:
                 return None
-            cache = entry["cache"]
+            trimmable = bool(entry.get("trimmable", True))
+            # Hybrid SSM/linear-attention models (e.g. Qwen3.5) use non-trimmable
+            # ArraysCache layers; run suffix decoding on a deep copy of the
+            # prefix boundary snapshot so the stored prefix state stays clean.
+            cache = entry["cache"] if trimmable else copy.deepcopy(entry["cache"])
             sampler = make_sampler(temp=float(temperature), top_p=float(top_p))
             pieces: list[str] = []
             timed_out = False
@@ -164,15 +178,16 @@ class MlxLmWriterBackend(WriterBackend):
                 close_fn = getattr(decode_stream, "close", None)
                 if callable(close_fn):
                     close_fn()
-                # Always rewind the cache to the static prefix for the next call,
-                # or evict this entry if the offset cannot be restored cleanly.
-                offset = _cache_token_offset(cache)
-                if offset is None:
-                    self._kv_caches.pop(key, None)
-                else:
-                    trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
-                    if _cache_token_offset(cache) != len(prefix_ids):
+                if trimmable:
+                    # Always rewind the in-place cache to the static prefix for the
+                    # next call, or evict this entry if the offset cannot be restored.
+                    offset = _cache_token_offset(cache)
+                    if offset is None:
                         self._kv_caches.pop(key, None)
+                    else:
+                        trim_prompt_cache(cache, max(0, offset - len(prefix_ids)))
+                        if _cache_token_offset(cache) != len(prefix_ids):
+                            self._kv_caches.pop(key, None)
             return "".join(pieces), {
                 "generation_api": "cached_stream",
                 "prompt_cache_hit": True,
